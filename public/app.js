@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.19.2';
+const APP_VERSION = '4.19.3';
 
 const CHANGELOG = [
+  {
+    version: '4.19.3',
+    date: '2026-07-29',
+    changes: [
+      'Fixed more of the same class of bug as 4.19.2\'s Auto-manage fix — a recurring Speaker you added, or a change to your Global palette (fonts, layout, macros, stage displays, response-card elements), could also silently revert when you opened a different deck. The previous fix only covered machine/Pro7-connection settings; this extends it to every preference field: Speakers, Display Names, Book Names, Queue format, Bible verse-number formatting, Smart Notes style mapping, and — previously not preserved at all when opening an existing deck — your whole Global palette (Text, Layout, Motion, Macros, Stage, Response Card). Creating a deck from a Template still keeps that template\'s own saved style, as intended; only opening/creating a plain deck now correctly keeps your current preferences instead of whichever deck you happen to open.',
+    ],
+  },
   {
     version: '4.19.2',
     date: '2026-07-29',
@@ -12864,22 +12871,56 @@ async function duplicateDeckAction(id) {
   renderDecksList();
 }
 
-// Config fields that belong to THIS COMPUTER, never to an individual deck.
-// Every deck's saved state carries a full snapshot of state.config (see
-// deckSaveBody()), so opening or creating a deck would otherwise silently
-// roll back these settings to whatever they were the last time THAT deck was
-// saved — e.g. autoManagePro7 reverting to off because an older deck's
-// snapshot predates the day the toggle was turned on. Carry the CURRENT
-// in-memory values forward across every deck switch/creation instead.
-const MACHINE_CONFIG_FIELDS = [
+// Every deck's saved state carries a FULL snapshot of state.config AND the
+// top-level style/global fields (see deckSaveBody() — it saves the whole
+// `state`), so opening or creating a deck would otherwise silently roll all
+// of this back to whatever it was the last time THAT deck was saved. That's
+// correct for deck CONTENT (series, title, response text, slides — you want
+// those to switch). It's wrong for anything that's really a PREFERENCE: a
+// Pro7 connection detail, a recurring speaker you added last week, your
+// Global palette. Two lists, split the same way the app's own iCloud
+// SYNC_SECTIONS() already does (that function is the authoritative signal
+// for "this is a preference, not deck content" — reuse its judgment rather
+// than re-deriving one from scratch):
+//
+// - PERSISTENT_CONFIG_FIELDS: keys under state.config.
+// - PERSISTENT_STATE_FIELDS: top-level state keys (styleSchemes + every
+//   global* — SYNC_SECTIONS() treats all of these as portable preferences).
+//
+// `responses` (the week's actual R1/R2/R3 answer text) is deliberately left
+// OUT even though SYNC_SECTIONS() lists it for cross-machine sync — that's a
+// different job (syncing a device's copy) from "should switching decks touch
+// this," and response text is genuine per-week content, not a preference.
+const PERSISTENT_CONFIG_FIELDS = [
+  // Pro7 / machine connection
   'pro7Port', 'pro7Password', 'pro7RootFolder', 'pro7LibraryFolder',
-  'autoManagePro7', 'outputFolder', 'setupComplete',
-  'bibleApiKey', 'bibleId', 'bibleName', 'bibleList',
-  'stageScreen', 'qrMacro', 'qrExportPair',
-  'features', 'recentSeries', 'icloudSync', 'theme',
+  'autoManagePro7', 'outputFolder', 'setupComplete', 'stageScreen',
+  'qrMacro', 'qrExportPair', 'icloudSync', 'theme',
+  // Bible lookup
+  'bibleApiKey', 'bibleId', 'bibleName', 'bibleList', 'verseNumbers', 'verseSuper',
+  // App-wide preferences (mirrors SYNC_SECTIONS()'s portable-vs-deck split)
+  'features', 'recentSeries', 'displayNames', 'bookNames', 'queueMode',
+  'speakers', 'notesStyleMap', 'capitalizeDivinePronouns',
+  'notesMode', 'notesUseNearbyRefs',
 ];
-function carryMachineConfig(fromConfig, toConfig) {
-  for (const f of MACHINE_CONFIG_FIELDS) toConfig[f] = fromConfig[f];
+const PERSISTENT_STATE_FIELDS = [
+  'styleSchemes', 'globalTypography', 'globalLayout', 'globalFontAdv',
+  'globalMotion', 'globalMacros', 'globalStageDisplays', 'globalRcElements',
+];
+function carryPersistentConfig(fromState, toState) {
+  for (const f of PERSISTENT_CONFIG_FIELDS) toState.config[f] = fromState.config[f];
+}
+function carryPersistentGlobals(fromState, toState) {
+  for (const f of PERSISTENT_STATE_FIELDS) toState[f] = fromState[f];
+}
+// Both together — the common case (opening an existing deck: nothing about
+// the CURRENT session's globals should be deliberately different from what
+// gets carried forward). newDeck() calls the two pieces separately instead,
+// since creating from a template deliberately keeps THAT template's own
+// style snapshot rather than the live session's.
+function carryPersistentSettings(fromState, toState) {
+  carryPersistentConfig(fromState, toState);
+  carryPersistentGlobals(fromState, toState);
 }
 
 async function loadDeckState(id) {
@@ -12888,9 +12929,9 @@ async function loadDeckState(id) {
     toast('error', 'Could not open deck', r.error || 'Deck state missing');
     return;
   }
-  const machineConfig = { ...state.config };
+  const priorState = state;
   state = r.deck.state;
-  carryMachineConfig(machineConfig, state.config);
+  carryPersistentSettings(priorState, state);
   state.currentDeckId = id;
   _deckBaseStamp = r.deck.updated_at;
   libApi(`/api/decks/${id}/opened`, { method: 'POST' });
@@ -12918,13 +12959,14 @@ async function newDeck({ series = '', title = '', date = '', schemeId = null, sp
   // Carry over settings that belong to this computer, not the deck (whether
   // starting fresh or from a template — a template is another deck's own
   // saved snapshot, so it has the same stale-machine-config risk).
-  carryMachineConfig(state.config, s.config);
-  if (!fromTemplateId) {
-    s.styleSchemes = state.styleSchemes;
-    s.globalTypography = state.globalTypography;
-    s.globalLayout = state.globalLayout;
-    s.globalFontAdv = state.globalFontAdv;
-  }
+  // Preferences always carry forward, template or not — a template deck
+  // shouldn't reset your Bible key or speaker list any more than a plain new
+  // deck should. The Global palette is different: a template is a deliberate
+  // saved style+structure snapshot, so creating FROM one keeps ITS style
+  // rather than overwriting it with the live session's (matches the existing
+  // !fromTemplateId behavior this block already had).
+  carryPersistentConfig(state, s);
+  if (!fromTemplateId) carryPersistentGlobals(state, s);
   s.activeSchemeId = schemeId || s.activeSchemeId || state.activeSchemeId;
   s.currentDeckId  = crypto.randomUUID();
   s.activeId       = 'start';
