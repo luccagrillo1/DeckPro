@@ -930,14 +930,10 @@ app.post('/api/update/install', async (req, res) => {
       throw new Error('Update package did not contain DeckPro.app');
     }
 
-    // Save current version so rollback can report it
-    fsu.writeFileSync('/tmp/deckpro-prev-version', pkg.version, 'utf8');
-
     // Swap the app bundle after this process exits, then relaunch
     const swapScript = `/tmp/deckpro-update-swap.sh`;
     fsu.writeFileSync(swapScript, `#!/bin/bash
 sleep 1.5
-cp -R /Applications/DeckPro.app /Applications/DeckPro_prev.app
 rm -rf /Applications/DeckPro.app
 cp -R "${unzipDir}/DeckPro.app" /Applications/
 "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister" -f /Applications/DeckPro.app
@@ -953,47 +949,6 @@ open -n /Applications/DeckPro.app --args --updated
     // Quit so the swap can proceed (only when running inside Electron)
     setTimeout(() => {
       try { require('electron').app.quit(); } catch (_) { /* standalone server — user restarts manually */ }
-    }, 800);
-  } catch (err) {
-    res.json({ ok: false, error: err.message });
-  }
-});
-
-app.get('/api/update/rollback-info', (req, res) => {
-  const hasPrev = fsu.existsSync('/Applications/DeckPro_prev.app');
-  const prevVersion = hasPrev && fsu.existsSync('/tmp/deckpro-prev-version')
-    ? fsu.readFileSync('/tmp/deckpro-prev-version', 'utf8').trim()
-    : null;
-  res.json({ ok: true, available: hasPrev, prevVersion });
-});
-
-app.post('/api/update/rollback', (req, res) => {
-  try {
-    if (!fsu.existsSync('/Applications/DeckPro_prev.app')) {
-      return res.json({ ok: false, error: 'No backup to roll back to' });
-    }
-    const prevVersion = fsu.existsSync('/tmp/deckpro-prev-version')
-      ? fsu.readFileSync('/tmp/deckpro-prev-version', 'utf8').trim()
-      : 'previous version';
-
-    const rollbackScript = `/tmp/deckpro-rollback.sh`;
-    fsu.writeFileSync(rollbackScript, `#!/bin/bash
-sleep 1.5
-rm -rf /Applications/DeckPro.app
-cp -R /Applications/DeckPro_prev.app /Applications/DeckPro.app
-rm -rf /Applications/DeckPro_prev.app
-rm -f /tmp/deckpro-prev-version
-"/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister" -f /Applications/DeckPro.app
-open -n /Applications/DeckPro.app
-`, { mode: 0o755 });
-
-    const { spawn } = require('child_process');
-    spawn('/bin/bash', [rollbackScript], { detached: true, stdio: 'ignore' }).unref();
-
-    res.json({ ok: true, rollingBackTo: prevVersion });
-
-    setTimeout(() => {
-      try { require('electron').app.quit(); } catch (_) {}
     }, 800);
   } catch (err) {
     res.json({ ok: false, error: err.message });

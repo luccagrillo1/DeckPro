@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.20.0';
+const APP_VERSION = '4.21.0';
 
 const CHANGELOG = [
+  {
+    version: '4.21.0',
+    date: '2026-07-29',
+    changes: [
+      'Removed the "Rollback to previous version" feature (··· menu, plus the backup app copy an update used to leave behind in /Applications). Check for Updates still works as before.',
+    ],
+  },
   {
     version: '4.20.0',
     date: '2026-07-29',
@@ -9785,24 +9792,6 @@ function attachHeaderHandlers() {
     moreMenu?.classList.remove('open');
     checkForUpdates(true);
   });
-  document.getElementById('mm-rollback')?.addEventListener('click', () => {
-    moreMenu?.classList.remove('open');
-    const label = document.getElementById('mm-rollback-label')?.textContent || '';
-    const prevVersion = label.replace('Rollback to v', '').replace('…', '').trim();
-    showDeliveryOverlay(['Rolling back', 'Relaunching'], {
-      title: 'Rolling Back',
-      subtitle: `Restoring DeckPro v${prevVersion || 'previous version'}`,
-    });
-    updateDeliveryStep(0, false);
-    fetch('/api/update/rollback', { method: 'POST' }).then(x => x.json()).then(r => {
-      if (r.ok) {
-        updateDeliveryStep(0, true);
-      } else {
-        hideDeliveryOverlay();
-        toast('error', 'Rollback failed', r.error || 'Unknown error');
-      }
-    }).catch(() => {});
-  });
   document.getElementById('mm-theme')?.addEventListener('click', () => {
     toggleTheme();
     moreMenu?.classList.remove('open');
@@ -13546,19 +13535,6 @@ async function checkForUpdates(manual = false) {
   if (manual) toast('info', 'Update available', `DeckPro v${data.latest} is ready to install`);
 }
 
-async function checkRollbackAvailable() {
-  try {
-    const r = await fetch('/api/update/rollback-info').then(x => x.json());
-    if (r.ok && r.available) {
-      // No auto-popup — rollback lives in the ··· menu so it never nags on launch.
-      const btn   = document.getElementById('mm-rollback');
-      const label = document.getElementById('mm-rollback-label');
-      if (btn)   btn.style.display = '';
-      if (label) label.textContent = `Rollback to v${r.prevVersion || '?'}…`;
-    }
-  } catch (_) {}
-}
-
 function formatUpdateNotes(md, maxItems = 5) {
   if (!md) return '';
   const items = md.split('\n')
@@ -13691,7 +13667,7 @@ function helpSections() {
         <li><strong>Machine Setup</strong> — one-time per-computer setup.</li>
         <li><strong>Export History</strong> — recent exports, with reveal-in-Finder.</li>
         <li><strong>Export Diagnostic Bundle</strong> — a troubleshooting snapshot.</li>
-        <li><strong>Check for Updates / Rollback</strong> — update or revert the app.</li>
+        <li><strong>Check for Updates</strong> — pull the latest release.</li>
         <li><strong>Theme</strong> — light / dark (<span class="help-kbd">⌘⇧D</span>).</li>
       </ul>
     `,
@@ -14119,8 +14095,8 @@ function helpSections() {
       <h4>Diagnostic bundle</h4>
       <p><strong>···&nbsp;→&nbsp;Export Diagnostic Bundle</strong> saves a JSON snapshot for troubleshooting — app version, platform, settings (with your API key and Pro7 password <em>excluded</em>; only a yes/no that they're set), a deck &amp; style summary, macro setup, Pro7/library status, recent export history, and a rolling log of the last 50 things the app showed you (every success/error/warning toast, plus any JS errors) with timestamps — a "what just happened" trail, not just a snapshot of current state. Hand this over when reporting a problem instead of screenshots.</p>
 
-      <h4>Updates &amp; rollback</h4>
-      <p><strong>Check for Updates…</strong> pulls the latest release. If an update misbehaves, <strong>Rollback</strong> reverts to the previous version.</p>
+      <h4>Updates</h4>
+      <p><strong>Check for Updates…</strong> pulls the latest release.</p>
     `,
   },
   {
@@ -14691,7 +14667,6 @@ async function bootstrap() {
   loadFonts();
   checkForUpdates();
   setInterval(() => checkForUpdates(), 6 * 60 * 60 * 1000); // re-check every 6h
-  checkRollbackAvailable();
   initSync();
 
   // Poll Pro7 every 10s — reconnects automatically when Pro7 opens
