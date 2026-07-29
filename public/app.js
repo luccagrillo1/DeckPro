@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.18.0';
+const APP_VERSION = '4.19.0';
 
 const CHANGELOG = [
+  {
+    version: '4.19.0',
+    date: '2026-07-29',
+    changes: [
+      'New: QR Export pair. Turn on Preferences → QR Export → "Export both versions when QR is on" and, whenever the deck\'s QR toggle is enabled, pressing Export delivers TWO presentations to ProPresenter in one action — one without QR, one with — instead of just the QR-configured deck. Both reference the exact same prop collection (no duplicate props written), so it\'s a clean way to produce a Saturday/Sunday pair with identical content.',
+      'Filenames now use one unified, sequential naming convention: every export gets a lowercase _v{N} suffix, starting at _v1 — including the very first export of a deck, which previously had no suffix at all. A plain re-export becomes _v2, _v3, and so on, and a QR-paired export consumes two numbers in the same sequence (e.g. _v1 no-QR / _v2 QR). The QR toggle no longer appends _SAT to the filename by itself — SAT decks and normal decks now share one version-number sequence instead of two different naming schemes.',
+    ],
+  },
   {
     version: '4.18.0',
     date: '2026-07-19',
@@ -2652,6 +2660,9 @@ const DEFAULT_STATE = () => ({
     weekDate:            new Date().toISOString().slice(0, 10),
     qrCode:              false,
     qrMacro:             null,
+    // When true AND qrCode is on, Export delivers TWO presentations (no-QR +
+    // QR) sharing one prop collection, instead of just the QR-configured deck.
+    qrExportPair:        false,
     includeResponseCard: true,
     outputFolder:        '',
     pro7Port:            1025,
@@ -5562,6 +5573,17 @@ function renderConfigPanel(panel) {
         </div>
       </div>
 
+      <div class="settings-section">
+        <h3>QR Export</h3>
+        <div class="rc-toggle-row" id="qr-export-pair-row">
+          <div class="toggle ${cfg.qrExportPair === true ? 'on' : ''}" id="qr-export-pair-toggle"></div>
+          <span>Export both versions when QR is on</span>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
+          When the deck's QR toggle is on, Export delivers two presentations to Pro7 — one without QR and one with — both sharing the same prop collection, instead of just the QR version. Handy for a Saturday/Sunday pair with identical content. Both files get a sequential <code>_v1</code>/<code>_v2</code> suffix.
+        </div>
+      </div>
+
       <details class="settings-disclosure">
         <summary class="settings-disclosure-summary" data-tip-key="feature-visibility">Feature Visibility</summary>
         <div class="settings-disclosure-body">
@@ -5773,6 +5795,13 @@ function renderConfigPanel(panel) {
   document.getElementById('automanage-row')?.addEventListener('click', () => {
     cfg.autoManagePro7 = cfg.autoManagePro7 !== true;
     document.getElementById('automanage-toggle').classList.toggle('on', cfg.autoManagePro7);
+    saveState();
+  });
+
+  // QR pair export
+  document.getElementById('qr-export-pair-row')?.addEventListener('click', () => {
+    cfg.qrExportPair = cfg.qrExportPair !== true;
+    document.getElementById('qr-export-pair-toggle').classList.toggle('on', cfg.qrExportPair);
     saveState();
   });
 
@@ -9797,16 +9826,18 @@ function attachHeaderHandlers() {
 // ─── Spec builder ─────────────────────────────────────────────────────────────
 
 function buildFileName() {
-  const { seriesName, messageTitle, weekDate, qrCode } = state.config;
+  const { seriesName, messageTitle, weekDate } = state.config;
   const d = weekDate || new Date().toISOString().slice(0, 10);
   const [yyyy, mm, dd] = d.split('-');
   const yy = (yyyy || '').slice(-2);  // 2-digit year: 2026 → 26
   const series = fileNameToken(seriesName || 'Untitled');
   const title  = fileNameToken(messageTitle || '');
-  const qrSuffix = qrCode ? '_SAT' : '';
+  // No QR/SAT suffix baked in here — every export (QR or not, paired or not)
+  // gets a sequential _v{N} suffix appended in runGenerate(), so a Saturday/
+  // Sunday pair and a plain re-export all share one uniform naming scheme.
   return title
-    ? `Message_${yy}.${mm}.${dd}_${series}_${title}${qrSuffix}`
-    : `Message_${yy}.${mm}.${dd}_${series}${qrSuffix}`;
+    ? `Message_${yy}.${mm}.${dd}_${series}_${title}`
+    : `Message_${yy}.${mm}.${dd}_${series}`;
 }
 
 function fileNameToken(value) {
@@ -10545,6 +10576,16 @@ function showRebuildError(msg) {
   }
 }
 
+// Every export gets a sequential _v{N} suffix (lowercase), starting at v1 —
+// even the very first export of a given base name. Tolerant of legacy
+// uppercase _V{N} entries already sitting in gen history from before this
+// convention, so the count doesn't reset/collide for existing users.
+function nextVersionedName(base) {
+  const baseRe = new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(_[vV]\\d+)?\\.pro$`);
+  const priorCount = loadGenHistory().filter(e => baseRe.test(e.fileName || '')).length;
+  return { name: `${base}_v${priorCount + 1}`, index: priorCount + 1 };
+}
+
 async function runGenerate(btn, deliverMode = false) {
   if (!btn) btn = document.getElementById('btn-generate');
 
@@ -10552,12 +10593,84 @@ async function runGenerate(btn, deliverMode = false) {
   btn.textContent = 'Exporting…';
 
   try {
+    // Paired export: when the deck-wide QR toggle is on AND the "export both"
+    // preference is enabled, one Export click delivers TWO presentations —
+    // the deck as-is with QR off, and the deck as configured with QR on —
+    // sharing one prop collection (see encodeDeliverPair in encode.js). Both
+    // get sequential _v{N} names off the SAME base, same numbering as a plain
+    // re-export, per the "everything is one v# sequence" convention.
+    if (state.config.qrCode && state.config.qrExportPair) {
+      const wasQr = state.config.qrCode;
+      state.config.qrCode = false;
+      const specNoQR = buildSpec();
+      state.config.qrCode = wasQr; // restore (true)
+      const specQR = buildSpec();
+
+      const base = specNoQR.name; // buildFileName() no longer varies by qrCode
+      const v1 = nextVersionedName(base);
+      specNoQR.name = v1.name;
+      specQR.name   = `${base}_v${v1.index + 1}`;
+      const fileNameNoQR = specNoQR.name;
+      const fileNameQR   = specQR.name;
+
+      specNoQR.deliverMode = true;
+      specQR.deliverMode   = true;
+      specNoQR.autoManagePro7 = state.config.autoManagePro7 === true;
+      specQR.autoManagePro7   = state.config.autoManagePro7 === true;
+
+      const steps = [
+        'Building presentations',
+        'Writing to ProPresenter library (2 files)',
+        'Writing props (shared)',
+      ];
+      if (specNoQR.autoManagePro7) {
+        steps.unshift('Closing ProPresenter (if open)');
+        steps.push('Relaunching ProPresenter');
+      }
+      showDeliveryOverlay(steps, {
+        subtitle: "Exporting the non-QR and QR versions — don't switch to ProPresenter until this completes",
+      });
+      const lastStep = steps.length - 1;
+
+      updateDeliveryStep(0, false);
+      const res = await fetch('/api/generate', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          spec: specNoQR, fileName: fileNameNoQR,
+          pairSpec: specQR, pairFileName: fileNameQR,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        for (let i = 0; i <= lastStep; i++) {
+          updateDeliveryStep(i, true);
+          await new Promise(r => setTimeout(r, i === lastStep ? 500 : 250));
+        }
+        hideDeliveryOverlay();
+        // Record both files in history — same shared propsBackup on each.
+        for (const p of (data.presentations || [])) {
+          addGenHistoryEntry({
+            presentationPath:  p.path,
+            presentationBytes: p.bytes,
+            delivered:         data.delivered,
+            propsBackup:       data.propsBackup,
+          });
+        }
+        showGenerateModal(data, specQR);
+        if (data.propsInstalled === false) {
+          toast('warn', 'Decks exported — props not installed', data.propsError || 'Configuration/Props not found');
+        }
+      } else {
+        hideDeliveryOverlay();
+        toast('error', 'Export failed', data.error || 'Unknown error');
+      }
+      return;
+    }
+
     const spec = buildSpec();
-    // Append _V2, _V3, … if the same base name was already exported
-    const base = spec.name;
-    const baseRe = new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(_V\\d+)?\\.pro$`);
-    const priorCount = loadGenHistory().filter(e => baseRe.test(e.fileName || '')).length;
-    if (priorCount > 0) spec.name = `${base}_V${priorCount + 1}`;
+    const { name } = nextVersionedName(spec.name);
+    spec.name = name;
     const fileName = spec.name;
     spec.deliverMode = true;
     spec.autoManagePro7 = state.config.autoManagePro7 === true;
@@ -11918,12 +12031,16 @@ function showGenerateModal(data, spec) {
   if (!modal || !body) return;
   if (title) title.textContent = data.delivered ? 'Ready — open ProPresenter' : 'Generated';
 
+  const isPair = Array.isArray(data.presentations) && data.presentations.length > 0;
+
   const counts = { scripture: 0, point: 0, blank: 0, image: 0, custom: 0 };
   for (const s of (spec.slides || [])) {
     if (counts[s.type] !== undefined) counts[s.type]++;
   }
   const totalSlides = (spec.slides || []).length;
-  const presKB = data.presentationBytes ? Math.round(data.presentationBytes / 1024) : null;
+  const presKB = isPair
+    ? Math.round(data.presentations.reduce((sum, p) => sum + (p.bytes || 0), 0) / 1024)
+    : (data.presentationBytes ? Math.round(data.presentationBytes / 1024) : null);
 
   const chipColors = {
     scripture: '#e8f0fe', point: '#e8f5e9', blank: '#f3e5f5', image: '#fff3e0', custom: '#fce4ec'
@@ -11942,24 +12059,37 @@ function showGenerateModal(data, spec) {
         <div style="font-weight:600;color:var(--text);font-size:12px;margin-bottom:4px">${data.props.length} Prop file${data.props.length > 1 ? 's' : ''}</div>
         ${data.props.map(p => `<div>${esc(p.path)}</div>`).join('')}
       </div>`
-    : '';
+    : (isPair
+        ? `<div class="gen-modal-filename" style="margin-top:0">
+            <div style="font-weight:600;color:var(--text);font-size:12px;margin-bottom:4px">Shared prop collection</div>
+            <div>Both presentations reference the same DeckPro prop slots — no duplicate props were written.</div>
+          </div>`
+        : '');
+
+  const filenameSection = isPair
+    ? data.presentations.map(p => `<div class="gen-modal-filename">${esc(p.path)}</div>`).join('')
+    : `<div class="gen-modal-filename">${esc(data.presentationPath)}</div>`;
+
+  const revealButtons = isPair
+    ? data.presentations.map((p, i) => `<button class="gen-modal-reveal-pair btn-secondary" data-path="${esc(p.path)}">Reveal ${i === 0 ? 'first' : 'second'} in Finder</button>`).join('')
+    : (data.presentationPath ? `<button id="gen-modal-reveal" class="btn-secondary">Reveal in Finder</button>` : '');
 
   body.innerHTML = `
-    <div class="gen-modal-filename">${esc(data.presentationPath)}</div>
+    ${filenameSection}
     <div class="gen-modal-stats">
       <div class="gen-stat">
         <div class="gen-stat-num">${totalSlides}</div>
-        <div class="gen-stat-lbl">Total slides</div>
+        <div class="gen-stat-lbl">Total slides${isPair ? ' (each)' : ''}</div>
       </div>
       ${presKB ? `<div class="gen-stat">
         <div class="gen-stat-num">${presKB} KB</div>
-        <div class="gen-stat-lbl">File size</div>
+        <div class="gen-stat-lbl">${isPair ? 'Combined size' : 'File size'}</div>
       </div>` : ''}
     </div>
     ${breakdownChips ? `<div class="gen-modal-breakdown">${breakdownChips}</div>` : ''}
     ${propSection}
     <div class="gen-modal-actions">
-      ${data.presentationPath ? `<button id="gen-modal-reveal" class="btn-secondary">Reveal in Finder</button>` : ''}
+      ${revealButtons}
       <button id="gen-modal-ok">Done</button>
     </div>
   `;
@@ -11968,9 +12098,17 @@ function showGenerateModal(data, spec) {
   const close = () => modal.classList.remove('open');
   document.getElementById('gen-modal-ok')?.addEventListener('click', close);
   document.getElementById('gen-modal-close')?.addEventListener('click', close);
-  document.getElementById('gen-modal-reveal')?.addEventListener('click', () => {
-    fetch('/api/reveal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath: data.presentationPath }) });
-  });
+  if (isPair) {
+    modal.querySelectorAll('.gen-modal-reveal-pair').forEach(btn => {
+      btn.addEventListener('click', () => {
+        fetch('/api/reveal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath: btn.dataset.path }) });
+      });
+    });
+  } else {
+    document.getElementById('gen-modal-reveal')?.addEventListener('click', () => {
+      fetch('/api/reveal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath: data.presentationPath }) });
+    });
+  }
   modal.addEventListener('click', e => { if (e.target === modal) close(); }, { once: true });
 }
 
@@ -13385,13 +13523,16 @@ function helpSections() {
     label: 'Building a Deck',
     html: `
       <h3>Deck identity &amp; the filename</h3>
-      <p>The header fields become the export filename:</p>
-      <p class="help-pre">Message_YY.MM.DD_Series_Title</p>
+      <p>The header fields become the export filename, and every export gets a sequential <code>_v{N}</code> suffix (starting at <code>_v1</code>) — a plain re-export becomes <code>_v2</code>, <code>_v3</code>, and so on:</p>
+      <p class="help-pre">Message_YY.MM.DD_Series_Title_v1</p>
       <ul>
         <li><strong>Date</strong> → <code>YY.MM.DD</code> (2-digit year).</li>
         <li><strong>Series</strong> and <strong>Title</strong> → PascalCase tokens (spaces and punctuation stripped).</li>
-        <li><strong>QR</strong> toggle (Decks → edit this deck) → appends <code>_SAT</code> and sets the default for which blanks fire the QR macro (see <em>QR Code</em>).</li>
+        <li><strong>QR</strong> toggle (Decks → edit this deck) → sets the default for which blanks fire the QR macro (see <em>QR Code</em>). It no longer changes the filename by itself — see <strong>QR Export pair</strong> below.</li>
       </ul>
+
+      <h4>QR Export pair</h4>
+      <p>Enable <strong>Preferences → QR Export → "Export both versions when QR is on"</strong> and, whenever the deck's QR toggle is on, pressing Export delivers <em>two</em> presentations in one action — one without QR, one with — sharing the exact same prop collection (no duplicate props written). They get sequential names off the same base, e.g. <code>..._v1</code> (no QR) and <code>..._v2</code> (QR). Handy for a Saturday/Sunday pair with otherwise identical content.</p>
 
       <h4>Adding &amp; ordering slides</h4>
       <ul>

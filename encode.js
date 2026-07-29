@@ -839,4 +839,89 @@ async function encode(spec, outputPath, legacyPropsDir) {
   return { presentationBytes: presentationBuf.length, props: writtenProps, presentationPath: outPath };
 }
 
-module.exports = { encode, encodeToBuffer, listPropsBackups, restorePropsBackup, getPropsConfigPath };
+/**
+ * Deliver TWO presentations that share one prop collection — e.g. a QR/no-QR
+ * pair for Saturday/Sunday. Both specs must carry the same prop-bearing slide
+ * content (same scripture/point propNames in the same order); QR-only
+ * differences are fine since collectPropSpecs never reads qrOn/qrMacro, only
+ * content fields. Props are built ONCE from specA and Configuration/Props is
+ * patched ONCE, so both presentations reference identical prop UUIDs instead
+ * of duplicating the DeckPro collection.
+ *
+ * @param {object} specA - first presentation to deliver (e.g. no-QR / v1)
+ * @param {object} specB - second presentation to deliver (e.g. QR / v2)
+ */
+async function encodeDeliverPair(specA, specB) {
+  const safeA = (specA.name || 'Untitled').replace(/[^a-zA-Z0-9_\-. ]/g, '_');
+  const safeB = (specB.name || 'Untitled').replace(/[^a-zA-Z0-9_\-. ]/g, '_');
+
+  // ── Build props ONCE — specA and specB have identical prop-relevant content ──
+  const { propSpecs, propUuidMap } = collectPropSpecs(specA.slides || [], specA.responses || {}, !!specA.includeResponseCard);
+  const usedSlotUuids = new Set(propSpecs.map(p => p.slotUuid).filter(Boolean));
+  for (const slot of DECKPRO_PROP_SLOTS) {
+    if (!usedSlotUuids.has(slot.uuid)) {
+      propSpecs.push({
+        type:          'point-single',
+        propName:      slot.slot,
+        slotName:      slot.slot,
+        slotUuid:      slot.uuid,
+        bodyText:      '',
+        propTransition: null,
+      });
+    }
+  }
+  let propBuf = null, propDocObj = null;
+  if (propSpecs.length > 0) {
+    propDocObj = buildAllPropCues(propSpecs, specA.style || {});
+    propBuf    = await encodePropDocument(propDocObj);
+  }
+
+  // ── Encode both presentations against the SAME propUuidMap ──
+  const bufA = await encodeToBuffer(specA, propUuidMap);
+  const bufB = await encodeToBuffer(specB, propUuidMap);
+
+  const libraryDir = getPro7LibraryPath(specA.pro7LibraryFolder || '', specA.pro7RootFolder || '');
+  fs.mkdirSync(libraryDir, { recursive: true });
+
+  function writeOne(safeName, buf) {
+    const presPath = path.join(libraryDir, `${safeName}.pro`);
+    try {
+      const entries = fs.readdirSync(libraryDir);
+      for (const entry of entries) {
+        if (entry === `${safeName}.pro` || (/^.+-\d+\.pro$/.test(entry) && entry.startsWith(safeName))) {
+          fs.unlinkSync(path.join(libraryDir, entry));
+        }
+      }
+    } catch (_) {}
+    fs.writeFileSync(presPath, buf);
+    try {
+      const oldPropsPath = path.join(libraryDir, `${safeName}_Props.pro`);
+      if (fs.existsSync(oldPropsPath)) fs.unlinkSync(oldPropsPath);
+    } catch (_) {}
+    return presPath;
+  }
+
+  const pathA = writeOne(safeA, bufA);
+  const pathB = writeOne(safeB, bufB);
+
+  let propsBackup = null, propsInstalled = true, propsError = null;
+  if (propBuf && propDocObj) {
+    const r = await updateConfigProps(propDocObj.cues || [], specA.pro7RootFolder || '');
+    propsBackup = r && r.backupPath ? path.basename(r.backupPath) : null;
+    if (r && r.skipped) {
+      propsInstalled = false;
+      propsError = r.reason || 'Configuration/Props not found';
+    }
+  }
+
+  return {
+    delivered: true,
+    presentations: [
+      { fileName: `${safeA}.pro`, path: pathA, bytes: bufA.length },
+      { fileName: `${safeB}.pro`, path: pathB, bytes: bufB.length },
+    ],
+    propsBackup, propsInstalled, propsError,
+  };
+}
+
+module.exports = { encode, encodeDeliverPair, encodeToBuffer, listPropsBackups, restorePropsBackup, getPropsConfigPath };

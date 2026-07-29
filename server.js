@@ -7,7 +7,7 @@ const os           = require('os');
 const http         = require('http');
 const https        = require('https');
 const { execSync } = require('child_process');
-const { encode, listPropsBackups, restorePropsBackup } = require('./encode');
+const { encode, encodeDeliverPair, listPropsBackups, restorePropsBackup } = require('./encode');
 const { extractScheme, listPresentations } = require('./extractScheme');
 const library              = require('./library');
 
@@ -1057,7 +1057,7 @@ app.post('/api/sync/push', (req, res) => {
 
 app.post('/api/generate', async (req, res) => {
   try {
-    const { spec, fileName } = req.body;
+    const { spec, fileName, pairSpec, pairFileName } = req.body;
     if (!spec || !fileName) return res.status(400).json({ ok: false, error: 'Missing spec or fileName' });
 
     const safe = fileName.replace(/[^a-zA-Z0-9_\-. ]/g, '_');
@@ -1066,6 +1066,38 @@ app.post('/api/generate', async (req, res) => {
     if (spec.downloadMode) {
       const result = await encode(spec);
       return res.json({ ok: true, ...result });
+    }
+
+    // Paired delivery — two presentations (e.g. no-QR/QR) sharing one prop
+    // collection. Only supported alongside deliverMode (the live-library path);
+    // auto-manage Pro7 quits/relaunches once, wrapping both writes.
+    if (pairSpec && pairFileName) {
+      if (!spec.deliverMode) return res.status(400).json({ ok: false, error: 'Paired export requires deliverMode' });
+      const safePair = pairFileName.replace(/[^a-zA-Z0-9_\-. ]/g, '_');
+      pairSpec.name = safePair;
+
+      let pro7WasRunning = false;
+      let pro7Relaunched = false;
+      if (spec.autoManagePro7 === true && pro7IsRunning()) {
+        pro7WasRunning = true;
+        const quit = await quitPro7AndWait();
+        if (!quit) {
+          return res.status(409).json({ ok: false, error: 'Could not close ProPresenter — close it manually and retry.' });
+        }
+      }
+
+      const result = await encodeDeliverPair(spec, pairSpec);
+      if (pro7WasRunning) pro7Relaunched = launchPro7();
+
+      return res.json({
+        ok: true,
+        delivered: !!result.delivered,
+        presentations: result.presentations,
+        propsBackup: result.propsBackup || null,
+        propsInstalled: result.propsInstalled !== false,
+        propsError: result.propsError || null,
+        pro7Relaunched,
+      });
     }
 
     // Auto-manage ProPresenter: if it's running and the deck patches the live
