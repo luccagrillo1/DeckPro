@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.19.5';
+const APP_VERSION = '4.20.0';
 
 const CHANGELOG = [
+  {
+    version: '4.20.0',
+    date: '2026-07-29',
+    changes: [
+      'The Diagnostic Bundle (··· → Export Diagnostic Bundle) now includes a rolling log of the last 50 things the app showed you — every success/error/warning toast, plus any JS errors — each with a timestamp, instead of just JS errors. It\'s a "what just happened" trail you can hand over verbatim to describe a problem, not only a snapshot of current settings.',
+    ],
+  },
   {
     version: '4.19.5',
     date: '2026-07-29',
@@ -3408,16 +3415,19 @@ let _tipTimeout = null;
 
 // ─── Diagnostics ──────────────────────────────────────────────────────────────
 
-const _recentErrors = [];
-function recordError(kind, msg, extra) {
-  _recentErrors.push({ at: new Date().toISOString(), kind, msg: String(msg || '').slice(0, 500), extra: extra ? String(extra).slice(0, 500) : undefined });
-  if (_recentErrors.length > 25) _recentErrors.shift();
+// Rolling log of recent app activity (toasts + JS errors) — a "temp log" a
+// user can hand over verbatim (via Export Diagnostic Bundle) to show exactly
+// what led up to a problem, not just the app's general state at the time.
+const _eventLog = [];
+function logEvent(kind, msg, extra) {
+  _eventLog.push({ at: new Date().toISOString(), kind, msg: String(msg || '').slice(0, 500), extra: extra ? String(extra).slice(0, 500) : undefined });
+  if (_eventLog.length > 50) _eventLog.shift();
 }
 function initDiagnostics() {
-  window.addEventListener('error', e => recordError('error', e.message, e.filename ? `${e.filename}:${e.lineno}` : ''));
-  window.addEventListener('unhandledrejection', e => recordError('promise', e.reason && e.reason.message ? e.reason.message : e.reason));
+  window.addEventListener('error', e => logEvent('error', e.message, e.filename ? `${e.filename}:${e.lineno}` : ''));
+  window.addEventListener('unhandledrejection', e => logEvent('promise', e.reason && e.reason.message ? e.reason.message : e.reason));
   const origErr = console.error.bind(console);
-  console.error = (...args) => { try { recordError('console', args.map(a => (a && a.message) || a).join(' ')); } catch (_) {} origErr(...args); };
+  console.error = (...args) => { try { logEvent('console', args.map(a => (a && a.message) || a).join(' ')); } catch (_) {} origErr(...args); };
 }
 
 async function buildDiagnosticBundle() {
@@ -3445,7 +3455,7 @@ async function buildDiagnosticBundle() {
     pro7: { connected: !!(typeof pro7rt !== 'undefined' && pro7rt.connected), liveMacroCount: (typeof pro7rt !== 'undefined' && pro7rt.liveMacros ? pro7rt.liveMacros.length : 0), schemeMacros: (activeStyleScheme()?.macros || []).length },
     library: (typeof _libStatus !== 'undefined' && _libStatus) ? { libraryDir: _libStatus.libraryDir, deckCount: _libStatus.deckCount } : null,
     exportHistory: (typeof loadGenHistory === 'function' ? loadGenHistory() : []).slice(0, 10).map(h => ({ name: h.fileName || h.name, at: h.at || h.date, ok: h.ok !== false })),
-    recentErrors: _recentErrors,
+    eventLog: _eventLog,
   };
   try {
     const res = await fetch('/api/setup/doctor');
@@ -10910,6 +10920,7 @@ function showWarningDialog(warnings, opts = {}) {
 // ─── Toast ────────────────────────────────────────────────────────────────────
 
 function toast(type, title, detail) {
+  logEvent('toast:' + type, title, detail);
   const wrap = document.getElementById('toast-wrap');
   const el   = document.createElement('div');
   el.className = `toast ${type}`;
@@ -14106,7 +14117,7 @@ function helpSections() {
       </ul>
 
       <h4>Diagnostic bundle</h4>
-      <p><strong>···&nbsp;→&nbsp;Export Diagnostic Bundle</strong> saves a JSON snapshot for troubleshooting — app version, platform, settings (with your API key and Pro7 password <em>excluded</em>; only a yes/no that they're set), a deck &amp; style summary, macro setup, Pro7/library status, recent export history and the last captured errors. Hand this over when reporting a problem instead of screenshots.</p>
+      <p><strong>···&nbsp;→&nbsp;Export Diagnostic Bundle</strong> saves a JSON snapshot for troubleshooting — app version, platform, settings (with your API key and Pro7 password <em>excluded</em>; only a yes/no that they're set), a deck &amp; style summary, macro setup, Pro7/library status, recent export history, and a rolling log of the last 50 things the app showed you (every success/error/warning toast, plus any JS errors) with timestamps — a "what just happened" trail, not just a snapshot of current state. Hand this over when reporting a problem instead of screenshots.</p>
 
       <h4>Updates &amp; rollback</h4>
       <p><strong>Check for Updates…</strong> pulls the latest release. If an update misbehaves, <strong>Rollback</strong> reverts to the previous version.</p>
