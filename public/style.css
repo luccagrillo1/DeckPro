@@ -1232,7 +1232,7 @@ body.dark .slide-item.active { background: rgba(224,96,16,.12); }
 .si-badge-qr {
   background: transparent;
   padding: 3px 1px;
-  color: var(--orange);
+  color: var(--text);
   display: inline-flex;
   align-items: center;
 }

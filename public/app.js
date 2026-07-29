@@ -2,9 +2,21 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.19.3';
+const APP_VERSION = '4.19.4';
 
 const CHANGELOG = [
+  {
+    version: '4.19.4',
+    date: '2026-07-29',
+    changes: [
+      'Fixed: the sidebar QR indicator icon rendered orange instead of white.',
+      'Fixed: Smart Notes\' bold-detection didn\'t recognize Google Docs\' actual bold export format (an inline font-weight style, not a <b>/<strong> tag), so bolded words in your notes silently failed to carry over as emphasis when added to a slide.',
+      'Renamed "Palette"/"Palettes" to "Style"/"Styles" throughout the UI (labels, tooltips, toasts, warnings, Help Guide) — no change to the underlying data or file format.',
+      'Fixed the Intelligent Notes mode\'s Response Card auto-fill: it only recognized bulleted list items, silently finding nothing when response options were typed as plain paragraphs (a common pattern); a second bug could then wipe out the single remaining candidate by over-aggressively matching it against the boilerplate decision line.',
+      'Confirmed version-title generation has always used a lowercase "v" (e.g. "_v3") — no code change needed, called out here since it was flagged as a must-hold guarantee.',
+      'Build Order editor now enforces ProPresenter\'s real constraint: the first build item in a list can only start "With Slide" or "On Click"; every item after that can only start "On Click", "With Previous", or "After Previous" (referencing the item directly above it). Reordering, deleting, or adding rows now auto-corrects any item whose start type becomes invalid for its new position. This also fixed a latent bug in the built-in default Scripture build order, which had its first item set to an invalid "After Previous."',
+    ],
+  },
   {
     version: '4.19.3',
     date: '2026-07-29',
@@ -2374,10 +2386,10 @@ const TOOLTIPS = {
   'queue-format':             'Queue format\nNext Reference / Reference + Phrase show only the single next slide. Full List shows every upcoming slide.',
   // Preferences — Schemes panel
   'feature-visibility':       'Feature Visibility\nHide advanced fields so the slide editor is simpler when handing off to other users. Turning one off just hides it — it doesn\'t change exports.',
-  'scheme-new':               'New Palette\nCreate a blank palette from defaults.',
-  'scheme-dupe':              'Duplicate\nCopy this palette into a new editable one — the usual way to make your own look.',
-  'scheme-import':            'Import Palette\nLoad a palette JSON file (from Export, or shared by someone else) as a new palette.',
-  'scheme-export':            'Export Palette\nSave this palette as a JSON file — share it, or back it up.',
+  'scheme-new':               'New Style\nCreate a blank style from defaults.',
+  'scheme-dupe':              'Duplicate\nCopy this style into a new editable one — the usual way to make your own look.',
+  'scheme-import':            'Import Style\nLoad a style JSON file (from Export, or shared by someone else) as a new style.',
+  'scheme-export':            'Export Style\nSave this style as a JSON file — share it, or back it up.',
   // Response Card
   'decision-text':            'Decision Text\nThe main commitment statement shown on the Response Card slide.',
   // Rich-text toolbar
@@ -2654,7 +2666,7 @@ const DEFAULT_STYLE_SCHEME = () => ({
   // Build order per slide type
   buildOrders: {
     content: [
-      { id: 'bo-c1', element: 'body',  dir: 'out', start: 'START_AFTER_PREVIOUS', delay: 60, transition: 'dissolve', duration: 0.6, enabled: true },
+      { id: 'bo-c1', element: 'body',  dir: 'out', start: 'START_WITH_SLIDE', delay: 60, transition: 'dissolve', duration: 0.6, enabled: true },
       { id: 'bo-c2', element: 'title', dir: 'out', start: 'START_WITH_PREVIOUS',  delay: 0,  transition: 'dissolve', duration: 0.6, enabled: true },
     ],
     point:   [],
@@ -4591,6 +4603,29 @@ const BO_STARTS = [
   ['START_AFTER_PREVIOUS','After Previous'],
 ];
 
+// Mirrors a real constraint in ProPresenter's own build-order UI: the FIRST
+// build item in a slide's list can only start "With Slide" (i.e. as soon as
+// the slide's own transition finishes) or "On Click" — there's no earlier
+// item for it to start "with"/"after". Every item AFTER the first can only
+// reference the item directly above it — "On Click", "With Previous", or
+// "After Previous" — "With Slide" only ever makes sense once, for whichever
+// build the slide itself kicks off.
+function validBoStartsForPosition(i) {
+  return i === 0
+    ? ['START_WITH_SLIDE', 'ON_CLICK']
+    : ['ON_CLICK', 'START_WITH_PREVIOUS', 'START_AFTER_PREVIOUS'];
+}
+// Reordering/adding/removing rows can leave an entry's `start` invalid for its
+// NEW position (e.g. deleting row 1 promotes row 2 — previously "With
+// Previous" — into position 0, where that no longer means anything). Called
+// after any structural change, once the caller already holds a forked
+// (non-Global-inheriting) entries array, so it's always safe to mutate here.
+function sanitizeBoStarts(entries) {
+  entries.forEach((entry, i) => {
+    if (!validBoStartsForPosition(i).includes(entry.start)) entry.start = 'ON_CLICK';
+  });
+}
+
 const BO_TRANSITIONS = [
   ['cut',      'Cut'],
   ['dissolve', 'Dissolve'],
@@ -4627,7 +4662,8 @@ function renderBuildTable(tab, scheme, locked) {
         </td>
         <td class="bo-cell-start">
           <select class="bo-start" data-idx="${i}" ${dis}>
-            ${BO_STARTS.map(([val, lbl]) => `<option value="${val}" ${entry.start === val ? 'selected' : ''}>${lbl}</option>`).join('')}
+            ${BO_STARTS.filter(([val]) => validBoStartsForPosition(i).includes(val))
+              .map(([val, lbl]) => `<option value="${val}" ${entry.start === val ? 'selected' : ''}>${lbl}</option>`).join('')}
           </select>
         </td>
         <td class="bo-cell-delay">
@@ -4712,7 +4748,7 @@ function attachBuildOrderHandlers(getScheme, panel, locked) {
     const glbMotion = ensureGlobalMotion();
     glbMotion.buildOrders = deepClone(s.buildOrders ?? glbMotion.buildOrders);
     saveState(); renderStylePanel(panel);
-    toast('success', 'Pushed to Global', 'Every palette inheriting build orders will now use this.');
+    toast('success', 'Pushed to Global', 'Every style inheriting build orders will now use this.');
   });
 
   attachBuildRowHandlers(getEntries, wrap, getScheme, panel, locked);
@@ -4737,6 +4773,7 @@ function attachBuildRowHandlers(getEntries, wrap, getScheme, panel, locked) {
       } else if (btn.dataset.dir === 'down' && i < entries.length - 1) {
         [entries[i], entries[i + 1]] = [entries[i + 1], entries[i]];
       }
+      sanitizeBoStarts(entries);
       saveState(); refresh();
     });
   });
@@ -4744,7 +4781,9 @@ function attachBuildRowHandlers(getEntries, wrap, getScheme, panel, locked) {
   // Delete row
   wrap.querySelectorAll('.bo-del').forEach(btn => {
     btn.addEventListener('click', () => {
-      getEntries().splice(Number(btn.dataset.idx), 1);
+      const entries = getEntries();
+      entries.splice(Number(btn.dataset.idx), 1);
+      sanitizeBoStarts(entries);
       saveState(); refresh();
     });
   });
@@ -4818,9 +4857,10 @@ function attachBuildRowHandlers(getEntries, wrap, getScheme, panel, locked) {
   if (addBtn) {
     addBtn.addEventListener('click', () => {
       const elements = BO_ELEMENTS[_boActiveTab] || ['this slide'];
-      getEntries().push({
+      const entries = getEntries();
+      entries.push({
         id: uid(), element: elements[0], dir: 'out',
-        start: 'START_AFTER_PREVIOUS', delay: 0,
+        start: entries.length === 0 ? 'ON_CLICK' : 'START_AFTER_PREVIOUS', delay: 0,
         transition: 'dissolve', duration: 0.6, enabled: true,
       });
       saveState(); refresh();
@@ -5056,7 +5096,7 @@ function attachSchemesMacrosTab(containerId) {
     if (e.target.id === 'smac-wf-push') {
       state.globalMacros = deepClone(resolvedMacros());
       saveState(); rerender();
-      toast('success', 'Pushed to Global', 'Every palette inheriting macros will now use this.');
+      toast('success', 'Pushed to Global', 'Every style inheriting macros will now use this.');
       return;
     }
     if (e.target.classList.contains('smac-del')) {
@@ -5189,7 +5229,7 @@ function attachSchemesStageTab(containerId) {
     if (e.target.id === 'sstage-wf-push') {
       state.globalStageDisplays = deepClone(resolvedStageDisplays());
       saveState(); rerender();
-      toast('success', 'Pushed to Global', 'Every palette inheriting stage displays will now use this.');
+      toast('success', 'Pushed to Global', 'Every style inheriting stage displays will now use this.');
       return;
     }
     if (e.target.classList.contains('cm-chip') && e.target.closest('.sstage-list')) {
@@ -5398,7 +5438,7 @@ function attachSchemesResponseCardTab(containerId) {
       const els = deepClone(resolvedElements());
       state.globalRcElements = els;
       saveState(); rerender();
-      toast('success', 'Pushed to Global', 'Every palette inheriting Response Card elements will now use this.');
+      toast('success', 'Pushed to Global', 'Every style inheriting Response Card elements will now use this.');
     }
   });
 }
@@ -5488,7 +5528,7 @@ function renderConfigPanel(panel) {
           <span>Sync portable settings with iCloud</span>
         </div>
         <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
-          Keeps your <strong>palettes</strong> and preferences (display names, feature visibility, Bible defaults, book names, speakers, response card, queue format) in step across your Macs via iCloud Drive. Machine-specific settings — Pro7 paths &amp; password, export folder, API keys, theme — and the current draft stay on this computer.
+          Keeps your <strong>styles</strong> and preferences (display names, feature visibility, Bible defaults, book names, speakers, response card, queue format) in step across your Macs via iCloud Drive. Machine-specific settings — Pro7 paths &amp; password, export folder, API keys, theme — and the current draft stay on this computer.
         </div>
         <div class="sync-status" id="sync-status" style="margin-top:8px"></div>
       </div>
@@ -6852,7 +6892,7 @@ function schemePreviewPanel(scheme) {
         <div class="sp-notes" style="font-family:${fam(scheme.notesFont)}">Speaker note preview — only visible on the ${dn('monitor')}.</div>
       </div>
     </div>
-    <p class="sp-foot">Approximate preview from this palette's fonts, sizes and colours.</p>`;
+    <p class="sp-foot">Approximate preview from this style's fonts, sizes and colours.</p>`;
 }
 
 // Visual Layout preview — scaled Main + Prop canvases with clickable region boxes
@@ -6933,7 +6973,7 @@ function renderPaletteTab(rawScheme, t, dis) {
       </span>
     </div>`;
   };
-  return `<p class="style-group-hint">The five palette slots every scheme starts from. Fields in Text / Layout / Motion inherit from these unless they have their own override.</p>
+  return `<p class="style-group-hint">The five style slots every scheme starts from. Fields in Text / Layout / Motion inherit from these unless they have their own override.</p>
     <div class="tcard"><div class="tcard-hd">Fonts</div>
       ${fontSlot('font1',    'Font 1',    'Body · Point · Utility · Notes · Queue · Live')}
       ${fontSlot('font2',    'Font 2',    'Title · Response Card title')}
@@ -6964,9 +7004,9 @@ function renderGlobalPanel(panel, schemeOptionsHTML) {
   const _gTab = (_styleTab && ['text','layout','motion','macros','stage','responseCard'].includes(_styleTab)) ? _styleTab : 'text';
 
   panel.innerHTML = `<div class="slide-form">
-    <h2>Palettes</h2>
+    <h2>Styles</h2>
     <p class="scheme-intro">
-      A palette defines the visual style of your slides — fonts, sizes, colours, animations and positions.
+      A style sets the visual look of your slides — fonts, sizes, colours, animations and positions.
       Pick one to use for this deck, or duplicate to make your own.
     </p>
     <div class="scheme-toolbar">
@@ -6975,7 +7015,7 @@ function renderGlobalPanel(panel, schemeOptionsHTML) {
         ${schemeOptionsHTML}
       </select>
     </div>
-    <div class="global-view-banner">Global defaults — read-only. Push a value from any palette to update.</div>
+    <div class="global-view-banner">Global defaults — read-only. Push a value from any style to update.</div>
 
     <div class="style-tabs">
       <button class="style-tab${_gTab === 'text'   ? ' active' : ''}" data-gtab="text">Text</button>
@@ -7026,7 +7066,7 @@ function renderGlobalPanel(panel, schemeOptionsHTML) {
               <span class="cm-name-ro">${esc(m.name) || '(no macro picked)'}</span>
               <code class="cm-uuid-ro">${esc(m.uuid || '')}</code>
             </div><div class="smac-chips">${(m.triggers || []).map(t => `<span class="cm-chip active" style="pointer-events:none">${esc(t)}</span>`).join('') || '<span class="cm-empty" style="margin:0">no triggers</span>'}</div></div>`).join('')
-          : '<p class="cm-empty">No global macros yet — push one from a palette.</p>'}
+          : '<p class="cm-empty">No global macros yet — push one from a style.</p>'}
       </div>
       <div class="style-tab-body" id="g-tab-stage" ${_gTab !== 'stage' ? 'style="display:none"' : ''}>
         ${gStage.length
@@ -7034,7 +7074,7 @@ function renderGlobalPanel(panel, schemeOptionsHTML) {
               <span class="cm-name-ro">${esc(d.name) || '(no layout picked)'}</span>
               <code class="cm-uuid-ro">${esc(d.uuid || '')}</code>
             </div><div class="smac-chips">${(d.triggers || []).map(t => `<span class="cm-chip active" style="pointer-events:none">${esc(t)}</span>`).join('') || '<span class="cm-empty" style="margin:0">no triggers</span>'}</div></div>`).join('')
-          : '<p class="cm-empty">No global stage displays yet — push one from a palette.</p>'}
+          : '<p class="cm-empty">No global stage displays yet — push one from a style.</p>'}
       </div>
       <div class="style-tab-body" id="g-tab-responseCard" ${_gTab !== 'responseCard' ? 'style="display:none"' : ''}>
         <table class="bo-table"><thead><tr><th>Name</th><th>Role</th><th>Text</th><th>X</th><th>Y</th><th>W</th><th>H</th></tr></thead>
@@ -7306,19 +7346,19 @@ function renderStylePanel(panel) {
   panel.innerHTML = `
     <div class="slide-form">
       <h2>
-        Palettes
+        Styles
       </h2>
       <p class="scheme-intro">
-        A palette defines the visual style of your slides — fonts, sizes, colours, animations and positions.
+        A style sets the visual look of your slides — fonts, sizes, colours, animations and positions.
         Pick one to use for this deck, or duplicate to make your own.
       </p>
 
       <div class="scheme-toolbar">
-        <select id="style-scheme-select" class="scheme-tb-select" title="Active palette">
+        <select id="style-scheme-select" class="scheme-tb-select" title="Active style">
           <option value="__global__">◈ Global</option>
           ${schemeOptionsHTML}
         </select>
-        <input type="text" id="style-scheme-name" class="scheme-tb-name" value="${esc(scheme.name)}" placeholder="Palette name" ${dis}>
+        <input type="text" id="style-scheme-name" class="scheme-tb-name" value="${esc(scheme.name)}" placeholder="Style name" ${dis}>
         <div class="scheme-tb-icons">
           <button class="btn-scheme-icon" id="btn-scheme-new" data-tip-key="scheme-new">
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1v11M1 6.5h11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -7334,12 +7374,12 @@ function renderStylePanel(panel) {
           <button class="btn-scheme-icon" id="btn-scheme-export" data-tip-key="scheme-export">
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 8.5V1M3.5 4.5l3-3.5 3 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 9.5v1.5A1 1 0 0 0 2 12h9a1 1 0 0 0 1-1V9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
           </button>
-          <button class="btn-scheme-icon btn-scheme-icon-danger" id="btn-scheme-delete" title="Delete palette"
+          <button class="btn-scheme-icon btn-scheme-icon-danger" id="btn-scheme-delete" title="Delete style"
             ${state.styleSchemes.length <= 1 ? 'disabled' : ''}>
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 3.5h9M5 3.5V2h3v1.5M4 3.5l.5 7h4l.5-7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
           <button class="btn-scheme-lock ${locked ? 'locked' : 'unlocked'}" id="btn-scheme-lock"
-            title="${locked ? 'Unlock to edit' : 'Lock palette'}">${locked ? '🔒' : '🔓'}</button>
+            title="${locked ? 'Unlock to edit' : 'Lock style'}">${locked ? '🔒' : '🔓'}</button>
         </div>
       </div>
 
@@ -7347,7 +7387,7 @@ function renderStylePanel(panel) {
       <div class="scheme-lock-banner">
         <span class="slb-icon">🔒</span>
         <div class="slb-text">
-          <strong>This palette is locked</strong>
+          <strong>This style is locked</strong>
           <span>Locked so it can't be changed by accident. Duplicate it to make your own editable copy, or unlock to edit this one directly.</span>
         </div>
         <div class="slb-actions">
@@ -7357,7 +7397,7 @@ function renderStylePanel(panel) {
       </div>` : ''}
 
       <div class="style-tabs">
-        <button class="style-tab style-tab-palette${_styleTab === 'palette' ? ' active' : ''}" data-tab="palette">Palette</button>
+        <button class="style-tab style-tab-palette${_styleTab === 'palette' ? ' active' : ''}" data-tab="palette">Style</button>
         <span class="style-tab-sep"></span>
         ${[['text','Text'],['layout','Layout'],['motion','Motion']].map(([t, lbl]) => `
           <button class="style-tab${_styleTab === t ? ' active' : ''}" data-tab="${t}">${lbl}</button>`).join('')}
@@ -7590,7 +7630,7 @@ function renderStylePanel(panel) {
     const a = Object.assign(document.createElement('a'), { href: url, download: `${slug}.deckpro-palette.json` });
     document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
-    toast('success', 'Palette exported', `${s.name}.json`);
+    toast('success', 'Style exported', `${s.name}.json`);
   });
   document.getElementById('btn-scheme-import').addEventListener('click', () => {
     document.getElementById('scheme-import-file').click();
@@ -7603,17 +7643,17 @@ function renderStylePanel(panel) {
     try {
       parsed = JSON.parse(await file.text());
     } catch (err) {
-      toast('error', 'Could not import palette', 'That file is not valid JSON.');
+      toast('error', 'Could not import style', 'That file is not valid JSON.');
       return;
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !parsed.typography) {
-      toast('error', 'Could not import palette', 'That file doesn\'t look like a DeckPro palette.');
+      toast('error', 'Could not import style', 'That file doesn\'t look like a DeckPro style.');
       return;
     }
-    const p = { ...deepClone(parsed), id: 'scheme_' + Date.now(), name: (parsed.name || 'Imported Palette'), isDefault: false, isLocked: false };
+    const p = { ...deepClone(parsed), id: 'scheme_' + Date.now(), name: (parsed.name || 'Imported Style'), isDefault: false, isLocked: false };
     state.styleSchemes.push(p); state.activeSchemeId = p.id;
     saveState(); renderStylePanel(panel);
-    toast('success', 'Palette imported', p.name);
+    toast('success', 'Style imported', p.name);
   });
 
   // Lock / unlock
@@ -7824,7 +7864,7 @@ function renderStylePanel(panel) {
         glbMotion.transitionDuration = s.transitionDuration ?? glbMotion.transitionDuration;
       }
       saveState(); renderStylePanel(panel);
-      toast('success', 'Pushed to Global', 'Every palette inheriting this will now use it.');
+      toast('success', 'Pushed to Global', 'Every style inheriting this will now use it.');
     });
   });
 
@@ -10407,12 +10447,12 @@ function preflightWarnings() {
   const activeMacros = (activeStyleScheme().macros ?? ensureGlobalMacros());
   for (const m of activeMacros) {
     if (m.name && m.uuid && !(m.triggers || []).length)
-      warn(`Macro "${m.name}" has no triggers set — it will never fire on export (Palette → Macros)`);
+      warn(`Macro "${m.name}" has no triggers set — it will never fire on export (Styles → Macros)`);
   }
   const activeStageDisplays = (activeStyleScheme().stageDisplays ?? ensureGlobalStageDisplays());
   for (const d of activeStageDisplays) {
     if (d.name && d.uuid && !(d.triggers || []).length)
-      warn(`Stage display "${d.name}" has no triggers set — it will never fire on export (Palette → Stage)`);
+      warn(`Stage display "${d.name}" has no triggers set — it will never fire on export (Styles → Stage)`);
   }
 
   // ── Quote mismatch checks ──────────────────────────────────────────────────
@@ -11189,12 +11229,32 @@ function showNotesDoc({ id, styleText, bodyHtml }, title) {
 
 // Words the author bolded within a notes block, normalized for later
 // word-by-word matching against Bible-API text (case/punctuation-insensitive).
+// Checks COMPUTED font-weight while walking the tree (same approach as
+// extractHighlightedText below) rather than matching <b>/<strong> tags —
+// Google Docs' actual HTML export represents bold as inline
+// `style="font-weight:700"` on a <span>, not a semantic tag, so a tag-name
+// selector silently finds nothing for the most common real-world source.
+function _isBoldWeight(computedFontWeight) {
+  if (computedFontWeight === 'bold' || computedFontWeight === 'bolder') return true;
+  const n = parseInt(computedFontWeight, 10);
+  return !isNaN(n) && n >= 600;
+}
 function extractBoldWords(el) {
   const words = new Set();
-  el.querySelectorAll('b,strong').forEach(node => {
-    const t = (node.textContent || '').toLowerCase().replace(/[^\w\s']/g, '');
+  const addWords = (text) => {
+    const t = (text || '').toLowerCase().replace(/[^\w\s']/g, '');
     t.split(/\s+/).filter(Boolean).forEach(w => words.add(w));
-  });
+  };
+  const walk = (node, inBold) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (inBold) addWords(node.textContent);
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const bold = inBold || _isBoldWeight(getComputedStyle(node).fontWeight);
+    node.childNodes.forEach(child => walk(child, bold));
+  };
+  el.childNodes.forEach(child => walk(child, _isBoldWeight(getComputedStyle(el).fontWeight)));
   return words;
 }
 
@@ -11251,15 +11311,19 @@ function resolveBlockRole(b) {
   return 'auto';
 }
 
-// Gather consecutive <li> blocks following block i (a heading's bullet list).
-// Stops early at a bullet that's been explicitly mapped to a non-auto role, or
-// that carries its own highlight differing from the triggering block's — both
-// signal the author intentionally split it off as a separate suggestion.
+// Gather consecutive <li> OR <p> blocks following block i (a heading's list
+// of options). Plain paragraphs count too, not just real <li> list items —
+// pastors very often just type "1. ..." / "- ..." as ordinary paragraph
+// lines rather than using the doc editor's actual bullet-list formatting, and
+// requiring <li> silently found nothing for that (extremely common) case.
+// Stops at the next heading, at a bullet explicitly mapped to a non-auto
+// role, or at one carrying its own highlight differing from the triggering
+// block's — all three signal the author intentionally split it off.
 function collectBullets(blocks, i) {
   const trigger = blocks[i];
   const bullets = [];
   let j = i + 1, consumed = 0;
-  while (j < blocks.length && blocks[j].tag === 'li') {
+  while (j < blocks.length && (blocks[j].tag === 'li' || blocks[j].tag === 'p')) {
     const blk = blocks[j];
     if (resolveBlockRole(blk) !== 'auto') break;
     if (blk.bg && blk.bg !== trigger.bg) break;
@@ -11340,14 +11404,28 @@ function buildNotesSuggestions() {
   };
 
   // "I have decided to follow Jesus today!" (or whatever this deck's decisionText
-  // is) is boilerplate, not a weekly response option — count word overlap against
-  // it and demote high-overlap bullets to the back before taking the first 3, so a
-  // decision line mixed in with real options doesn't crowd one out.
+  // is) is boilerplate, not a weekly response option — score how closely a line
+  // PARAPHRASES it and drop the closest match, so a decision line mixed in with
+  // real options doesn't crowd one out. Common short words ("i", "to", "a") are
+  // excluded from the comparison and don't count as a match on their own —
+  // otherwise an unrelated option like "I want to start a relationship with
+  // Jesus" shares just enough filler words with "I have decided to follow
+  // Jesus today" to look like a paraphrase and gets wrongly dropped. The score
+  // is the fraction of the CANDIDATE's own significant words found in the
+  // phrase, so a true close paraphrase (which reuses most of the phrase's
+  // wording) scores high while a merely-related option scores low.
+  const NOTES_STOP_WORDS = new Set(['i','a','an','the','to','of','in','on','at','is','are','was','were',
+    'and','or','but','with','for','my','me','you','your','it','this','that','be','have','has','had']);
   const decisionWordOverlap = (text, phrase) => {
-    const words = s => (s || '').toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean);
+    const words = s => (s || '').toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/)
+      .filter(w => w && !NOTES_STOP_WORDS.has(w));
     const phraseWords = new Set(words(phrase));
-    return words(text).filter(w => phraseWords.has(w)).length;
+    const textWords = words(text);
+    if (!textWords.length) return 0;
+    const matched = textWords.filter(w => phraseWords.has(w)).length;
+    return matched / textWords.length;
   };
+  const DECISION_PARAPHRASE_THRESHOLD = 0.6; // fraction of significant words that must match
 
   const makeResponse = (b, conf) => {
     const grp = collectBullets(blocks, b._i);
@@ -11357,10 +11435,17 @@ function buildNotesSuggestions() {
     // decision text — pastors often write their own close paraphrase of it
     // rather than the exact string. Drop just that one line and keep the rest
     // in their original order.
+    // Only ever drop the decision line when there's more than one candidate —
+    // otherwise a single fallback line (e.g. no real bullets were found, so
+    // the trigger block's own text stood in) could share one incidental word
+    // with the decision phrase and get filtered down to nothing, silently
+    // turning "Add" into a no-op instead of filling anything in.
     let pool = raw;
-    const scored = raw.map((t, i) => ({ t, i, overlap: decisionWordOverlap(t, decisionPhrase) }));
-    const top = scored.reduce((a, c) => (c.overlap > a.overlap ? c : a), scored[0]);
-    if (top && top.overlap > 0) pool = raw.filter((_, i) => i !== top.i);
+    if (raw.length > 1) {
+      const scored = raw.map((t, i) => ({ t, i, overlap: decisionWordOverlap(t, decisionPhrase) }));
+      const top = scored.reduce((a, c) => (c.overlap > a.overlap ? c : a), scored[0]);
+      if (top && top.overlap >= DECISION_PARAPHRASE_THRESHOLD) pool = raw.filter((_, i) => i !== top.i);
+    }
     const bullets = pool.slice(0, 3);
     push({ type: 'response', bullets, preview: bullets.join(' • '), blockIdx: b.idx,
            confidence: conf, key: 'rc:' + _normLabel(bullets.join('|')),
@@ -13534,7 +13619,7 @@ function helpSections() {
         <li>Set the <strong>Series</strong>, <strong>Title</strong> and <strong>Date</strong> in the header bar.</li>
         <li>Add slides from the left sidebar — Scripture, Point, Blank, Image, Custom.</li>
         <li>Fill in each slide: body text, reference, bullets. Use Bible Lookup to auto-fill verses.</li>
-        <li>Pick a <strong>Palette</strong> (visual style) if you want something other than the default.</li>
+        <li>Pick a <strong>Style</strong> (visual look) if you want something other than the default.</li>
         <li>Press <strong>Export</strong> (<span class="help-kbd">⌘E</span>). DeckPro writes the deck and props into ProPresenter.</li>
         <li>Open ProPresenter — your deck is there, ready to present.</li>
       </ol>
@@ -13583,7 +13668,7 @@ function helpSections() {
       <ul>
         <li><strong>DeckPro Guide</strong> — this manual.</li>
         <li><strong>What's New</strong> — the changelog.</li>
-        <li><strong>Palettes</strong> — the visual-style editor (also “Schemes”).</li>
+        <li><strong>Styles</strong> — the visual-style editor (also “Palettes”/“Schemes”).</li>
         <li><strong>Preferences</strong> — app settings.</li>
         <li><strong>Machine Setup</strong> — one-time per-computer setup.</li>
         <li><strong>Export History</strong> — recent exports, with reveal-in-Finder.</li>
@@ -13712,15 +13797,15 @@ function helpSections() {
     label: 'Per-Slide Overrides',
     html: `
       <h3>Overrides</h3>
-      <p>Each content slide has an <strong>Overrides</strong> disclosure for one-off tweaks that don't belong to the whole palette:</p>
+      <p>Each content slide has an <strong>Overrides</strong> disclosure for one-off tweaks that don't belong to the whole style:</p>
       <ul>
         <li><strong>Prop Name</strong> — rename the generated prop / its ${D2} match name.</li>
-        <li><strong>Transition Override</strong> — a specific transition for this slide's main-screen change, instead of the palette default.</li>
+        <li><strong>Transition Override</strong> — a specific transition for this slide's main-screen change, instead of the style's default.</li>
         <li><strong>Prop Transition Override</strong> — same, for the ${D2} prop.</li>
         <li><strong>Macro Override</strong> — fire a specific configured macro on this slide.</li>
         <li><strong>Stage Layout</strong> — trigger a specific stage-display layout when this slide comes up.</li>
       </ul>
-      <p class="help-muted">Any override row can be hidden via <strong>Preferences → Feature Visibility → Overrides</strong>. Palette-wide macros and stage layouts (which fire by slide <em>type</em>) live in the Palette editor instead — see <em>Macros &amp; Stage</em>.</p>
+      <p class="help-muted">Any override row can be hidden via <strong>Preferences → Feature Visibility → Overrides</strong>. Style-wide macros and stage layouts (which fire by slide <em>type</em>) live in the Styles editor instead — see <em>Macros &amp; Stage</em>.</p>
     `,
   },
   {
@@ -13731,19 +13816,19 @@ function helpSections() {
       <p>Enable <strong>Response Card</strong> for a deck and DeckPro appends the full response-card package before the End slide — the hold slide, the decision prompt, and Response 1 / 2 / 3, each linked to the <strong>Response Card</strong> prop on the ${D2}.</p>
       <ul>
         <li>The hold and card slides automatically trigger the <strong>Response Card stage layout</strong> and the Message-Blank macro, so your stage display and lighting switch on cue.</li>
-        <li>The three response lines come from the deck's Response Card fields; everything else (positions, fonts) is defined in the palette's <strong>Response Card</strong> tab — see <em>LED Wall &amp; Inheritance</em>.</li>
+        <li>The three response lines come from the deck's Response Card fields; everything else (positions, fonts) is defined in the style's <strong>Response Card</strong> tab — see <em>LED Wall &amp; Inheritance</em>.</li>
       </ul>
     `,
   },
   {
     id: 'palettes',
-    label: 'Palettes: Overview',
+    label: 'Styles: Overview',
     html: `
-      <h3>Palettes &amp; the three tiers</h3>
-      <p>A <strong>palette</strong> defines every visual aspect of the generated slides — fonts, sizes, colours, positions, animations, macros, stage layouts. Open the editor from <strong>···&nbsp;→&nbsp;Palettes</strong>. Styling cascades through three tiers, broad to specific:</p>
+      <h3>Styles &amp; the three tiers</h3>
+      <p>A <strong>style</strong> defines every visual aspect of the generated slides — fonts, sizes, colours, positions, animations, macros, stage layouts. Open the editor from <strong>···&nbsp;→&nbsp;Styles</strong>. Styling cascades through three tiers, broad to specific:</p>
       <ul>
-        <li><strong>Global</strong> — the house-style baseline, shared by every palette. Read-only here (shown as <strong>◈&nbsp;Global</strong> in the palette picker); you change it by pushing a value up from a palette.</li>
-        <li><strong>Palette</strong> — base fonts and colours for this palette, cascading to all its fields.</li>
+        <li><strong>Global</strong> — the house-style baseline, shared by every style. Read-only here (shown as <strong>◈&nbsp;Global</strong> in the style picker); you change it by pushing a value up from a style.</li>
+        <li><strong>Style</strong> — base fonts and colours for this style, cascading to all its fields.</li>
         <li><strong>Custom</strong> — per-field overrides on top (a specific size, colour, position, transition…).</li>
       </ul>
 
@@ -13753,19 +13838,19 @@ function helpSections() {
       <h4>Managing values (right-click a cell)</h4>
       <ul>
         <li><strong>Reset to Global</strong> — drop a custom override and inherit again.</li>
-        <li><strong>Push to Global</strong> — send this value up so every inheriting palette adopts it.</li>
+        <li><strong>Push to Global</strong> — send this value up so every inheriting style adopts it.</li>
         <li><strong>Reset to Display 1</strong> — hand an ${D2} row back to inheriting the main screen (see <em>LED Wall</em>).</li>
       </ul>
 
-      <h4>Palette toolbar</h4>
+      <h4>Style toolbar</h4>
       <ul>
-        <li><strong>New</strong> — a fresh palette that inherits everything from Global.</li>
-        <li><strong>Duplicate</strong> — copy the current palette's exact values.</li>
-        <li><strong>Delete</strong>, <strong>Lock</strong> (🔓/🔒 — protect a palette from edits).</li>
+        <li><strong>New</strong> — a fresh style that inherits everything from Global.</li>
+        <li><strong>Duplicate</strong> — copy the current style's exact values.</li>
+        <li><strong>Delete</strong>, <strong>Lock</strong> (🔓/🔒 — protect a style from edits).</li>
       </ul>
 
       <h4>Tabs</h4>
-      <p><strong>Palette</strong> (base fonts/colours) · <strong>Text</strong> · <strong>Layout</strong> · <strong>Motion</strong> · <strong>Macros</strong> · <strong>Stage</strong> · <strong>Response Card</strong>. Each is covered in the next sections.</p>
+      <p><strong>Style</strong> (base fonts/colours) · <strong>Text</strong> · <strong>Layout</strong> · <strong>Motion</strong> · <strong>Macros</strong> · <strong>Stage</strong> · <strong>Response Card</strong>. Each is covered in the next sections.</p>
     `,
   },
   {
@@ -13811,17 +13896,17 @@ function helpSections() {
     label: 'Macros & Stage',
     html: `
       <h3>Macros tab</h3>
-      <p>Per-palette Pro7 macro triggers. Click <strong>+ Add Macro</strong> to import macros live from ProPresenter, then give each one <strong>triggers</strong>:</p>
+      <p>Per-style Pro7 macro triggers. Click <strong>+ Add Macro</strong> to import macros live from ProPresenter, then give each one <strong>triggers</strong>:</p>
       <ul>
         <li><strong>Slide-type chips</strong> — fire the macro on every Scripture / Point / Blank / Image / Custom slide.</li>
         <li><strong>Slide&nbsp;#</strong> position triggers — fire on specific slide positions (type a number, press Enter).</li>
       </ul>
 
       <h3>Stage tab</h3>
-      <p>Per-palette stage-display layouts, same model as Macros. <strong>+ Add Stage Display</strong> picks any Pro7 stage layout; assign it slide-type and/or Slide&nbsp;# triggers. The <strong>Stage Screen</strong> row at the top identifies the physical display these layouts target.</p>
+      <p>Per-style stage-display layouts, same model as Macros. <strong>+ Add Stage Display</strong> picks any Pro7 stage layout; assign it slide-type and/or Slide&nbsp;# triggers. The <strong>Stage Screen</strong> row at the top identifies the physical display these layouts target.</p>
 
       <div class="help-callout">
-        <strong>Whole-list inheritance.</strong> A palette's Macros / Stage lists inherit Global's list live until you edit them — the first change forks a private copy (an orange “Custom” badge appears). <strong>Reset to Global</strong> returns to inheriting; <strong>Push to Global</strong> shares your list with every inheriting palette.
+        <strong>Whole-list inheritance.</strong> A style's Macros / Stage lists inherit Global's list live until you edit them — the first change forks a private copy (an orange “Custom” badge appears). <strong>Reset to Global</strong> returns to inheriting; <strong>Push to Global</strong> shares your list with every inheriting style.
       </div>
       <p class="help-muted">Import your machine's macros and layouts once via <strong>···&nbsp;→&nbsp;Machine Setup</strong>.</p>
     `,
@@ -13840,7 +13925,7 @@ function helpSections() {
 
       <h3>Response Card tab</h3>
       <p>Defines the elements on the ${D2} response card (Display&nbsp;2): a Title, the Decision prompt, and Response 1–3, plus any custom elements. Each has an editable name (its Pro7 object name), text, position (X/Y/W/H) and style. The Decision and Response 1–3 <em>text</em> comes from the deck's Response Card item; everything else is set here.</p>
-      <p class="help-muted">Existing palettes keep their current ${D2} look untouched — only new palettes start out inheriting. Point Stacked (the dimmed revealed bullets) has no main-screen twin, so it stays independent.</p>
+      <p class="help-muted">Existing styles keep their current ${D2} look untouched — only new styles start out inheriting. Point Stacked (the dimmed revealed bullets) has no main-screen twin, so it stays independent.</p>
     `,
   },
   {
@@ -13869,12 +13954,12 @@ function helpSections() {
       </ul>
 
       <div class="help-callout">
-        <strong>The width cap.</strong> Fit Width can only ever <em>shrink</em> the box — never grow it past the Body width set in the palette's Layout tab. Widen the ceiling there if you need more room.
+        <strong>The width cap.</strong> Fit Width can only ever <em>shrink</em> the box — never grow it past the Body width set in the style's Layout tab. Widen the ceiling there if you need more room.
       </div>
 
       <h4>Display 2 (LED wall)</h4>
       <p><strong>+ Display 2</strong> (next to Fit Width, only shown while Fit Width itself is on) fits that slide's LED-wall box to its content too — on by default for new slides, alongside Fit Width. It runs its own independent search using Display 2's own font size, canvas, and body width — it does not copy whatever Display 1 computed.</p>
-      <p>Turn it off on a slide where you've hand-positioned the Display 2 box for a specific screen or NDI feed and want it left exactly where you put it — DeckPro will render that box at your palette's configured prop width, exactly as if Fit Width didn't exist. Turning Fit Width off resets this sub-toggle too.</p>
+      <p>Turn it off on a slide where you've hand-positioned the Display 2 box for a specific screen or NDI feed and want it left exactly where you put it — DeckPro will render that box at your style's configured prop width, exactly as if Fit Width didn't exist. Turning Fit Width off resets this sub-toggle too.</p>
     `,
   },
   {
@@ -13886,7 +13971,7 @@ function helpSections() {
 
       <h4>Setup — three pieces</h4>
       <ul>
-        <li><strong>Pick the macro.</strong> Palettes → <em>QR Code</em> tab → Pick Macro. One deck-wide setting, not per-palette — the macro that shows a QR code doesn't change with visual style.</li>
+        <li><strong>Pick the macro.</strong> Styles → <em>QR Code</em> tab → Pick Macro. One deck-wide setting, not per-style — the macro that shows a QR code doesn't change with visual style.</li>
         <li><strong>This deck's QR toggle.</strong> Decks → edit this deck → the QR toggle. Off by default. When on, it sets the <em>default</em> for every blank in the deck — before the QR Stop marker (see below), blanks default to firing the macro; after it, they default to not.</li>
         <li><strong>Per-slide QR toggle.</strong> Next to "Blank slide before this one" on scripture, point, and image slides. Overrides the auto default for that one blank specifically, and keeps that choice even if you later move the QR Stop marker or flip the deck's QR toggle.</li>
       </ul>
@@ -13978,7 +14063,7 @@ function helpSections() {
         <li><strong>Macros &amp; Stage Displays</strong> — import from the connected Pro7.</li>
         <li><strong>Path scan</strong> — confirms everything resolves.</li>
       </ul>
-      <p class="help-muted">Machine-specific settings (Pro7 paths, password, export folder, API keys, theme) stay on this computer; palettes and shared preferences can sync via iCloud.</p>
+      <p class="help-muted">Machine-specific settings (Pro7 paths, password, export folder, API keys, theme) stay on this computer; styles and shared preferences can sync via iCloud.</p>
     `,
   },
   {
@@ -13989,7 +14074,7 @@ function helpSections() {
       <p>Open with <strong>···&nbsp;→&nbsp;Preferences</strong>.</p>
       <ul>
         <li><strong>Deck Library</strong> — where decks are stored; point at a shared folder to sync across Macs.</li>
-        <li><strong>iCloud Sync</strong> — keep palettes and portable preferences in step across your Macs.</li>
+        <li><strong>iCloud Sync</strong> — keep styles and portable preferences in step across your Macs.</li>
         <li><strong>Display Names</strong> — rename Display 1 / 2 / 3 (e.g. “${D1}”, “${D2}”, “${D3}”). Your names appear everywhere in the app.</li>
         <li><strong>Speakers</strong> — recurring names for the New Deck dropdown.</li>
         <li><strong>Queue</strong> — the upcoming-slide format on the queue sidebar: Next Reference Only · Next Reference + First Phrase · Full List.</li>
@@ -14014,7 +14099,7 @@ function helpSections() {
       </ul>
 
       <h4>Diagnostic bundle</h4>
-      <p><strong>···&nbsp;→&nbsp;Export Diagnostic Bundle</strong> saves a JSON snapshot for troubleshooting — app version, platform, settings (with your API key and Pro7 password <em>excluded</em>; only a yes/no that they're set), a deck &amp; palette summary, macro setup, Pro7/library status, recent export history and the last captured errors. Hand this over when reporting a problem instead of screenshots.</p>
+      <p><strong>···&nbsp;→&nbsp;Export Diagnostic Bundle</strong> saves a JSON snapshot for troubleshooting — app version, platform, settings (with your API key and Pro7 password <em>excluded</em>; only a yes/no that they're set), a deck &amp; style summary, macro setup, Pro7/library status, recent export history and the last captured errors. Hand this over when reporting a problem instead of screenshots.</p>
 
       <h4>Updates &amp; rollback</h4>
       <p><strong>Check for Updates…</strong> pulls the latest release. If an update misbehaves, <strong>Rollback</strong> reverts to the previous version.</p>
@@ -14062,7 +14147,7 @@ function helpSections() {
       <h4>Architecture</h4>
       <ul>
         <li><strong>Electron + Express.</strong> <code>node server.js</code> serves the UI; Electron wraps it (<code>main.js</code> holds the native menu &amp; accelerators).</li>
-        <li><strong>Client:</strong> <code>public/app.js</code> — the whole editor, palette engine, Fit Width, and spec builder (<code>buildSpec()</code>).</li>
+        <li><strong>Client:</strong> <code>public/app.js</code> — the whole editor, style engine, Fit Width, and spec builder (<code>buildSpec()</code>).</li>
         <li><strong>Server build chain:</strong> <code>builder.js</code> (presentation) + <code>buildProp.js</code> (props) + <code>rtf.js</code> (text) + <code>encode.js</code> (protobuf) → <code>.pro</code> files.</li>
       </ul>
 
@@ -14081,9 +14166,9 @@ function helpSections() {
       </ol>
 
       <h4>Default element bounds (1920×1080)</h4>
-      <p class="help-muted">These are the <em>default palette's</em> values, editable per-palette in the Layout tab — not fixed constants. Builder reads them from the resolved scheme; the real defaults live in builder's <code>DEFAULT_STYLE</code>, and the make-functions' inline fallbacks are neutral <code>0/0/100/100</code> placeholders that are never reached in normal exports.</p>
+      <p class="help-muted">These are the <em>default style's</em> values, editable per-style in the Layout tab — not fixed constants. Builder reads them from the resolved scheme; the real defaults live in builder's <code>DEFAULT_STYLE</code>, and the make-functions' inline fallbacks are neutral <code>0/0/100/100</code> placeholders that are never reached in normal exports.</p>
       <ul>
-        <li>Body: y=729.98, h=350.02 (bottom third). Fit Width varies x/w within the palette Body width.</li>
+        <li>Body: y=729.98, h=350.02 (bottom third). Fit Width varies x/w within the style's Body width.</li>
         <li>Title (scripture ref): full-width bar; Auto&nbsp;Y places it just above the body.</li>
         <li>live: x≈1737, y≈1097 (below the canvas — the ${D3} badge).</li>
         <li>Queue sidebar: x=0, w≈400, full height.</li>
@@ -14092,7 +14177,7 @@ function helpSections() {
 
       <h4>Style resolution &amp; inheritance</h4>
       <ul>
-        <li><strong>Global → Palette → Custom.</strong> A field of <code>null</code> means “inherit”; a concrete value means “override.” Editing a null field <em>forks</em> it (materializes the inherited value first) so nothing jumps.</li>
+        <li><strong>Global → Style → Custom.</strong> A field of <code>null</code> means “inherit”; a concrete value means “override.” Editing a null field <em>forks</em> it (materializes the inherited value first) so nothing jumps.</li>
         <li><code>styleForExport(scheme)</code> is the single resolution point: fills null layout/motion/RC-element fields from Global, then resolves ${D2} advanced styling from its Display&nbsp;1 counterpart via the <code>D2_ADV_INHERIT</code> map (propBody→body, propPoint→point, propTitle→title, propBold→bold, rcBody→body, rcTitle→title).</li>
         <li>Macros / stage displays / build orders / RC elements use <strong>whole-list inherit</strong> (null = inherit Global's list live; any edit forks a private copy).</li>
       </ul>
