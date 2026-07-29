@@ -1086,8 +1086,16 @@ app.post('/api/generate', async (req, res) => {
         }
       }
 
-      const result = await encodeDeliverPair(spec, pairSpec);
-      if (pro7WasRunning) pro7Relaunched = launchPro7();
+      let result;
+      try {
+        result = await encodeDeliverPair(spec, pairSpec);
+      } finally {
+        // Relaunch even if the encode/patch step above threw — leaving
+        // ProPresenter closed with no recovery is worse than the export
+        // itself failing, since the user has no visible way to know why
+        // their app just vanished.
+        if (pro7WasRunning) pro7Relaunched = launchPro7();
+      }
 
       return res.json({
         ok: true,
@@ -1115,9 +1123,15 @@ app.post('/api/generate', async (req, res) => {
 
     const outputFolder = spec.outputFolder || DEFAULT_DIR;
     const outputPath   = path.join(outputFolder, `${safe}.pro`);
-    const result       = await encode(spec, outputPath);
-
-    if (pro7WasRunning) pro7Relaunched = launchPro7();
+    let result;
+    try {
+      result = await encode(spec, outputPath);
+    } finally {
+      // Relaunch even if encode() threw — see the paired-export branch above
+      // for why leaving ProPresenter closed on failure is worse than the
+      // export itself failing.
+      if (pro7WasRunning) pro7Relaunched = launchPro7();
+    }
 
     res.json({
       ok: true,

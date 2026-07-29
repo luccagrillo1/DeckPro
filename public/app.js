@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.19.4';
+const APP_VERSION = '4.19.5';
 
 const CHANGELOG = [
+  {
+    version: '4.19.5',
+    date: '2026-07-29',
+    changes: [
+      'Fixed a gap in Auto-manage ProPresenter on export: if anything failed between ProPresenter quitting and the new file(s) being written (single or paired QR export), ProPresenter was left closed with no relaunch and no visible recovery — looking like the export silently did nothing. ProPresenter now always relaunches in that case, even when the export itself fails, so the underlying error still surfaces instead of just leaving the app closed.',
+    ],
+  },
   {
     version: '4.19.4',
     date: '2026-07-29',
