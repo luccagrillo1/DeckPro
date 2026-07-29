@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.19.0';
+const APP_VERSION = '4.19.1';
 
 const CHANGELOG = [
+  {
+    version: '4.19.1',
+    date: '2026-07-29',
+    changes: [
+      'Internal housekeeping (no user-facing change): the GitHub repository moved from luccagrillo1-canvas/DeckPro to luccagrillo1/DeckPro. Updated package.json\'s repository field to the new canonical location so the in-app self-updater builds its download URL directly instead of relying on GitHub\'s redirect indefinitely.',
+    ],
+  },
   {
     version: '4.19.0',
     date: '2026-07-29',
