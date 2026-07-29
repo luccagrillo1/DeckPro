@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.19.1';
+const APP_VERSION = '4.19.2';
 
 const CHANGELOG = [
+  {
+    version: '4.19.2',
+    date: '2026-07-29',
+    changes: [
+      'Fixed: machine settings (Auto-manage ProPresenter on export, Pro7 connection/folders, Bible API key, output folder, QR macro, stage screen) could silently revert when you opened a different deck or started a new one. Every deck saves a full snapshot of your settings alongside its own content, and opening a deck was restoring THAT deck\'s old snapshot wholesale — so switching to (or duplicating from) a deck last saved before you turned a setting on would quietly turn it back off. These settings now always carry forward from your current session instead of coming from the deck being opened. If Auto-manage or your Pro7 connection ever seemed to "reset itself," this was why.',
+      'Fixed: toggling "Blank slide before this one" off no longer requires clicking into the sidebar to see it update — the queue list now refreshes immediately when the toggle changes.',
+    ],
+  },
   {
     version: '4.19.1',
     date: '2026-07-29',
@@ -9186,6 +9194,10 @@ function attachBlankBeforeHandlers(slide) {
     bbPreview.classList.toggle('visible', slide.blankBefore);
     qrWrap?.classList.toggle('visible', slide.blankBefore);
     saveState();
+    // The sidebar queue shows a "blank before" indicator per slide (renderSidebar
+    // reads slide.blankBefore) — refresh it so it doesn't go stale until the
+    // user happens to click into the sidebar for an unrelated reason.
+    renderSidebar();
   });
 
   if (qrToggle) {
@@ -12852,13 +12864,33 @@ async function duplicateDeckAction(id) {
   renderDecksList();
 }
 
+// Config fields that belong to THIS COMPUTER, never to an individual deck.
+// Every deck's saved state carries a full snapshot of state.config (see
+// deckSaveBody()), so opening or creating a deck would otherwise silently
+// roll back these settings to whatever they were the last time THAT deck was
+// saved — e.g. autoManagePro7 reverting to off because an older deck's
+// snapshot predates the day the toggle was turned on. Carry the CURRENT
+// in-memory values forward across every deck switch/creation instead.
+const MACHINE_CONFIG_FIELDS = [
+  'pro7Port', 'pro7Password', 'pro7RootFolder', 'pro7LibraryFolder',
+  'autoManagePro7', 'outputFolder', 'setupComplete',
+  'bibleApiKey', 'bibleId', 'bibleName', 'bibleList',
+  'stageScreen', 'qrMacro', 'qrExportPair',
+  'features', 'recentSeries', 'icloudSync', 'theme',
+];
+function carryMachineConfig(fromConfig, toConfig) {
+  for (const f of MACHINE_CONFIG_FIELDS) toConfig[f] = fromConfig[f];
+}
+
 async function loadDeckState(id) {
   const r = await libApi(`/api/decks/${id}`);
   if (!r.ok || !r.deck?.state) {
     toast('error', 'Could not open deck', r.error || 'Deck state missing');
     return;
   }
+  const machineConfig = { ...state.config };
   state = r.deck.state;
+  carryMachineConfig(machineConfig, state.config);
   state.currentDeckId = id;
   _deckBaseStamp = r.deck.updated_at;
   libApi(`/api/decks/${id}/opened`, { method: 'POST' });
@@ -12883,16 +12915,10 @@ async function newDeck({ series = '', title = '', date = '', schemeId = null, sp
   s.config.messageTitle = title;
   s.config.speaker      = speaker;
   s.config.weekDate     = date || new Date().toISOString().slice(0, 10);
-  // Carry over settings that should persist across decks
-  s.config.pro7Port      = state.config.pro7Port;
-  s.config.pro7Password  = state.config.pro7Password;
-  s.config.outputFolder  = state.config.outputFolder;
-  s.config.bibleApiKey   = state.config.bibleApiKey;
-  s.config.bibleId       = state.config.bibleId;
-  s.config.bibleName     = state.config.bibleName;
-  s.config.bibleList     = state.config.bibleList;
-  s.config.features      = state.config.features;
-  s.config.recentSeries  = state.config.recentSeries;
+  // Carry over settings that belong to this computer, not the deck (whether
+  // starting fresh or from a template — a template is another deck's own
+  // saved snapshot, so it has the same stale-machine-config risk).
+  carryMachineConfig(state.config, s.config);
   if (!fromTemplateId) {
     s.styleSchemes = state.styleSchemes;
     s.globalTypography = state.globalTypography;
