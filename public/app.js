@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.21.1';
+const APP_VERSION = '4.22.0';
 
 const CHANGELOG = [
+  {
+    version: '4.22.0',
+    date: '2026-07-29',
+    changes: [
+      'New: dedicated Gradient macros. The Macros tab now has a single "Gradient" macro field (fires on Scripture, Point, and Response Card content cues) separate from the general per-trigger macro lists. The QR Code tab has a matching "Gradient (QR code version)" field that fires instead of the normal one whenever that export\'s QR toggle is on — so the no-QR file and the QR file of a paired export can each use a different gradient treatment. Both are deck-wide (not per-style) and sync across your devices via iCloud Sync.',
+    ],
+  },
   {
     version: '4.21.1',
     date: '2026-07-29',
@@ -2727,6 +2734,12 @@ const DEFAULT_STATE = () => ({
     // When true AND qrCode is on, Export delivers TWO presentations (no-QR +
     // QR) sharing one prop collection, instead of just the QR-configured deck.
     qrExportPair:        false,
+    // Dedicated gradient macros: gradientMacro fires on Scripture/Point/RC
+    // Content cues normally; gradientMacroQr fires there instead whenever
+    // this export's qrCode is on (e.g. the QR half of a paired export) — a
+    // different visual treatment to match the QR-configured look.
+    gradientMacro:       null,
+    gradientMacroQr:     null,
     includeResponseCard: true,
     outputFolder:        '',
     pro7Port:            1025,
@@ -5098,12 +5111,15 @@ function attachSchemesMacrosTab(containerId) {
   }
 
   el.innerHTML = `
+    <div class="smac-gradient-wrap"></div>
     <div class="smac-badge-wrap"></div>
     <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
       <button class="btn-sm" id="smac-add-btn">+ Add Macro</button>
     </div>
     <div class="smac-list"></div>
   `;
+  renderSingleMacroField(el.querySelector('.smac-gradient-wrap'), 'gradientMacro', 'Gradient',
+    'Fires on Scripture, Point, and Response Card content cues — deck-wide, not per-style, since it\'s a real macro rather than visual style. See the QR Code tab for the version that fires instead when this export\'s QR toggle is on.');
   rerender();
 
   el.querySelector('#smac-add-btn').addEventListener('click', () => {
@@ -5476,58 +5492,69 @@ function attachSchemesResponseCardTab(containerId) {
   });
 }
 
-// QR Code tab: a single macro assignment, deck-wide (state.config.qrMacro) —
-// not per-scheme, since the macro that actually shows a QR code (in
-// Companion/Resolume/whatever fires it) doesn't change with visual palette.
-// QR itself has no image or position — it IS this one macro, fired on
-// whichever blank-before cues end up QR-on (see the per-slide QR toggle and
-// the QR Stop marker).
-function attachSchemesQRTab(containerId) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
+// Renders one "single macro assignment" field (label + value + Pick/Change
+// button) into `container`, bound to state.config[key]. Used for QR Macro,
+// Gradient, and Gradient (QR code version) — all deck-wide, not per-scheme,
+// since these are unique real-world macros, not visual style. Multiple
+// fields can share one container; each is scoped by `key`.
+function renderSingleMacroField(container, key, label, hint) {
+  const wrap = document.createElement('div');
+  wrap.className = 'field';
+  wrap.innerHTML = `
+    <label>${esc(label)}</label>
+    ${hint ? `<p class="style-group-hint">${hint}</p>` : ''}
+    <div class="qr-macro-row" style="display:flex;align-items:center;gap:8px">
+      <div class="${key}-val" style="display:flex;align-items:center;gap:6px;flex:1"></div>
+      <button class="btn-sm" data-pick="${key}" type="button">Pick Macro</button>
+    </div>
+  `;
+  container.appendChild(wrap);
 
   function rerender() {
-    const m = state.config.qrMacro || null;
+    const m = state.config[key] || null;
     const dot = m && m.color
       ? `<span class="cm-dot" style="background:${m.color}"></span>`
       : `<span class="cm-dot cm-dot-default"></span>`;
-    el.querySelector('.qr-macro-val').innerHTML = m
+    wrap.querySelector(`.${key}-val`).innerHTML = m
       ? `${dot}<span class="override-macro-name">${esc(m.name)}</span><code class="cm-uuid-ro">${esc(m.uuid || '')}</code>
-         <button class="btn-custom-del" id="qr-macro-clear" title="Remove">×</button>`
+         <button class="btn-custom-del" data-clear="${key}" title="Remove">×</button>`
       : `<span class="cm-empty" style="margin:0">No macro selected.</span>`;
-    el.querySelector('#qr-macro-pick').textContent = m ? 'Change' : 'Pick Macro';
+    wrap.querySelector(`[data-pick="${key}"]`).textContent = m ? 'Change' : 'Pick Macro';
   }
-
-  el.innerHTML = `
-    <p class="style-group-hint">QR Code is a macro, not an image DeckPro draws. Pick which macro fires on any blank slide with QR turned on — see the QR toggle next to "Blank slide before this one" on scripture/point/image slides, the QR Stop marker in the deck sidebar, and this deck's own QR toggle (Decks → edit this deck).</p>
-    <div class="field">
-      <label>QR Macro</label>
-      <div class="qr-macro-row" style="display:flex;align-items:center;gap:8px">
-        <div class="qr-macro-val" style="display:flex;align-items:center;gap:6px;flex:1"></div>
-        <button class="btn-sm" id="qr-macro-pick" type="button">Pick Macro</button>
-      </div>
-    </div>
-  `;
   rerender();
 
-  el.querySelector('#qr-macro-pick').addEventListener('click', () => {
+  wrap.querySelector(`[data-pick="${key}"]`).addEventListener('click', () => {
     showMacroPicker((selected) => {
       if (selected.length) {
         const { name, uuid, color } = selected[0];
-        state.config.qrMacro = { name, uuid, color };
+        state.config[key] = { name, uuid, color };
         saveState();
         rerender();
       }
     }, true);
   });
 
-  el.addEventListener('click', (e) => {
-    if (e.target.id === 'qr-macro-clear') {
-      state.config.qrMacro = null;
+  wrap.addEventListener('click', (e) => {
+    if (e.target.dataset.clear === key) {
+      state.config[key] = null;
       saveState();
       rerender();
     }
   });
+}
+
+// QR Code tab: two deck-wide macro assignments — the QR Code macro itself
+// (fires on blank-before cues with QR on) and a matching Gradient macro used
+// on content cues instead of the normal one, whenever this export's QR
+// toggle is on (see the Gradient field on the Macros tab for the non-QR one).
+function attachSchemesQRTab(containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = '';
+  renderSingleMacroField(el, 'qrMacro', 'QR Macro',
+    'QR Code is a macro, not an image DeckPro draws. Pick which macro fires on any blank slide with QR turned on — see the QR toggle next to "Blank slide before this one" on scripture/point/image slides, the QR Stop marker in the deck sidebar, and this deck\'s own QR toggle (Decks → edit this deck).');
+  renderSingleMacroField(el, 'gradientMacroQr', 'Gradient (QR code version)',
+    'Fires on Scripture, Point, and Response Card content cues instead of the normal Gradient macro (Macros tab), whenever this export\'s QR toggle is on — for a background treatment that matches the QR-configured look.');
 }
 
 function renderConfigPanel(panel) {
@@ -10283,7 +10310,10 @@ function buildSpec() {
 
   return {
     name:                buildFileName(),
+    qrCode:              !!state.config.qrCode,
     qrMacro:             state.config.qrMacro || null,
+    gradientMacro:       state.config.gradientMacro || null,
+    gradientMacroQr:     state.config.gradientMacroQr || null,
     includeResponseCard: includeResponseCard,
     outputFolder:        outputFolder || '',
     responses:           Object.fromEntries(Object.entries(responses || { decisionText: '', r1: '', r2: '', r3: '' }).map(([k, v]) => [k, normalizeDeckQuotes(v)])),
@@ -12997,7 +13027,7 @@ const PERSISTENT_CONFIG_FIELDS = [
   // Pro7 / machine connection
   'pro7Port', 'pro7Password', 'pro7RootFolder', 'pro7LibraryFolder',
   'autoManagePro7', 'outputFolder', 'setupComplete', 'stageScreen',
-  'qrMacro', 'qrExportPair', 'icloudSync', 'theme',
+  'qrMacro', 'qrExportPair', 'gradientMacro', 'gradientMacroQr', 'icloudSync', 'theme',
   // Bible lookup
   'bibleApiKey', 'bibleId', 'bibleName', 'bibleList', 'verseNumbers', 'verseSuper',
   // App-wide preferences (mirrors SYNC_SECTIONS()'s portable-vs-deck split)
@@ -14326,6 +14356,8 @@ function SYNC_SECTIONS() {
     stageScreen:      { get: () => c.stageScreen,      set: v => { c.stageScreen = v; } },
     qrMacro:          { get: () => c.qrMacro,          set: v => { c.qrMacro = v || null; } },
     qrExportPair:     { get: () => ({ v: c.qrExportPair }), set: v => { c.qrExportPair = !!v.v; } },
+    gradientMacro:    { get: () => c.gradientMacro,    set: v => { c.gradientMacro = v || null; } },
+    gradientMacroQr:  { get: () => c.gradientMacroQr,  set: v => { c.gradientMacroQr = v || null; } },
     globalTypography: { get: () => state.globalTypography, set: v => { state.globalTypography = v; } },
     globalLayout:     { get: () => state.globalLayout,     set: v => { state.globalLayout = v; } },
     globalFontAdv:    { get: () => state.globalFontAdv,    set: v => { state.globalFontAdv = v; } },

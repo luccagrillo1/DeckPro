@@ -1638,10 +1638,24 @@ function injectQRMacro(cue, qrMacro) {
   if (qrMacro?.name && qrMacro?.uuid) cue.actions.push(macroAction(qrMacro.name, qrMacro.uuid));
 }
 
+// ─── Helper: fire the configured Gradient macro on a content cue ─────────
+// Gradient is a macro too (see the retired atem_gradient element note above),
+// fired on Scripture, Point, and Response Card content cues. Which macro
+// depends on this export's own QR toggle: gradientMacroQr when it's on
+// (e.g. the QR half of a paired export), gradientMacro otherwise.
+function injectGradientMacro(cue, gradientMacro, gradientMacroQr, qrCode) {
+  const m = qrCode ? gradientMacroQr : gradientMacro;
+  if (m?.name && m?.uuid) cue.actions.push(macroAction(m.name, m.uuid));
+}
+
 // ─── Top-level presentation builder ───────────────────────────────────────
 
 function buildPresentation(spec, propUuidMap = {}) {
-  const { name, slides = [], qrMacro = null, includeResponseCard = false, responses = {}, style = {}, stageScreen: specStageScreen = {} } = spec;
+  const {
+    name, slides = [], qrCode = false, qrMacro = null,
+    gradientMacro = null, gradientMacroQr = null,
+    includeResponseCard = false, responses = {}, style = {}, stageScreen: specStageScreen = {},
+  } = spec;
   const rs = resolveStyle(style);
 
   // Install prop UUID map so propAction() uses coordinated UUIDs
@@ -1802,6 +1816,14 @@ function buildPresentation(spec, propUuidMap = {}) {
   // toggle + QR Stop marker position — see effectiveQR() in public/app.js.)
   for (const cue of rawCues) {
     if (cue._isContentBlank && cue._qrOn) injectQRMacro(cue, qrMacro);
+  }
+
+  // ── Step 3b: Fire the Gradient macro on Scripture/Point/RC Content cues ──
+  // (gradientMacroQr instead of gradientMacro whenever this export's own QR
+  // toggle is on — see injectGradientMacro above.)
+  for (const cue of rawCues) {
+    const isGradientCue = cue._type === 'scripture' || cue._type === 'point' || (cue._type === 'rc' && cue._isRcContent);
+    if (isGradientCue) injectGradientMacro(cue, gradientMacro, gradientMacroQr, qrCode);
   }
 
   // ── Step 4: Inject macros from Schemes into matching cues ──
