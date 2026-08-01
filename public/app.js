@@ -2,9 +2,18 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.21.0';
+const APP_VERSION = '4.21.1';
 
 const CHANGELOG = [
+  {
+    version: '4.21.1',
+    date: '2026-07-29',
+    changes: [
+      'QR paired export naming: the no-QR and QR versions now share the SAME _v{N} number, with the QR file getting a _SAT suffix (e.g. Message_..._v7 / Message_..._v7_SAT), instead of consuming two different version numbers with no way to tell which was which.',
+      'Fixed: the QR Code tab\'s macro assignment (and the "Export both versions when QR is on" preference) never synced across your devices via iCloud Sync — every other preference did, this one was missed. Setting a QR macro on one Mac now carries over to your others.',
+      'Fixed: Fit Width for point slides could grow wider than the point box width you actually configured in Layout — it was deliberately capped to the full screen width instead of your palette\'s own point-width setting. It now respects your configured point width the same way scripture bodies already respect body width.',
+    ],
+  },
   {
     version: '4.21.0',
     date: '2026-07-29',
@@ -3856,12 +3865,12 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
   const size    = isProp
     ? (type === 'point' ? (st.propPointSize ?? st.propBodySize ?? 80) : (st.propBodySize ?? 80))
     : (type === 'point' ? (st.pointSize ?? st.bodySize ?? 44) : (st.bodySize ?? 44));
-  // Width ceiling. Scripture/body stays within the palette's body width (the
-  // user positions that box deliberately). Points are short and read best with
-  // room to breathe — a narrow palette body width would trap a point in a tall
-  // stack and block clean punctuation breaks (e.g. splitting at a semicolon),
-  // so points may use the full canvas width.
-  const cap     = type === 'point' ? canvasW : ((isProp ? st.propBodyW : st.bodyW) || canvasW);
+  // Width ceiling: stay within the palette's own configured box for the
+  // element being measured — body width for scripture, point width for
+  // points — never wider than that regardless of how short the text is.
+  const cap     = (isProp
+    ? (type === 'point' ? st.propPointW : st.propBodyW)
+    : (type === 'point' ? st.pointW     : st.bodyW)) || canvasW;
   const maxW    = Math.max(1, Math.min(cap, canvasW));
   const padding = 80; // breathing room for the poetry branch
 
@@ -10669,8 +10678,9 @@ async function runGenerate(btn, deliverMode = false) {
     // preference is enabled, one Export click delivers TWO presentations —
     // the deck as-is with QR off, and the deck as configured with QR on —
     // sharing one prop collection (see encodeDeliverPair in encode.js). Both
-    // get sequential _v{N} names off the SAME base, same numbering as a plain
-    // re-export, per the "everything is one v# sequence" convention.
+    // share the SAME _v{N}, since they're the same version of the deck; the
+    // QR one gets an additional _SAT suffix to distinguish it (e.g. base_v7
+    // / base_v7_SAT).
     if (state.config.qrCode && state.config.qrExportPair) {
       const wasQr = state.config.qrCode;
       state.config.qrCode = false;
@@ -10681,7 +10691,7 @@ async function runGenerate(btn, deliverMode = false) {
       const base = specNoQR.name; // buildFileName() no longer varies by qrCode
       const v1 = nextVersionedName(base);
       specNoQR.name = v1.name;
-      specQR.name   = `${base}_v${v1.index + 1}`;
+      specQR.name   = `${v1.name}_SAT`;
       const fileNameNoQR = specNoQR.name;
       const fileNameQR   = specQR.name;
 
@@ -14314,6 +14324,8 @@ function SYNC_SECTIONS() {
     responses:        { get: () => c.responses,        set: v => { c.responses = v || {}; } },
     notesStyleMap:    { get: () => c.notesStyleMap,    set: v => { c.notesStyleMap = v || {}; } },
     stageScreen:      { get: () => c.stageScreen,      set: v => { c.stageScreen = v; } },
+    qrMacro:          { get: () => c.qrMacro,          set: v => { c.qrMacro = v || null; } },
+    qrExportPair:     { get: () => ({ v: c.qrExportPair }), set: v => { c.qrExportPair = !!v.v; } },
     globalTypography: { get: () => state.globalTypography, set: v => { state.globalTypography = v; } },
     globalLayout:     { get: () => state.globalLayout,     set: v => { state.globalLayout = v; } },
     globalFontAdv:    { get: () => state.globalFontAdv,    set: v => { state.globalFontAdv = v; } },
