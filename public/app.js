@@ -2,9 +2,21 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.22.0';
+const APP_VERSION = '4.22.1';
 
 const CHANGELOG = [
+  {
+    version: '4.22.1',
+    date: '2026-07-29',
+    changes: [
+      'Fixed Smart Notes bold-highlight reapplication bolding random unrelated words (e.g. "you", "is", "me", "God") throughout a newly-added scripture. It matched bold status by flat word membership across the whole tracked notes text, so a common word bolded anywhere — even for an unrelated reason elsewhere — bolded every occurrence of that word in the fetched verse. It now matches whole bolded phrases (consecutive words) instead of individual words in isolation, and drops a lone bolded stop word (a word like "you"/"is"/"me" bolded by itself) entirely, since on its own it can\'t be told apart from any other occurrence of that word.',
+      'Fixed: in Intelligent Notes mode, a multi-paragraph scripture (reference on one line, verse text with the actual bolded words on the next) only ever carried the reference line\'s bold words onto the Add suggestion — never the verse text\'s, since the auto-detection branch unconditionally reset its tracking before checking whether the next block was a continuation of the same highlighted passage.',
+      'Fixed: in Intelligent Notes mode, a highlighted paragraph that wasn\'t a heading (or ran over 80 characters) was never surfaced as a point suggestion — only short headings were. Any highlighted block is now treated as a likely point regardless of its tag or length.',
+      'Fixed: in Intelligent Notes mode with the highlight color mapped to "Content" or left on "Auto", a Response Card trigger line (the decision text) followed by its response options fell through to becoming a single point (using just the intro line, discarding the actual options) instead of filling the Response Card. It\'s now detected the same way the explicit "Response" color mapping already was.',
+      'Fixed: the Build Order editor\'s first-item start option was labeled "With Slide" — not a real ProPresenter term. It\'s now labeled "After Transition", matching Pro7\'s own wording (the underlying value/behavior was already correct — only the label was wrong).',
+      'Auto-manage ProPresenter on export now clicks through ProPresenter\'s "Are you sure you want to quit?" confirmation dialog if it appears, instead of the quit hanging until someone at the keyboard confirms it manually. DeckPro now proactively asks macOS for the Accessibility permission this needs — right when you turn on "Auto-manage ProPresenter on export" in Preferences (and once at launch if it was already on) — instead of silently needing it granted ahead of time in System Settings.',
+    ],
+  },
   {
     version: '4.22.0',
     date: '2026-07-29',
@@ -4643,19 +4655,20 @@ const BO_ELEMENTS = {
 };
 
 const BO_STARTS = [
-  ['START_WITH_SLIDE',    'With Slide'],
+  ['START_WITH_SLIDE',    'After Transition'],
   ['ON_CLICK',            'On Click'],
   ['START_WITH_PREVIOUS', 'With Previous'],
   ['START_AFTER_PREVIOUS','After Previous'],
 ];
 
 // Mirrors a real constraint in ProPresenter's own build-order UI: the FIRST
-// build item in a slide's list can only start "With Slide" (i.e. as soon as
-// the slide's own transition finishes) or "On Click" — there's no earlier
-// item for it to start "with"/"after". Every item AFTER the first can only
+// build item in a slide's list can only start "After Transition" (i.e. as
+// soon as the slide's own transition finishes — Pro7's actual term; "With
+// Slide" isn't a real Pro7 option) or "On Click" — there's no earlier item
+// for it to start "with"/"after". Every item AFTER the first can only
 // reference the item directly above it — "On Click", "With Previous", or
-// "After Previous" — "With Slide" only ever makes sense once, for whichever
-// build the slide itself kicks off.
+// "After Previous" — "After Transition" only ever makes sense once, for
+// whichever build the slide itself kicks off.
 function validBoStartsForPosition(i) {
   return i === 0
     ? ['START_WITH_SLIDE', 'ON_CLICK']
@@ -5918,6 +5931,11 @@ function renderConfigPanel(panel) {
     cfg.autoManagePro7 = cfg.autoManagePro7 !== true;
     document.getElementById('automanage-toggle').classList.toggle('on', cfg.autoManagePro7);
     saveState();
+    // Prompt for Accessibility permission right when this feature is turned
+    // on (it's what dismissPro7QuitDialog needs) — asking now, at a moment
+    // that clearly explains why, beats waiting for a real quit to silently
+    // fail because permission was never granted.
+    if (cfg.autoManagePro7) fetch('/api/request-accessibility', { method: 'POST' }).catch(() => {});
   });
 
   // QR pair export
@@ -11274,8 +11292,24 @@ function showNotesDoc({ id, styleText, bodyHtml }, title) {
   refreshNotesMode();
 }
 
-// Words the author bolded within a notes block, normalized for later
-// word-by-word matching against Bible-API text (case/punctuation-insensitive).
+// Common filler words excluded from bold/decision-line word-matching. These
+// are near-guaranteed to appear MANY times throughout any notes doc and any
+// fetched Bible verse — matching bold status by flat per-word set membership
+// (see applyNotesBoldToSpans below) means a stop-word bolded ANYWHERE in the
+// tracked notes text would falsely mark EVERY occurrence of that word bold
+// in an unrelated verse (e.g. "you"/"is"/"me" bolding throughout a verse
+// where nothing was actually bolded in the source doc).
+const NOTES_STOP_WORDS = new Set(['i','a','an','the','to','of','in','on','at','is','are','was','were',
+  'and','or','but','with','for','my','me','you','your','it','this','that','be','have','has','had']);
+
+// Contiguous bold RUNS within a notes block, as phrases (not individual
+// words) — reapplication (applyNotesBoldToSpans) requires the whole phrase
+// to appear as a run of consecutive words in the fetched text, so a common
+// word bolded once doesn't bold every unrelated occurrence of that word
+// elsewhere in the verse (the old word-set approach's failure mode: "you"
+// bolded once would bold every "you" in the fetched text). A phrase that's
+// just a single stop word ("you", "is", "me"...) is dropped entirely, since
+// on its own it can't be told apart from any other occurrence of that word.
 // Checks COMPUTED font-weight while walking the tree (same approach as
 // extractHighlightedText below) rather than matching <b>/<strong> tags —
 // Google Docs' actual HTML export represents bold as inline
@@ -11286,15 +11320,20 @@ function _isBoldWeight(computedFontWeight) {
   const n = parseInt(computedFontWeight, 10);
   return !isNaN(n) && n >= 600;
 }
-function extractBoldWords(el) {
-  const words = new Set();
-  const addWords = (text) => {
-    const t = (text || '').toLowerCase().replace(/[^\w\s']/g, '');
-    t.split(/\s+/).filter(Boolean).forEach(w => words.add(w));
+function extractBoldPhrases(el) {
+  const phrases = [];
+  let buf = '';
+  const flush = () => {
+    const t = buf.replace(/\s+/g, ' ').trim();
+    buf = '';
+    if (!t) return;
+    const words = t.toLowerCase().split(' ').filter(Boolean);
+    if (words.length === 1 && NOTES_STOP_WORDS.has(words[0].replace(/[^\w']/g, ''))) return;
+    phrases.push(t);
   };
   const walk = (node, inBold) => {
     if (node.nodeType === Node.TEXT_NODE) {
-      if (inBold) addWords(node.textContent);
+      if (inBold) buf += node.textContent; else flush();
       return;
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
@@ -11302,7 +11341,8 @@ function extractBoldWords(el) {
     node.childNodes.forEach(child => walk(child, bold));
   };
   el.childNodes.forEach(child => walk(child, _isBoldWeight(getComputedStyle(el).fontWeight)));
-  return words;
+  flush();
+  return phrases;
 }
 
 // Text that's actually highlighted within a block — a block's own background
@@ -11342,7 +11382,7 @@ function extractNotesBlocks() {
     });
     if (bg) colorSet.add(bg);
     const idx = blocks.length;
-    blocks.push({ tag: el.tagName.toLowerCase(), text, bg, idx, boldWords: extractBoldWords(el), highlightedText: extractHighlightedText(el) });
+    blocks.push({ tag: el.tagName.toLowerCase(), text, bg, idx, boldPhrases: extractBoldPhrases(el), highlightedText: extractHighlightedText(el) });
     el.dataset.notesBlock = idx;
   });
   _notesDoc.blocks  = blocks;
@@ -11398,7 +11438,7 @@ function buildNotesSuggestions() {
   // so only ranges of 2+ verses ever get flagged.
   let scriptureChainSuggestion = null;
   let scriptureChainText = '';
-  let scriptureChainBoldWords = new Set();
+  let scriptureChainBoldPhrases = new Set();
   const finalizeScriptureChain = () => {
     if (scriptureChainSuggestion) {
       const info = parseVerseRangeInfo(scriptureChainSuggestion.ref);
@@ -11416,23 +11456,23 @@ function buildNotesSuggestions() {
       }
       // Words the author bolded in the notes get carried onto the suggestion so
       // Add can re-apply them as ALT emphasis on the Bible-API-fetched body text.
-      if (scriptureChainBoldWords.size) {
-        scriptureChainSuggestion.notesBoldWords = scriptureChainBoldWords;
+      if (scriptureChainBoldPhrases.size) {
+        scriptureChainSuggestion.notesBoldPhrases = scriptureChainBoldPhrases;
       }
     }
     scriptureChainSuggestion = null;
     scriptureChainText = '';
-    scriptureChainBoldWords = new Set();
+    scriptureChainBoldPhrases = new Set();
   };
-  const startScriptureChain = (suggestion, seedText, seedBoldWords) => {
+  const startScriptureChain = (suggestion, seedText, seedBoldPhrases) => {
     finalizeScriptureChain();
     scriptureChainSuggestion = suggestion;
     scriptureChainText = seedText || '';
-    scriptureChainBoldWords = new Set(seedBoldWords || []);
+    scriptureChainBoldPhrases = new Set(seedBoldPhrases || []);
   };
-  const continueScriptureChain = (text, boldWords) => {
+  const continueScriptureChain = (text, boldPhrases) => {
     scriptureChainText += ' ' + text;
-    (boldWords || []).forEach(w => scriptureChainBoldWords.add(w));
+    (boldPhrases || []).forEach(p => scriptureChainBoldPhrases.add(p));
   };
 
   const makePoint = (b, conf) => {
@@ -11461,8 +11501,6 @@ function buildNotesSuggestions() {
   // is the fraction of the CANDIDATE's own significant words found in the
   // phrase, so a true close paraphrase (which reuses most of the phrase's
   // wording) scores high while a merely-related option scores low.
-  const NOTES_STOP_WORDS = new Set(['i','a','an','the','to','of','in','on','at','is','are','was','were',
-    'and','or','but','with','for','my','me','you','your','it','this','that','be','have','has','had']);
   const decisionWordOverlap = (text, phrase) => {
     const words = s => (s || '').toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/)
       .filter(w => w && !NOTES_STOP_WORDS.has(w));
@@ -11500,6 +11538,20 @@ function buildNotesSuggestions() {
     return grp.consumed;
   };
 
+  // True if this trigger block (or one of its following bullets) closely
+  // paraphrases the response-card decision line — the strongest available
+  // signal that a block with no explicit 'response' color mapping ('content'
+  // or 'auto') is actually response-card intro text, not an ordinary point,
+  // so it should route to makeResponse() (one suggestion filling all the
+  // options) instead of makePoint() (which would use just the intro line's
+  // own text as a single point, discarding the actual options).
+  const looksLikeResponseTrigger = (b) => {
+    const decisionPhrase = state.config.responses?.decisionText || 'I have decided to follow Jesus today!';
+    const grp = collectBullets(blocks, b._i);
+    const candidates = [b.text, ...grp.bullets];
+    return candidates.some(t => decisionWordOverlap(t, decisionPhrase) >= DECISION_PARAPHRASE_THRESHOLD);
+  };
+
   const pushScripturesFromBlock = (b, conf) => {
     rx.lastIndex = 0;
     let found = false;
@@ -11510,7 +11562,7 @@ function buildNotesSuggestions() {
       const ref = m[0].replace(/[.,;:]+$/, '').trim();
       last = push({ type: 'scripture', ref, preview: ref, blockIdx: b.idx, confidence: conf, key: 'scr:' + _normRef(ref), dupe: scriptureExists(ref) });
     }
-    if (last) startScriptureChain(last, b.text, b.boldWords);
+    if (last) startScriptureChain(last, b.text, b.boldPhrases);
     return found;
   };
 
@@ -11552,12 +11604,12 @@ function buildNotesSuggestions() {
         const ref = m[0].replace(/[.,;:]+$/, '').trim();
         const pushed = push({ type: 'scripture', ref, preview: ref, blockIdx: b.idx, confidence: 'Mapped', key: 'scr:' + _normRef(ref), dupe: scriptureExists(ref) });
         scriptureContinuation = b;
-        startScriptureChain(pushed, b.text, b.boldWords);
+        startScriptureChain(pushed, b.text, b.boldPhrases);
       } else if (sameSignal(scriptureContinuation, b)) {
         // Same highlight immediately after a highlighted reference is verse text,
         // not a separate (and fabricated) reference suggestion.
         scriptureContinuation = b;
-        continueScriptureChain(b.text, b.boldWords);
+        continueScriptureChain(b.text, b.boldPhrases);
       } else {
         // No reference found and not a continuation — skip rather than fabricate
         // a "reference" out of the whole block's text.
@@ -11586,26 +11638,49 @@ function buildNotesSuggestions() {
           scriptureContinuation = b;
           // b is the verse-text block itself (the ref lived in the unhighlighted
           // block above it), so seed the chain with b's own text.
-          startScriptureChain(pushed, b.text, b.boldWords);
+          startScriptureChain(pushed, b.text, b.boldPhrases);
         } else if (sameSignal(scriptureContinuation, b)) {
           // Same highlight immediately after a highlighted reference is verse text,
           // not a separate point suggestion.
           scriptureContinuation = b;
-          continueScriptureChain(b.text, b.boldWords);
+          continueScriptureChain(b.text, b.boldPhrases);
         } else {
           scriptureContinuation = null;
           finalizeScriptureChain();
-          i += makePoint(b, 'Content');
+          i += looksLikeResponseTrigger(b) ? makeResponse(b, 'Content') : makePoint(b, 'Content');
         }
       }
       continue;
     }
 
-    // role === 'auto' — built-in detection
-    scriptureContinuation = null;
-    finalizeScriptureChain();
-    pushScripturesFromBlock(b, 'High');
-    if (/^h[1-3]$/.test(b.tag) && b.text.length <= 80) i += makePoint(b, 'Medium');
+    // role === 'auto' — built-in detection. Mirrors the 'scripture'/'content'
+    // branches' own-ref-vs-continuation structure (check for a fresh
+    // reference, then a same-highlight continuation, THEN give up and
+    // finalize) — the old version unconditionally finalized before checking
+    // continuation, so a highlighted multi-paragraph verse (reference in one
+    // block, verse text with the actual bolded words in the next) never had
+    // its later blocks' bold phrases carried onto the suggestion at all.
+    if (pushScripturesFromBlock(b, 'High')) {
+      scriptureContinuation = b;
+    } else if (sameSignal(scriptureContinuation, b)) {
+      scriptureContinuation = b;
+      continueScriptureChain(b.text, b.boldPhrases);
+    } else {
+      scriptureContinuation = null;
+      finalizeScriptureChain();
+      if (looksLikeResponseTrigger(b)) {
+        i += makeResponse(b, 'Medium');
+      } else if (b.bg) {
+        // Highlighted but not mapped to a specific role — the highlight
+        // itself is a strong enough signal to treat it as a likely point,
+        // regardless of heading tag or length (unlike the plain-text
+        // heuristic below, which needs both since it has no highlight to
+        // go on).
+        i += makePoint(b, 'High');
+      } else if (/^h[1-3]$/.test(b.tag) && b.text.length <= 80) {
+        i += makePoint(b, 'Medium');
+      }
+    }
   }
   finalizeScriptureChain();
   _notesDoc.suggestions = out;
@@ -11690,7 +11765,7 @@ function notesSuggestionByKey(key) {
 }
 
 // ── Add wiring (reuses addSlide so shapes are always correct) ──────────────
-function notesAddScripture(ref, boldWords = null) {
+function notesAddScripture(ref, boldPhrases = null) {
   addSlide('scripture');
   const slide = state.slides.find(s => s.id === state.activeId);
   if (!slide) return;
@@ -11699,7 +11774,7 @@ function notesAddScripture(ref, boldWords = null) {
   slide.propName  = ref;
   saveState();
   render();
-  lookupBibleVerse(slide, ref, '', boldWords); // async — fills bodies + toast on miss
+  lookupBibleVerse(slide, ref, '', boldPhrases); // async — fills bodies + toast on miss
   toast('success', 'Scripture added', ref);
 }
 
@@ -11945,7 +12020,7 @@ function attachNotesDocHandlers() {
     if (addBtn) {
       const s = notesSuggestionByKey(addBtn.dataset.key);
       if (!s) return;
-      if (s.type === 'scripture')       notesAddScripture(s.ref, s.notesBoldWords);
+      if (s.type === 'scripture')       notesAddScripture(s.ref, s.notesBoldPhrases);
       else if (s.type === 'confidence') notesAddConfidence(s.text);
       else if (s.type === 'response')   notesAddResponseCard(s);
       else                              notesAddPointFrom(s);
@@ -12313,34 +12388,59 @@ function stripVerseSpans(spans) {
   return out.length ? out : [{ text: '', bold: false }];
 }
 
-// Re-applies bold words found in the source notes as ALT emphasis onto
+// Re-applies bold phrases found in the source notes as ALT emphasis onto
 // Bible-API-fetched spans, since the API text is very likely the same
 // translation the author copied into their notes — word-for-word, just
-// without the formatting once it's plain-text-extracted. Walks each span
-// word-by-word and splits it into runs wherever the ALT state changes.
-function applyNotesBoldToSpans(spans, boldWords) {
-  if (!boldWords || !boldWords.size) return spans;
+// without the formatting once it's plain-text-extracted.
+//
+// Matches whole PHRASES (consecutive words), not individual words in
+// isolation — a phrase only matches where its words appear adjacent, in
+// order, in the fetched text. Matching by individual word membership (the
+// old approach) meant a common word bolded ANYWHERE in the tracked notes
+// text — even for an unrelated reason elsewhere — would mark EVERY
+// occurrence of that word bold in a totally different verse (e.g. "you"
+// bolded once would bold every "you" in the fetched text). Longest phrases
+// are tried first so a longer bolded run wins over a shorter phrase that
+// happens to be one of its words.
+function applyNotesBoldToSpans(spans, boldPhrases) {
+  if (!boldPhrases || !boldPhrases.size) return spans;
+  const patterns = [...boldPhrases]
+    .sort((a, b) => b.length - a.length)
+    .map(p => {
+      const words = p.split(/\s+/).filter(Boolean).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      if (!words.length) return null;
+      return new RegExp('\\b' + words.join('[\\s,.;:!?\'"()‘’“”-]+') + '\\b', 'gi');
+    })
+    .filter(Boolean);
+  if (!patterns.length) return spans;
+
   const out = [];
   for (const s of spans) {
     if (s.verseNum || !s.text) { out.push(s); continue; }
-    const tokens = s.text.split(/(\s+)/).filter(t => t !== '');
-    let buf = '', curAlt = null;
-    for (const tok of tokens) {
-      const isSpace = /^\s+$/.test(tok);
-      let tokAlt = curAlt;
-      if (!isSpace) {
-        const norm = tok.toLowerCase().replace(/[^\w'’]/g, '');
-        tokAlt = !!(norm && boldWords.has(norm));
-      }
-      if (curAlt === null) curAlt = tokAlt;
-      if (!isSpace && tokAlt !== curAlt) {
-        if (buf) out.push({ text: buf, bold: false, alt: curAlt });
-        buf = tok; curAlt = tokAlt;
-      } else {
-        buf += tok;
+    const ranges = [];
+    for (const re of patterns) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(s.text)) !== null) {
+        ranges.push([m.index, m.index + m[0].length]);
+        if (m[0].length === 0) re.lastIndex++;
       }
     }
-    if (buf) out.push({ text: buf, bold: false, alt: curAlt });
+    if (!ranges.length) { out.push(s); continue; }
+    ranges.sort((a, b) => a[0] - b[0]);
+    const merged = [];
+    for (const r of ranges) {
+      const last = merged[merged.length - 1];
+      if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
+      else merged.push([...r]);
+    }
+    let cursor = 0;
+    for (const [start, end] of merged) {
+      if (start > cursor) out.push({ text: s.text.slice(cursor, start), bold: false, alt: false });
+      out.push({ text: s.text.slice(start, end), bold: false, alt: true });
+      cursor = end;
+    }
+    if (cursor < s.text.length) out.push({ text: s.text.slice(cursor), bold: false, alt: false });
   }
   return out;
 }
@@ -12355,7 +12455,7 @@ function applyVerseSuper(slide, superscript) {
   (slide.bodies || []).forEach(b => (b || []).forEach(s => { if (s.verseNum) s.super = !!superscript; }));
 }
 
-async function lookupBibleVerse(slide, ref, overrideBibleId = '', boldWords = null) {
+async function lookupBibleVerse(slide, ref, overrideBibleId = '', boldPhrases = null) {
   if (!ref) return;
   const btn = document.getElementById('btn-bible-lookup');
   if (btn) { btn.disabled = true; btn.textContent = '…'; }
@@ -12388,7 +12488,7 @@ async function lookupBibleVerse(slide, ref, overrideBibleId = '', boldWords = nu
     let spans = wantVerseNums
       ? parseVerseSpans(text, state.config.verseSuper !== false)
       : [{ text: text.replace(/\uE000[\d\u2013-]+\uE001\s*/g, ''), bold: false }];
-    if (boldWords && boldWords.size) spans = applyNotesBoldToSpans(spans, boldWords);
+    if (boldPhrases && boldPhrases.size) spans = applyNotesBoldToSpans(spans, boldPhrases);
     if (!slide.bodies) slide.bodies = [[]];
     slide.bodies[0] = spans;
 
@@ -14712,6 +14812,9 @@ async function bootstrap() {
   checkForUpdates();
   setInterval(() => checkForUpdates(), 6 * 60 * 60 * 1000); // re-check every 6h
   initSync();
+  // Auto-manage may already be on from before this permission prompt
+  // existed — ask once at startup too, not just when the toggle is flipped.
+  if (state.config.autoManagePro7 === true) fetch('/api/request-accessibility', { method: 'POST' }).catch(() => {});
 
   // Poll Pro7 every 10s — reconnects automatically when Pro7 opens
   setInterval(() => checkPro7(true), 10000);

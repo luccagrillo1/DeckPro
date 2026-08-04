@@ -330,12 +330,37 @@ function pro7IsRunning() {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /** Gracefully quit Pro7 and wait until the process is fully gone (so it flushes its config). */
+/** Click "OK" on ProPresenter's "Are you sure you want to quit?" confirmation
+ * dialog, if it's currently showing — lets the automated quit (for
+ * auto-manage) proceed without someone at the keyboard to confirm it.
+ * Requires Accessibility permission (System Settings → Privacy & Security →
+ * Accessibility) for whatever process runs this — Terminal in dev, or
+ * DeckPro.app itself once packaged/installed. Silently no-ops if the dialog
+ * isn't showing, System Events can't see ProPresenter, or permission hasn't
+ * been granted — those are all fine, just means quit proceeds without help. */
+function dismissPro7QuitDialog() {
+  try {
+    execSync(`osascript -e '
+      tell application "System Events"
+        if exists (process "ProPresenter") then
+          tell process "ProPresenter"
+            if exists (button "OK" of window 1) then
+              click button "OK" of window 1
+            end if
+          end tell
+        end if
+      end tell
+    '`, { timeout: 3000 });
+  } catch (_) { /* dialog not showing / no Accessibility permission — fine either way */ }
+}
+
 async function quitPro7AndWait(timeoutMs = 20000) {
   if (!pro7IsRunning()) return true;
   try { execSync(`osascript -e 'tell application "ProPresenter" to quit'`, { timeout: 5000 }); }
   catch (_) { /* may already be quitting */ }
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    dismissPro7QuitDialog();
     await sleep(400);
     if (!pro7IsRunning()) return true;
   }
@@ -350,6 +375,22 @@ function launchPro7() {
 
 app.get('/api/pro7/process', (req, res) => {
   res.json({ running: pro7IsRunning() });
+});
+
+// Proactively prompts for Accessibility permission (needed for
+// dismissPro7QuitDialog's UI scripting) via Electron's own API, which shows
+// macOS's real system dialog — rather than waiting for a real auto-manage
+// quit to incidentally trigger it via a failed osascript call, by which
+// point it's too late to help that attempt. No-ops outside Electron (dev
+// mode via `node server.js`), where there's no systemPreferences to ask.
+app.post('/api/request-accessibility', (req, res) => {
+  try {
+    const { systemPreferences } = require('electron');
+    const trusted = systemPreferences.isTrustedAccessibilityClient(true);
+    res.json({ ok: true, trusted });
+  } catch (_) {
+    res.json({ ok: true, trusted: null }); // standalone server — nothing to ask
+  }
 });
 
 // ── Pro7 config backups (safety net for the Props patch) ──────────────────
