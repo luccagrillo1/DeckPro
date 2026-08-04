@@ -16,7 +16,7 @@ const protobuf = require('protobufjs');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { buildPresentation } = require('./builder');
+const { buildPresentation, resolveStyle } = require('./builder');
 const { buildAllPropCues, encodePropDocument } = require('./buildProp');
 
 // ─── Pro7 config backup safety net ──────────────────────────────────────────
@@ -242,6 +242,46 @@ async function encodeToBuffer(spec, propUuidMap = {}) {
   if (errMsg) throw new Error(`Protobuf verify failed: ${errMsg}`);
   const msg = Presentation.fromObject(obj);
   return Presentation.encode(msg).finish();
+}
+
+/** Decode a Presentation buffer to the same plain-object shape
+ *  extractScheme.js's decodePresentation() produces from a file — used so
+ *  merge/diff always compares apples to apples regardless of source. */
+async function decodePresentationBuffer(buf) {
+  const root = await getRoot();
+  const Presentation = root.lookupType('rv.data.Presentation');
+  return Presentation.toObject(Presentation.decode(buf), { enums: String, defaults: true });
+}
+
+/**
+ * Same as encodeToBuffer, but when `mergeChanges` is non-empty, decodes the
+ * freshly-built presentation back to a plain object, reapplies the detected
+ * hand-edits via applyChanges(), verifies the RESULT still encodes cleanly
+ * (protobuf verify — catches a bad merge before it ever reaches disk), and
+ * encodes THAT instead. Returns { buffer, snapshot } — snapshot is the
+ * decoded shape of whatever buffer actually got returned, saved by the
+ * caller as the new baseline for the NEXT export's diff.
+ */
+async function encodeToBufferWithMerge(spec, propUuidMap = {}, mergeChanges = null) {
+  const root = await getRoot();
+  const Presentation = root.lookupType('rv.data.Presentation');
+  const obj = buildPresentation(spec, propUuidMap);
+  let errMsg = Presentation.verify(Presentation.fromObject(obj));
+  if (errMsg) throw new Error(`Protobuf verify failed: ${errMsg}`);
+
+  if (!mergeChanges || !mergeChanges.length) {
+    const buffer = Presentation.encode(Presentation.fromObject(obj)).finish();
+    const snapshot = Presentation.toObject(Presentation.fromObject(obj), { enums: String, defaults: true });
+    return { buffer, snapshot };
+  }
+
+  const decoded = Presentation.toObject(Presentation.fromObject(obj), { enums: String, defaults: true });
+  const { applyChanges } = require('./diffPresentation');
+  const merged = applyChanges(decoded, mergeChanges, resolveStyle(spec.style));
+  errMsg = Presentation.verify(Presentation.fromObject(merged));
+  if (errMsg) throw new Error(`Protobuf verify failed after merge: ${errMsg}`);
+  const buffer = Presentation.encode(Presentation.fromObject(merged)).finish();
+  return { buffer, snapshot: merged };
 }
 
 // ─── Binary protobuf helpers ──────────────────────────────────────────────────
@@ -723,9 +763,15 @@ function collectPropSpecs(slides, responses = {}, includeResponseCard = false) {
  *
  * @param {object} spec         - Presentation spec (spec.outputFolder used if set)
  * @param {string} [outputPath] - Explicit .pro output path (overrides outputFolder)
- * @param {string} [legacyPropsDir] - Ignored (kept for backward compat signature)
+ * @param {object} [opts]
+ * @param {Array}  [opts.mergeChanges] - Hand-edits (from diffPresentations)
+ *   to reapply onto the fresh presentation before it's written — see
+ *   encodeToBufferWithMerge. Result carries `presentationSnapshot`, the
+ *   decoded shape of whatever was actually written, for the caller to save
+ *   as the next export's diff baseline.
  */
-async function encode(spec, outputPath, legacyPropsDir) {
+async function encode(spec, outputPath, opts = {}) {
+  const { mergeChanges } = opts || {};
   const safeName = (spec.name || 'Untitled').replace(/[^a-zA-Z0-9_\-. ]/g, '_');
 
   // ── 1. Assign permanent prop slots and build prop cues ───────────────────
@@ -756,7 +802,12 @@ async function encode(spec, outputPath, legacyPropsDir) {
   }
 
   // ── 2. Build presentation — propUuidMap already has permanent UUIDs ──────
-  const presentationBuf = await encodeToBuffer(spec, propUuidMap);
+  // encodeToBufferWithMerge no-ops cleanly to a normal build when
+  // mergeChanges is empty, and always returns the decoded snapshot the
+  // caller needs to save as the NEXT export's diff baseline — so it's the
+  // one path to call here regardless of whether there's anything to merge.
+  const { buffer: presentationBuf, snapshot: presentationSnapshot } =
+    await encodeToBufferWithMerge(spec, propUuidMap, mergeChanges);
 
   // Download mode — return buffers, skip disk writes
   if (spec.downloadMode) {
@@ -814,7 +865,7 @@ async function encode(spec, outputPath, legacyPropsDir) {
         propsError = r.reason || 'Configuration/Props not found';
       }
     }
-    return { presentationBytes: presentationBuf.length, props: writtenProps, presentationPath: presPath, delivered: true, propsBackup, propsInstalled, propsError };
+    return { presentationBytes: presentationBuf.length, props: writtenProps, presentationPath: presPath, delivered: true, propsBackup, propsInstalled, propsError, presentationSnapshot };
   }
 
   // Local file mode — write to disk
@@ -851,7 +902,8 @@ async function encode(spec, outputPath, legacyPropsDir) {
  * @param {object} specA - first presentation to deliver (e.g. no-QR / v1)
  * @param {object} specB - second presentation to deliver (e.g. QR / v2)
  */
-async function encodeDeliverPair(specA, specB) {
+async function encodeDeliverPair(specA, specB, opts = {}) {
+  const { mergeChangesA, mergeChangesB } = opts;
   const safeA = (specA.name || 'Untitled').replace(/[^a-zA-Z0-9_\-. ]/g, '_');
   const safeB = (specB.name || 'Untitled').replace(/[^a-zA-Z0-9_\-. ]/g, '_');
 
@@ -877,8 +929,8 @@ async function encodeDeliverPair(specA, specB) {
   }
 
   // ── Encode both presentations against the SAME propUuidMap ──
-  const bufA = await encodeToBuffer(specA, propUuidMap);
-  const bufB = await encodeToBuffer(specB, propUuidMap);
+  const { buffer: bufA, snapshot: snapshotA } = await encodeToBufferWithMerge(specA, propUuidMap, mergeChangesA);
+  const { buffer: bufB, snapshot: snapshotB } = await encodeToBufferWithMerge(specB, propUuidMap, mergeChangesB);
 
   const libraryDir = getPro7LibraryPath(specA.pro7LibraryFolder || '', specA.pro7RootFolder || '');
   fs.mkdirSync(libraryDir, { recursive: true });
@@ -917,11 +969,11 @@ async function encodeDeliverPair(specA, specB) {
   return {
     delivered: true,
     presentations: [
-      { fileName: `${safeA}.pro`, path: pathA, bytes: bufA.length },
-      { fileName: `${safeB}.pro`, path: pathB, bytes: bufB.length },
+      { fileName: `${safeA}.pro`, path: pathA, bytes: bufA.length, snapshot: snapshotA },
+      { fileName: `${safeB}.pro`, path: pathB, bytes: bufB.length, snapshot: snapshotB },
     ],
     propsBackup, propsInstalled, propsError,
   };
 }
 
-module.exports = { encode, encodeDeliverPair, encodeToBuffer, listPropsBackups, restorePropsBackup, getPropsConfigPath };
+module.exports = { encode, encodeDeliverPair, encodeToBuffer, encodeToBufferWithMerge, decodePresentationBuffer, listPropsBackups, restorePropsBackup, getPropsConfigPath };

@@ -115,15 +115,18 @@ function readElement(el) {
   };
 }
 
-// `body` is the discriminator: scripture and point both have it (scripture adds
-// a `title` reference bar), while Start/End/Blank carry the literal "this slide"
-// element and no `body`. Note scripture slides also include an off-canvas
-// "this slide" staging element, so `body` must be checked before "this slide".
+// `body` alone isn't enough to mean "scripture/point" — Start/End/Response-
+// Card-Hold ALSO use an element literally named `body` (makeStartEndElement,
+// rendered via rtfStartEnd — a completely different renderer/style set than
+// rtfBody). The real discriminator is `live`: every scripture/point/
+// response-card slide gets a live-badge element, Start/End never does.
+// Mirrors classifyElements() in diffPresentation.js.
 function classify(names) {
   if (names.includes('body')) {
+    if (!names.includes('live')) return 'startEnd';
     return names.includes('title') ? 'scripture' : 'point';
   }
-  if (names.includes('this slide')) return 'startEnd';
+  if (names.includes('this slide')) return 'startEnd'; // legacy element name, kept as a fallback
   return 'other';
 }
 
@@ -165,7 +168,8 @@ async function extractScheme(filePath) {
       } else if (type === 'point') {
         if (!pick.pointBody && byName['body']) pick.pointBody = readElement(byName['body']);
       } else if (type === 'startEnd') {
-        if (!pick.startEnd && byName['this slide']) pick.startEnd = readElement(byName['this slide']);
+        if (!pick.startEnd && byName['body']) pick.startEnd = readElement(byName['body']);
+        else if (!pick.startEnd && byName['this slide']) pick.startEnd = readElement(byName['this slide']);
       }
       if (!pick.gradient && byName['atem_gradient']) pick.gradient = readElement(byName['atem_gradient']);
       if (!pick.live     && byName['live'])          pick.live     = readElement(byName['live']);
@@ -283,4 +287,4 @@ async function listPresentations() {
   return out;
 }
 
-module.exports = { extractScheme, listPresentations, LIBRARIES_DIR };
+module.exports = { extractScheme, listPresentations, LIBRARIES_DIR, decodePresentation, elementsOf, rtfString };

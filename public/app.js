@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.22.1';
+const APP_VERSION = '4.23.0';
 
 const CHANGELOG = [
+  {
+    version: '4.23.0',
+    date: '2026-07-29',
+    changes: [
+      'New: Merge or Override for hand-edited presentations. If you tweak something directly in ProPresenter (resize a text box, retint a fill, retype a verse or point, tweak a macro) after DeckPro exported a deck, the next export now detects it and pauses before writing anything — showing exactly what changed (which file, slide, element, property, old → new) with two choices: Merge carries those Pro7 edits forward into the new version alongside whatever content changes you made in DeckPro; Override exports fresh from DeckPro and lets the Pro7 edits go. Works for anything a hand-edit could touch — position, size, color, font, macros, props, elements added or removed entirely in Pro7 — and text content is safely reconstructed (not just flagged) everywhere DeckPro puts real text on a slide: Scripture body and reference-bar text, Point body text, Response Card text, and Start/End banners, bold emphasis included everywhere it applies. (The one thing still out of reach: the revealing-point LED-wall list lives in the separate Props file, which this feature doesn\'t read yet.) Covers the QR-paired export too — the no-QR and QR files are tracked and merged independently, since either one (or both) could be hand-edited on its own. Detection needs a baseline from a prior export made under this version or later — it has nothing to compare a deck\'s first export, or one exported before this feature existed, against.',
+    ],
+  },
   {
     version: '4.22.1',
     date: '2026-07-29',
@@ -10328,6 +10335,7 @@ function buildSpec() {
 
   return {
     name:                buildFileName(),
+    deckId:              state.currentDeckId || null,
     qrCode:              !!state.config.qrCode,
     qrMacro:             state.config.qrMacro || null,
     gradientMacro:       state.config.gradientMacro || null,
@@ -10757,21 +10765,37 @@ async function runGenerate(btn, deliverMode = false) {
         steps.unshift('Closing ProPresenter (if open)');
         steps.push('Relaunching ProPresenter');
       }
-      showDeliveryOverlay(steps, {
-        subtitle: "Exporting the non-QR and QR versions — don't switch to ProPresenter until this completes",
-      });
       const lastStep = steps.length - 1;
-
-      updateDeliveryStep(0, false);
-      const res = await fetch('/api/generate', {
+      const postGenerate = (extra) => fetch('/api/generate', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
           spec: specNoQR, fileName: fileNameNoQR,
           pairSpec: specQR, pairFileName: fileNameQR,
+          ...extra,
         }),
+      }).then(r => r.json());
+
+      showDeliveryOverlay(steps, {
+        subtitle: "Exporting the non-QR and QR versions — don't switch to ProPresenter until this completes",
       });
-      const data = await res.json();
+      updateDeliveryStep(0, false);
+      let data = await postGenerate({});
+
+      // Either (or both) of the two files may have been hand-edited in Pro7
+      // since last export — see the single-export path below for why this
+      // check is fast (no Pro7 quit/relaunch happens until after a choice).
+      if (data.ok && data.needsDecision) {
+        hideDeliveryOverlay();
+        const choice = await showMergeDecisionModal(data.changes);
+        if (!choice) return; // cancelled — nothing was written, just stop
+        showDeliveryOverlay(steps, {
+          subtitle: "Exporting the non-QR and QR versions — don't switch to ProPresenter until this completes",
+        });
+        updateDeliveryStep(0, false);
+        data = await postGenerate({ mergeChoice: choice, mergeChanges: data.changes });
+      }
+
       if (data.ok) {
         for (let i = 0; i <= lastStep; i++) {
           updateDeliveryStep(i, true);
@@ -10814,16 +10838,31 @@ async function runGenerate(btn, deliverMode = false) {
       steps.unshift('Closing ProPresenter (if open)');
       steps.push('Relaunching ProPresenter');
     }
-    showDeliveryOverlay(steps);
     const lastStep = steps.length - 1;
-
-    updateDeliveryStep(0, false);
-    const res  = await fetch('/api/generate', {
+    const postGenerate = (extra) => fetch('/api/generate', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ spec, fileName }),
-    });
-    const data = await res.json();
+      body:    JSON.stringify({ spec, fileName, ...extra }),
+    }).then(r => r.json());
+
+    showDeliveryOverlay(steps);
+    updateDeliveryStep(0, false);
+    let data = await postGenerate({});
+
+    // Deck's last exported file was hand-edited in Pro7 since DeckPro wrote
+    // it — pause for Merge/Override before anything gets written. The check
+    // itself (a file read + decode + diff) is fast — no Pro7 quit/relaunch
+    // happens until after a choice is made — so this should feel like a
+    // quick transition, not a stall.
+    if (data.ok && data.needsDecision) {
+      hideDeliveryOverlay();
+      const choice = await showMergeDecisionModal(data.changes);
+      if (!choice) return; // cancelled — nothing was written, just stop
+      showDeliveryOverlay(steps);
+      updateDeliveryStep(0, false);
+      data = await postGenerate({ mergeChoice: choice, mergeChanges: data.changes });
+    }
+
     if (data.ok) {
       // Mark all steps done in sequence for a smooth finish
       for (let i = 0; i <= lastStep; i++) {
@@ -10847,6 +10886,85 @@ async function runGenerate(btn, deliverMode = false) {
     btn.disabled = false;
     btn.textContent = 'Export';
   }
+}
+
+// Strips the well-known element/action path prefix (already shown via the
+// change's own slideLabel/elementName) so what's left reads as a plain
+// property name — "bounds.size.width" instead of the full internal path.
+function describeChangePath(c) {
+  let p = c.path
+    .replace(/^actions\[\d+\]\.slide\.presentation\.baseSlide\.elements\[[^\]]+\]\.?/, '')
+    .replace(/^actions\[\d+\]\.?/, '');
+  if (p) return p;
+  return c.kind === 'added' ? 'added in Pro7' : c.kind === 'removed' ? 'removed in Pro7' : '';
+}
+
+function formatChangeValue(v) {
+  if (v === null || v === undefined) return '—';
+  if (typeof v === 'number') return String(Math.round(v * 100) / 100);
+  const s = String(v);
+  return s.length > 60 ? s.slice(0, 57) + '…' : s;
+}
+
+// Shown when the deck's last exported file was hand-edited in ProPresenter
+// since DeckPro wrote it (see checkForHandEdits in server.js). Lists what
+// changed — slide, element, property, old → new — and lets the user choose
+// to carry those edits forward into the new version, or export fresh from
+// DeckPro's own data and let the old edits go. Resolves to 'merge' |
+// 'override' | null (dismissed — caller should abort the export entirely,
+// not guess which the user meant).
+function showMergeDecisionModal(changes) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'warn-overlay';
+
+    const rows = changes.map(c => {
+      if (c.kind === 'structural') {
+        return `<li class="warn-item"><span class="warn-msg">Slide count changed in ProPresenter: ${formatChangeValue(c.oldValue)} → ${formatChangeValue(c.newValue)} slides. This deck can't be reliably merged — pick Override, or fix the slide count in Pro7 first.</span></li>`;
+      }
+      // role only appears on a paired QR export (two independent files) —
+      // absent (and so omitted) for the plain single-file export path.
+      const roleTag = c.role ? `<span style="opacity:.65">[${c.role === 'qr' ? 'QR file' : 'No-QR file'}]</span> ` : '';
+      const where = c.slideIndex ? `Slide ${c.slideIndex}${c.slideLabel ? ` "${esc(c.slideLabel)}"` : ''}` : '';
+      const what  = c.elementName ? `${esc(c.elementName)}` : '';
+      const prop  = esc(describeChangePath(c));
+      const notMergeable = c.mergeable === false ? ' <em style="opacity:.7">(shown only — can\'t auto-merge text content)</em>' : '';
+      let valueLine;
+      if (c.kind === 'added')       valueLine = 'added in Pro7';
+      else if (c.kind === 'removed') valueLine = 'removed in Pro7';
+      else valueLine = `${esc(formatChangeValue(c.oldValue))} → ${esc(formatChangeValue(c.newValue))}`;
+      return `<li class="warn-item">
+        <span class="warn-msg">${roleTag}<strong>${where}${what ? ' · ' + what : ''}</strong>${prop ? ' — ' + prop : ''}: ${valueLine}${notMergeable}</span>
+      </li>`;
+    }).join('');
+
+    overlay.innerHTML = `
+      <div class="warn-modal">
+        <div class="warn-hdr">
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+            <path d="M10 2L2 17h16L10 2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+            <path d="M10 8v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <circle cx="10" cy="14.5" r=".75" fill="currentColor"/>
+          </svg>
+          <span>Changed in ProPresenter since last export</span>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin:0 0 8px;line-height:1.4">
+          The last version of this deck has been hand-edited in ProPresenter. Merge to carry those edits into the new version, or override to export fresh from DeckPro and let them go.
+        </p>
+        <ul class="warn-list">${rows}</ul>
+        <div class="warn-actions">
+          <button class="warn-btn-cancel">Cancel</button>
+          <button class="warn-btn-fixall" id="merge-decision-override">Override</button>
+          <button class="warn-btn-ok" id="merge-decision-merge">Merge</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('.warn-btn-cancel')?.addEventListener('click', () => { overlay.remove(); resolve(null); });
+    overlay.querySelector('#merge-decision-override')?.addEventListener('click', () => { overlay.remove(); resolve('override'); });
+    overlay.querySelector('#merge-decision-merge')?.addEventListener('click', () => { overlay.remove(); resolve('merge'); });
+    overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); resolve(null); } });
+  });
 }
 
 function showProRunningModal() {

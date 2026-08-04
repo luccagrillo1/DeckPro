@@ -7,8 +7,9 @@ const os           = require('os');
 const http         = require('http');
 const https        = require('https');
 const { execSync } = require('child_process');
-const { encode, encodeDeliverPair, listPropsBackups, restorePropsBackup } = require('./encode');
+const { encode, encodeDeliverPair, listPropsBackups, restorePropsBackup, decodePresentationBuffer } = require('./encode');
 const { extractScheme, listPresentations } = require('./extractScheme');
+const { diffPresentations } = require('./diffPresentation');
 const library              = require('./library');
 
 const app  = express();
@@ -1051,9 +1052,27 @@ app.post('/api/sync/push', (req, res) => {
 
 // ── Generate presentation ─────────────────────────────────────────────────
 
+// Detects hand-edits made in ProPresenter to the deck's last exported file,
+// by diffing the currently-installed file against the snapshot DeckPro saved
+// when IT wrote that file. Returns [] (nothing to report) when there's no
+// deck, no saved baseline (first export ever, or an export from before this
+// feature existed), or the installed file is gone/unreadable — all
+// "nothing to merge" cases, not errors.
+async function checkForHandEdits(deckId, role = 'single', installedPathOverride) {
+  if (!deckId) return [];
+  const installedPath = installedPathOverride || library.getDeck(deckId)?.last_export_path;
+  if (!installedPath || !fs.existsSync(installedPath)) return [];
+  const baseline = library.getDeckSnapshot(deckId, role);
+  if (!baseline) return [];
+  let installed;
+  try { installed = await decodePresentationBuffer(fs.readFileSync(installedPath)); }
+  catch (_) { return []; } // unreadable — nothing DeckPro can compare against
+  return diffPresentations(baseline, installed);
+}
+
 app.post('/api/generate', async (req, res) => {
   try {
-    const { spec, fileName, pairSpec, pairFileName } = req.body;
+    const { spec, fileName, pairSpec, pairFileName, mergeChoice, mergeChanges } = req.body;
     if (!spec || !fileName) return res.status(400).json({ ok: false, error: 'Missing spec or fileName' });
 
     const safe = fileName.replace(/[^a-zA-Z0-9_\-. ]/g, '_');
@@ -1072,6 +1091,25 @@ app.post('/api/generate', async (req, res) => {
       const safePair = pairFileName.replace(/[^a-zA-Z0-9_\-. ]/g, '_');
       pairSpec.name = safePair;
 
+      // Hand-edit detection for BOTH files — they're independent, so either
+      // (or both) could have been hand-edited in Pro7 since last export.
+      // Each change is tagged with which file it came from (role) so the
+      // client can show that and the merge step can route it back correctly.
+      if (spec.deckId && !mergeChoice) {
+        const deck = library.getDeck(spec.deckId);
+        const [noQrChanges, qrChanges] = await Promise.all([
+          checkForHandEdits(spec.deckId, 'noQr', deck?.last_export_path),
+          checkForHandEdits(spec.deckId, 'qr',   deck?.last_export_path_qr),
+        ]);
+        const changes = [
+          ...noQrChanges.map(c => ({ ...c, role: 'noQr' })),
+          ...qrChanges.map(c => ({ ...c, role: 'qr' })),
+        ];
+        if (changes.length) {
+          return res.json({ ok: true, needsDecision: true, changes });
+        }
+      }
+
       let pro7WasRunning = false;
       let pro7Relaunched = false;
       if (spec.autoManagePro7 === true && pro7IsRunning()) {
@@ -1084,13 +1122,23 @@ app.post('/api/generate', async (req, res) => {
 
       let result;
       try {
-        result = await encodeDeliverPair(spec, pairSpec);
+        const applyMerge = mergeChoice === 'merge';
+        result = await encodeDeliverPair(spec, pairSpec, {
+          mergeChangesA: applyMerge ? (mergeChanges || []).filter(c => c.role === 'noQr') : null,
+          mergeChangesB: applyMerge ? (mergeChanges || []).filter(c => c.role === 'qr')   : null,
+        });
       } finally {
         // Relaunch even if the encode/patch step above threw — leaving
         // ProPresenter closed with no recovery is worse than the export
         // itself failing, since the user has no visible way to know why
         // their app just vanished.
         if (pro7WasRunning) pro7Relaunched = launchPro7();
+      }
+
+      if (spec.deckId && result.presentations?.length === 2) {
+        library.setDeckPairedExportPaths(spec.deckId, result.presentations[0].path, result.presentations[1].path);
+        library.setDeckSnapshot(spec.deckId, 'noQr', result.presentations[0].snapshot);
+        library.setDeckSnapshot(spec.deckId, 'qr',   result.presentations[1].snapshot);
       }
 
       return res.json({
@@ -1102,6 +1150,17 @@ app.post('/api/generate', async (req, res) => {
         propsError: result.propsError || null,
         pro7Relaunched,
       });
+    }
+
+    // Hand-edit detection: before touching ProPresenter at all, check
+    // whether the deck's last exported file has been edited in Pro7 since
+    // DeckPro wrote it. Skipped once the client has already made a choice
+    // (mergeChoice present) so this only ever blocks the FIRST attempt.
+    if (spec.deliverMode && spec.deckId && !mergeChoice) {
+      const changes = await checkForHandEdits(spec.deckId);
+      if (changes.length) {
+        return res.json({ ok: true, needsDecision: true, changes });
+      }
     }
 
     // Auto-manage ProPresenter: if it's running and the deck patches the live
@@ -1121,12 +1180,23 @@ app.post('/api/generate', async (req, res) => {
     const outputPath   = path.join(outputFolder, `${safe}.pro`);
     let result;
     try {
-      result = await encode(spec, outputPath);
+      // mergeChanges is only ever non-empty when the client already showed
+      // the user the change list and they chose "Merge" — echoed straight
+      // back rather than recomputed, so what gets applied is exactly what
+      // they saw and agreed to.
+      const changesToApply = (spec.deliverMode && mergeChoice === 'merge') ? (mergeChanges || []) : null;
+      result = await encode(spec, outputPath, { mergeChanges: changesToApply });
     } finally {
       // Relaunch even if encode() threw — see the paired-export branch above
       // for why leaving ProPresenter closed on failure is worse than the
       // export itself failing.
       if (pro7WasRunning) pro7Relaunched = launchPro7();
+    }
+
+    // Save what was ACTUALLY written as the baseline for the next export's
+    // hand-edit check — every successful deliverMode export, merged or not.
+    if (spec.deliverMode && spec.deckId && result.presentationSnapshot) {
+      library.setDeckSnapshot(spec.deckId, result.presentationSnapshot);
     }
 
     res.json({

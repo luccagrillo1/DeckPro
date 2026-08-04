@@ -1982,4 +1982,4 @@ function buildPresentation(spec, propUuidMap = {}) {
   SCHEME_STAGE_DISPLAYS = [];   // restore for next call
 }
 
-module.exports = { buildPresentation };
+module.exports = { buildPresentation, resolveStyle };

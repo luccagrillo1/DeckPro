@@ -96,6 +96,15 @@ function open() {
     CREATE INDEX IF NOT EXISTS idx_decks_status ON decks(status);
     CREATE INDEX IF NOT EXISTS idx_gen_deck ON generations(deck_id);
   `);
+  // Additive column migrations — CREATE TABLE IF NOT EXISTS above only
+  // covers a brand-new db; existing dbs need ALTER TABLE for new columns.
+  // node:sqlite has no "ADD COLUMN IF NOT EXISTS", so just swallow the
+  // "duplicate column" error on every subsequent open.
+  try { db.exec(`ALTER TABLE decks ADD COLUMN last_export_snapshot TEXT DEFAULT ''`); } catch (_) {}
+  // Paired QR export writes two files (no-QR + QR); last_export_path already
+  // tracks the no-QR/primary one (recordGeneration), this tracks the second.
+  try { db.exec(`ALTER TABLE decks ADD COLUMN last_export_path_qr TEXT DEFAULT ''`); } catch (_) {}
+
   const ver = getMeta('schema_version');
   if (!ver) setMeta('schema_version', String(SCHEMA_VERSION));
   dailyBackup();
@@ -267,6 +276,38 @@ function duplicateDeck(id, newId) {
 
 // ─── Generations ──────────────────────────────────────────────────────────────
 
+// ─── Export snapshots (merge/override diffing) ───────────────────────────────
+// The decoded structure of the last presentation DeckPro wrote for this deck,
+// used as a baseline: diffing it against what's actually installed in Pro7
+// (which may have been hand-edited since) surfaces those edits so the next
+// export can offer to merge them forward instead of silently discarding them.
+// Only the MOST RECENT export is kept (not one per generation) — that's all
+// the diff ever needs, and it keeps this from growing unbounded.
+// Snapshots are stored per "role" — 'single' for the plain export path,
+// 'noQr'/'qr' for the two files a paired QR export writes — since those are
+// genuinely separate files that could each be independently hand-edited in
+// Pro7. Stored as one JSON map so a single column covers all roles.
+function getDeckSnapshot(deckId, role = 'single') {
+  const row = db.prepare('SELECT last_export_snapshot FROM decks WHERE id = ?').get(deckId);
+  if (!row || !row.last_export_snapshot) return null;
+  try { return (JSON.parse(row.last_export_snapshot) || {})[role] || null; } catch (_) { return null; }
+}
+function setDeckSnapshot(deckId, role, snapshot) {
+  const row = db.prepare('SELECT last_export_snapshot FROM decks WHERE id = ?').get(deckId);
+  let all = {};
+  try { all = JSON.parse(row?.last_export_snapshot || '{}') || {}; } catch (_) {}
+  all[role] = snapshot || null;
+  db.prepare('UPDATE decks SET last_export_snapshot = ? WHERE id = ?').run(JSON.stringify(all), deckId);
+}
+
+/** Records both file paths from a paired QR export directly (rather than
+ *  relying on two separate recordGeneration calls, which would just
+ *  overwrite the same last_export_path column twice). */
+function setDeckPairedExportPaths(deckId, noQrPath, qrPath) {
+  db.prepare('UPDATE decks SET last_export_path = ?, last_export_path_qr = ? WHERE id = ?')
+    .run(noQrPath || '', qrPath || '', deckId);
+}
+
 function recordGeneration({ deckId, fileName, path: filePath, sizeKB, delivered }) {
   const ts = now();
   db.prepare(`
@@ -386,5 +427,6 @@ module.exports = {
   listDecks, getDeck, saveDeck, updateDeckInfo, touchOpened,
   setStatus, setTemplate, hardDelete, duplicateDeck,
   recordGeneration, listGenerations,
+  getDeckSnapshot, setDeckSnapshot, setDeckPairedExportPaths,
   importLegacy, setLocation, resetLocation,
 };

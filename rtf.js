@@ -167,6 +167,162 @@ function buildSpanContent(spans, opts = {}) {
   return { content, allAlt, mixedAlt };
 }
 
+// ─── RTF span parser (reverse of buildSpanContent) ─────────────────────────
+// Used for merging hand-edits made directly in ProPresenter (see
+// diffPresentation.js): recovers the {text, alt, bold, italic, underline,
+// super} spans a piece of rtfData was built from, so a genuine text edit can
+// be reapplied by re-running it back through rtfBody/rtfPointBody rather
+// than risking a hand-spliced RTF string.
+
+const W1252_REV = Object.fromEntries(Object.entries(W1252).map(([ch, esc]) => [esc, ch]));
+
+// Every rtfBody/rtfTitle/rtfPointBody branch ends its fixed preamble with
+// this exact sequence immediately before the caller-supplied content —
+// see buildSpanContent's callers above. Used to locate where per-span
+// content starts within a full body string.
+const CONTENT_MARKER = '\\strokec3 ';
+
+function splitAtContentMarker(bodyStr) {
+  const idx = bodyStr.indexOf(CONTENT_MARKER);
+  if (idx === -1) return null;
+  return { preamble: bodyStr.slice(0, idx + CONTENT_MARKER.length), content: bodyStr.slice(idx + CONTENT_MARKER.length) };
+}
+
+// Reverses escapeRtf(): Windows-1252 named escapes, \\, \{, \}, RTF line
+// breaks (backslash+literal newline), and \uNNNN? unicode fallback.
+function unescapeRtfText(s) {
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] !== '\\') { out += s[i]; continue; }
+    const rest = s.slice(i);
+    let matched = false;
+    for (const [esc, ch] of Object.entries(W1252_REV)) {
+      if (rest.startsWith(esc)) { out += ch; i += esc.length - 1; matched = true; break; }
+    }
+    if (matched) continue;
+    if (rest.startsWith('\\\\')) { out += '\\'; i += 1; continue; }
+    if (rest.startsWith('\\{'))  { out += '{';  i += 1; continue; }
+    if (rest.startsWith('\\}'))  { out += '}';  i += 1; continue; }
+    if (rest[1] === '\n')        { out += '\n'; i += 1; continue; }
+    const uni = rest.match(/^\\u(\d+)\?/);
+    if (uni) { out += String.fromCharCode(+uni[1]); i += uni[0].length - 1; continue; }
+    out += s[i]; // unrecognized backslash — keep literally rather than drop
+  }
+  return out;
+}
+
+// Parses a content string (post-CONTENT_MARKER) into spans, tracking the
+// same alt/bold/italic/underline/super state machine buildSpanContent's
+// encoder uses. Tolerates control words rtf.js itself never emits (Pro7's
+// own editor could in principle use others) by skipping them rather than
+// misreading them as text.
+function parseSpanContent(content, initial = {}) {
+  const spans = [];
+  let buf = '';
+  let alt = !!initial.alt, bold = !!initial.bold, italic = false, underline = false, sup = false;
+  const flush = () => {
+    if (buf) spans.push({ text: unescapeRtfText(buf), alt, bold, italic, underline, super: sup });
+    buf = '';
+  };
+  let i = 0;
+  while (i < content.length) {
+    // A bare (unescaped) newline is insignificant RTF source formatting —
+    // buildSpanContent inserts one before every \f0/\f1 transition purely
+    // for source readability, not as content. A backslash IMMEDIATELY
+    // followed by a newline (handled below, under the '\\' branch) is the
+    // real, meaningful RTF line break (escapeRtf's encoding of '\n').
+    if (content[i] === '\n') { i++; continue; }
+    // A bare (unescaped) '}' can only be the closing brace of the RTF
+    // document group that wraps this content (rtfDoc's `${body}}`) —
+    // well-formed RTF always escapes a literal '}' in text as '\}' (handled
+    // separately below), so this always marks the true end of content.
+    if (content[i] === '}') break;
+    if (content[i] !== '\\') { buf += content[i]; i++; continue; }
+    const rest = content.slice(i);
+    let m;
+    if ((m = rest.match(/^\\f([01])\s?/)))      { flush(); alt = m[1] === '1';   i += m[0].length; continue; }
+    if ((m = rest.match(/^\\b0\s?/)))           { flush(); bold = false;         i += m[0].length; continue; }
+    if ((m = rest.match(/^\\b\s?/)))            { flush(); bold = true;          i += m[0].length; continue; }
+    if ((m = rest.match(/^\\i0\s?/)))           { flush(); italic = false;       i += m[0].length; continue; }
+    if ((m = rest.match(/^\\i\s?/)))            { flush(); italic = true;        i += m[0].length; continue; }
+    if ((m = rest.match(/^\\ulnone\s?/)))       { flush(); underline = false;    i += m[0].length; continue; }
+    if ((m = rest.match(/^\\ul\s?/)))           { flush(); underline = true;     i += m[0].length; continue; }
+    if ((m = rest.match(/^\\super\s?/)))        { flush(); sup = true;           i += m[0].length; continue; }
+    if ((m = rest.match(/^\\nosupersub\s?/)))   { flush(); sup = false;          i += m[0].length; continue; }
+    // Escaped literal sequences — kept in buf verbatim, unescaped at flush().
+    if ((m = rest.match(/^\\'[0-9A-Fa-f]{2}/)))  { buf += m[0]; i += m[0].length; continue; }
+    if (rest.startsWith('\\\\'))                 { buf += '\\\\'; i += 2; continue; }
+    if (rest.startsWith('\\{'))                  { buf += '\\{';  i += 2; continue; }
+    if (rest.startsWith('\\}'))                  { buf += '\\}';  i += 2; continue; }
+    if (rest[1] === '\n')                        { buf += '\\\n'; i += 2; continue; }
+    if ((m = rest.match(/^\\u\d+\?/)))           { buf += m[0]; i += m[0].length; continue; }
+    // Unrecognized control word — skip past it rather than treat as text.
+    if ((m = rest.match(/^\\[a-zA-Z]+-?\d*\s?/))) { i += m[0].length; continue; }
+    buf += content[i]; i++; // lone/unknown backslash — keep literally
+  }
+  flush();
+  return spans;
+}
+
+/** Parses a base64 rtfData string back into spans (see module header). Falls
+ *  back to a single all-plain span if the content marker can't be found
+ *  (an rtfData shape rtf.js itself never emits — e.g. a Props-only string). */
+function parseRtfSpans(rtfDataBase64) {
+  if (!rtfDataBase64) return [];
+  const raw = Buffer.from(rtfDataBase64, 'base64').toString('latin1');
+  const split = splitAtContentMarker(raw);
+  if (!split) return [{ text: raw }];
+  // rtfBody's "allAlt" branch (spans that are ENTIRELY emphasis/bold — a
+  // whole verse or point in the bold font) bakes that into the fixed
+  // preamble (`\f0\b\fs...`) rather than a per-span \f1 toggle inside
+  // content, since there's nothing to toggle between. Content-only parsing
+  // can't see that — it has to be read off the preamble instead.
+  const isAllAlt = /\\f0\\b\\fs/.test(split.preamble);
+  return parseSpanContent(split.content, { alt: isAllAlt });
+}
+
+/**
+ * Parses rtfPointBody's own output back into {text, bold} spans — a
+ * DIFFERENT structure from rtfBody's (see rtfPointBody above): the
+ * single-font path matches rtfBody's plain/allAlt shape exactly (reusable),
+ * but the mixed path has no shared preamble or state-machine toggling at
+ * all — every span is a fully self-contained block starting with its own
+ * \f0\b0\fsN (plain) or \f1\bfsN (bold) marker, repeated in full each time.
+ */
+function parsePointBodySpans(rtfDataBase64) {
+  if (!rtfDataBase64) return [];
+  const raw = Buffer.from(rtfDataBase64, 'base64').toString('latin1');
+  const fonttblMatch = raw.match(/\{\\fonttbl([^}]*)\}/);
+  const fontCount = fonttblMatch ? new Set(fonttblMatch[1].match(/\\f\d/g) || []).size : 1;
+  if (fontCount < 2) {
+    // Single-font path — identical shape to rtfBody's plain/allAlt branches.
+    // "single" in rtfPointBody means uniformly bold OR uniformly plain,
+    // treated the same (whole text in the point font) — bold:false here
+    // reproduces that either way, since rtfPointBody's own "single" check
+    // only fires when there's no genuine bold/non-bold MIX.
+    return parseRtfSpans(rtfDataBase64).map(s => ({ text: s.text, bold: false }));
+  }
+  // \s? (not \s*): the template always inserts exactly one delimiter space
+  // after \fsN (required RTF syntax — a numeric control word needs a
+  // non-digit terminator). A GREEDY \s* would also swallow the next span's
+  // own genuine leading space (e.g. " without complaining").
+  const markerRe = /\\f([01])(\\b0?)?\\fs\d+\s?/g;
+  const markers = [];
+  let m;
+  while ((m = markerRe.exec(raw))) markers.push({ start: m.index, end: markerRe.lastIndex, isBold: m[2] === '\\b' });
+  if (!markers.length) return [{ text: '', bold: false }];
+  const spans = [];
+  for (let i = 0; i < markers.length; i++) {
+    const chunkEnd = i + 1 < markers.length ? markers[i + 1].start : raw.length;
+    let chunk = raw.slice(markers[i].end, chunkEnd);
+    const strokeIdx = chunk.indexOf(CONTENT_MARKER);
+    if (strokeIdx !== -1) chunk = chunk.slice(strokeIdx + CONTENT_MARKER.length);
+    if (chunk.endsWith('}')) chunk = chunk.slice(0, -1);
+    spans.push({ text: unescapeRtfText(chunk), bold: markers[i].isBold });
+  }
+  return spans.filter(s => s.text !== '');
+}
+
 // ─── RTF document templates ────────────────────────────────────────────────
 
 function toBase64(rtfString) {
@@ -663,5 +819,5 @@ module.exports = {
   rtfBody, rtfTitle, rtfLive, rtfLiveLabel, rtfStartEnd, rtfPointList, rtfPointBody,
   rtfRevealingPoints, rtfQueue, rtfEmpty, rtfNotes, escapeRtf,
   rtfResponseLabel, rtfResponseBody, rtfResponseMark, rtfResponseConfMonitor, rtfResponseHoldTitle,
-  bulletToText, bulletToSpans,
+  bulletToText, bulletToSpans, parseRtfSpans, parsePointBodySpans,
 };
