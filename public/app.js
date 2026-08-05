@@ -2,9 +2,24 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.23.0';
+const APP_VERSION = '4.24.0';
 
 const CHANGELOG = [
+  {
+    version: '4.24.0',
+    date: '2026-08-05',
+    changes: [
+      'New: drag straight off the notes doc. Every paragraph/heading/list item in the Speaker Notes panel is now click-and-drag — no need to select text first. What happens depends on where you drop it: onto a text field (Scripture/Point body, reference, etc.), it drops in as rich text with bold preserved; onto the deck sidebar, DeckPro figures out what the dragged content actually is — a verse reference, a point, a response-card option — and creates the right kind of slide, fully filled in (reference + body + bold for a scripture, matching what "Add" already does from the Suggested Slides tray). Dragging a continuation block (verse text right after its reference, a bullet right after its heading) correctly finds the reference/heading it belongs to, same as the tray\'s own suggestions do. Plain text-selection dragging (select a phrase, then drag it) still works as before, unchanged.',
+      'Fixed a real bug this surfaced: dragging bold text out of the notes doc missed bold applied via a CSS class (Google Docs\' actual export format) — only inline "style=" bold and literal <b>/<strong> tags were detected. Affects both the existing text-selection drag and the new whole-block drag.',
+    ],
+  },
+  {
+    version: '4.23.1',
+    date: '2026-07-29',
+    changes: [
+      'Help Guide brought up to date: documented Merge/Override (Exporting section), the Gradient and Gradient (QR code version) macro fields (Macros & Stage, QR Code), the Build Order Start-option position constraint, Auto-manage\'s Accessibility permission prompt and quit-dialog handling, and corrected the QR Export pair naming (same _v{N}, QR file gets _SAT) and Build Order\'s stale mention of a "gradient" build element (the gradient is a Pro7 macro, not a buildable element).',
+    ],
+  },
   {
     version: '4.23.0',
     date: '2026-07-29',
@@ -10047,6 +10062,10 @@ function initLiveQuoteNormalization() {
 // serialized text/html drag payload would lose it) and consumed on drop —
 // same field-detection rule as live quote normalization above.
 let _draggedNotesText = null; // { plain, html } — html is <strong>-only, sanitized
+// Set only by a whole-block drag (extractNotesBlocks' dragstart, below) —
+// null for a plain text-selection drag, which has no single block to trace
+// back to. Read by the sidebar drop handler to find/build the right slide.
+let _draggedNotesBlockIdx = null;
 
 function isTextFieldTarget(el) {
   if (!el) return false;
@@ -10054,6 +10073,37 @@ function isTextFieldTarget(el) {
   if (el.tagName === 'TEXTAREA') return true;
   if (el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'search')) return true;
   return false;
+}
+
+// Shared by both drag sources below (a text selection, or a whole notes
+// block): walks a node list, wrapping runs of bold text in <strong> based
+// on computed font-weight (Google Docs marks bold via inline
+// font-weight:700 on a span, not a semantic <b>/<strong> tag) or the tag
+// itself, and converts <br> to a literal line break.
+function boldWalkToHtml(nodes, startBold = false) {
+  const bits = [];
+  const walk = (node, bold) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (node.textContent) bits.push(bold ? `<strong>${esc(node.textContent)}</strong>` : esc(node.textContent));
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    if (node.tagName === 'BR') { bits.push('<br>'); return; }
+    // Checks the tag, the inline style attribute, AND computed style —
+    // Google Docs marks bold via a CSS class on a nested span (only
+    // reflected in computed style), not an inline style or semantic tag, so
+    // relying on just the first two silently misses the common case. Purely
+    // additive (OR), so a detached clone (a text SELECTION's
+    // cloneContents(), whose computed style is unreliable outside a
+    // rendered tree) still falls back to whatever the tag/inline checks
+    // catch, same as before.
+    const isBold = bold || node.tagName === 'B' || node.tagName === 'STRONG'
+      || /bold|[7-9]00/.test(node.style?.fontWeight || '')
+      || _isBoldWeight(getComputedStyle(node).fontWeight);
+    node.childNodes.forEach(child => walk(child, isBold));
+  };
+  nodes.forEach(n => walk(n, startBold));
+  return bits.join('');
 }
 
 function initNotesFieldDragDrop() {
@@ -10066,23 +10116,10 @@ function initNotesFieldDragDrop() {
         return;
       }
       const frag = sel.getRangeAt(0).cloneContents();
-      const bits = [];
-      const walk = (node, bold) => {
-        if (node.nodeType === Node.TEXT_NODE) {
-          if (node.textContent) bits.push(bold ? `<strong>${esc(node.textContent)}</strong>` : esc(node.textContent));
-          return;
-        }
-        if (node.nodeType !== Node.ELEMENT_NODE) return;
-        if (node.tagName === 'BR') { bits.push('<br>'); return; }
-        const isBold = bold || node.tagName === 'B' || node.tagName === 'STRONG'
-          || /bold|[7-9]00/.test(node.style?.fontWeight || '');
-        node.childNodes.forEach(child => walk(child, isBold));
-      };
-      [...frag.childNodes].forEach(n => walk(n, false));
       // Read plain text off the clone, not sel.toString() — the live selection
       // can already be gone by the time this runs (the browser collapses it
       // as part of entering drag mode), even synchronously within this handler.
-      _draggedNotesText = { plain: frag.textContent, html: bits.join('') };
+      _draggedNotesText = { plain: frag.textContent, html: boldWalkToHtml([...frag.childNodes]) };
     });
     docBody.addEventListener('dragend', () => { _draggedNotesText = null; });
   }
@@ -10119,6 +10156,32 @@ function initNotesFieldDragDrop() {
     }
     t.dispatchEvent(new Event('input', { bubbles: true }));
     _draggedNotesText = null;
+    _draggedNotesBlockIdx = null;
+  });
+}
+
+// Drag a notes block straight onto the deck sidebar to create a slide from
+// it — dropped on the SAME container the existing slide-reorder drag uses
+// (#slide-queue), but harmlessly: reorder's onDrop/onDragOver key off the
+// module-level `dragId`, which a notes-block drag never sets, so they no-op
+// and let the event bubble up here undisturbed.
+function initNotesSidebarDrop() {
+  const queue = document.getElementById('slide-queue');
+  if (!queue) return;
+  queue.addEventListener('dragover', e => {
+    if (_draggedNotesBlockIdx == null) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+  queue.addEventListener('drop', e => {
+    if (_draggedNotesBlockIdx == null) return;
+    e.preventDefault();
+    const block = _notesDoc?.blocks?.[_draggedNotesBlockIdx];
+    _draggedNotesBlockIdx = null;
+    if (!block) return;
+    const suggestion = notesSuggestionForBlock(block.idx);
+    if (suggestion) applyNotesSuggestion(suggestion);
+    else notesAddPointFrom({ text: block.text, title: block.text });
   });
 }
 
@@ -11502,6 +11565,20 @@ function extractNotesBlocks() {
     const idx = blocks.length;
     blocks.push({ tag: el.tagName.toLowerCase(), text, bg, idx, boldPhrases: extractBoldPhrases(el), highlightedText: extractHighlightedText(el) });
     el.dataset.notesBlock = idx;
+    // Whole-block drag: click-drag the block itself, no text selection first
+    // (that's the OTHER drag source, initNotesFieldDragDrop's selection-based
+    // one, still available for dragging part of a block). stopPropagation
+    // keeps docBody's own dragstart from also firing and, finding no active
+    // selection, clobbering the payload this sets.
+    el.draggable = true;
+    el.addEventListener('dragstart', e => {
+      e.stopPropagation();
+      _draggedNotesText = { plain: el.textContent, html: boldWalkToHtml([...el.childNodes], _isBoldWeight(getComputedStyle(el).fontWeight)) };
+      _draggedNotesBlockIdx = idx;
+      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.setData('text/plain', el.textContent);
+    });
+    el.addEventListener('dragend', () => { _draggedNotesText = null; _draggedNotesBlockIdx = null; });
   });
   _notesDoc.blocks  = blocks;
   _notesDoc.colors  = [...colorSet];
@@ -11952,6 +12029,34 @@ function notesAddResponseCard(s) {
   toast('success', 'Response Card filled', [r1, r2, r3].filter(Boolean).join(' · '));
 }
 
+// Shared by the tray's Add button and dragging a notes block straight onto
+// the sidebar — routes a suggestion to whichever notesAdd* fits its type,
+// then marks it handled (removed from the tray) either way.
+function applyNotesSuggestion(s) {
+  if (!s) return;
+  if (s.type === 'scripture')       notesAddScripture(s.ref, s.notesBoldPhrases);
+  else if (s.type === 'confidence') notesAddConfidence(s.text);
+  else if (s.type === 'response')   notesAddResponseCard(s);
+  else                              notesAddPointFrom(s);
+  notesIgnore(s.key);
+}
+
+// Finds the suggestion a dragged block belongs to — either its OWN trigger
+// (an exact blockIdx match), or, for a continuation block with no
+// suggestion of its own (verse text following its reference, a bullet
+// following its heading), the nearest PRECEDING suggestion, since a chain
+// continuation always comes after its trigger in document order.
+function notesSuggestionForBlock(blockIdx) {
+  if (!_notesDoc?.suggestions?.length) return null;
+  const exact = _notesDoc.suggestions.find(s => s.blockIdx === blockIdx);
+  if (exact) return exact;
+  let best = null;
+  for (const s of _notesDoc.suggestions) {
+    if (s.blockIdx <= blockIdx && (!best || s.blockIdx > best.blockIdx)) best = s;
+  }
+  return best;
+}
+
 function notesIgnore(key) {
   if (!state.config.notesIgnored) state.config.notesIgnored = [];
   if (!state.config.notesIgnored.includes(key)) state.config.notesIgnored.push(key);
@@ -12136,13 +12241,7 @@ function attachNotesDocHandlers() {
       return;
     }
     if (addBtn) {
-      const s = notesSuggestionByKey(addBtn.dataset.key);
-      if (!s) return;
-      if (s.type === 'scripture')       notesAddScripture(s.ref, s.notesBoldPhrases);
-      else if (s.type === 'confidence') notesAddConfidence(s.text);
-      else if (s.type === 'response')   notesAddResponseCard(s);
-      else                              notesAddPointFrom(s);
-      notesIgnore(s.key);   // remove from tray once added (tracked as handled)
+      applyNotesSuggestion(notesSuggestionByKey(addBtn.dataset.key));
     } else if (igBtn) {
       notesIgnore(igBtn.dataset.key);
     }
@@ -13944,7 +14043,7 @@ function helpSections() {
       </ul>
 
       <h4>QR Export pair</h4>
-      <p>Enable <strong>Preferences → QR Export → "Export both versions when QR is on"</strong> and, whenever the deck's QR toggle is on, pressing Export delivers <em>two</em> presentations in one action — one without QR, one with — sharing the exact same prop collection (no duplicate props written). They get sequential names off the same base, e.g. <code>..._v1</code> (no QR) and <code>..._v2</code> (QR). Handy for a Saturday/Sunday pair with otherwise identical content.</p>
+      <p>Enable <strong>Preferences → QR Export → "Export both versions when QR is on"</strong> and, whenever the deck's QR toggle is on, pressing Export delivers <em>two</em> presentations in one action — one without QR, one with — sharing the exact same prop collection (no duplicate props written). Both share the <em>same</em> <code>_v{N}</code>, since they're the same version of the deck; the QR one gets an additional <code>_SAT</code> suffix to tell them apart, e.g. <code>..._v7</code> (no QR) and <code>..._v7_SAT</code> (QR). Handy for a Saturday/Sunday pair with otherwise identical content.</p>
 
       <h4>Adding &amp; ordering slides</h4>
       <ul>
@@ -14139,7 +14238,8 @@ function helpSections() {
       <h4>Transitions</h4>
       <p>The default transition <strong>type</strong> and <strong>duration</strong> for the main screen and, separately, for the ${D2} prop. Individual slides can override these in their Overrides section.</p>
       <h4>Build Order</h4>
-      <p>Per slide type (Content, Point, Blank, Start/End), the order and animation in which a slide's elements build in or out — e.g. scripture's title, body and gradient fading together after a delay. Each build tab holds its own ordered rows.</p>
+      <p>Per slide type (Content, Point, Blank, Start/End), the order and animation in which a slide's elements — body, title, live — build in or out. Each build tab holds its own ordered rows. (The bottom gradient isn't in this list — it's a Pro7 macro, not a DeckPro element; see <em>QR Code</em> and <em>Macros &amp; Stage</em> for the Gradient macro fields.)</p>
+      <p>Each row's <strong>Start</strong> option is constrained to match how ProPresenter's own build order actually works: the <em>first</em> row in a list can only start <strong>After Transition</strong> or <strong>On Click</strong> — there's no earlier item for it to start "with" or "after." Every row after that can only start <strong>On Click</strong>, <strong>With Previous</strong>, or <strong>After Previous</strong>, always referencing the row directly above it. Reordering, adding, or deleting rows automatically corrects any row left with an invalid Start for its new position.</p>
       <p class="help-muted">Like everything else, Motion values inherit Global by default (blue) until you override them (orange), with Reset / Push on each.</p>
     `,
   },
@@ -14153,6 +14253,9 @@ function helpSections() {
         <li><strong>Slide-type chips</strong> — fire the macro on every Scripture / Point / Blank / Image / Custom slide.</li>
         <li><strong>Slide&nbsp;#</strong> position triggers — fire on specific slide positions (type a number, press Enter).</li>
       </ul>
+
+      <h4>Gradient</h4>
+      <p>A dedicated single macro field, separate from the per-trigger list above — the macro that fires on Scripture, Point, and Response Card content cues. It's deck-wide, not per-style, since it's a real macro rather than visual style — same reasoning as QR Macro. See <em>QR Code</em> for the matching <strong>Gradient (QR code version)</strong> field, which fires instead whenever that export's QR toggle is on.</p>
 
       <h3>Stage tab</h3>
       <p>Per-style stage-display layouts, same model as Macros. <strong>+ Add Stage Display</strong> picks any Pro7 stage layout; assign it slide-type and/or Slide&nbsp;# triggers. The <strong>Stage Screen</strong> row at the top identifies the physical display these layouts target.</p>
@@ -14234,6 +14337,9 @@ function helpSections() {
       <div class="help-callout">
         <strong>Manual always wins.</strong> Once you've clicked a slide's own QR toggle, that choice is locked in — moving the marker or flipping the deck-wide toggle later never changes it again. Only untouched blanks follow the auto default.
       </div>
+
+      <h4>Gradient (QR code version)</h4>
+      <p>A second macro field alongside QR Macro — fires on Scripture, Point, and Response Card content cues <em>instead of</em> the normal Gradient macro (Macros tab) whenever this export's QR toggle is on, so the no-QR and QR files can each use a different background treatment. In a paired export (see <em>Building a Deck</em>), the no-QR file always uses the normal Gradient and the QR file always uses this one.</p>
     `,
   },
   {
@@ -14272,7 +14378,7 @@ function helpSections() {
       <div class="help-callout help-callout-warn">
         <strong>ProPresenter must not overwrite the export.</strong> Pro7 rewrites its props config when it quits, which would undo DeckPro's write. Two ways to stay safe:
         <ul>
-          <li><strong>Auto-manage</strong> (recommended) — in Preferences, turn on “Auto-manage ProPresenter on export.” DeckPro quits Pro7, writes everything, and relaunches it for you.</li>
+          <li><strong>Auto-manage</strong> (recommended) — in Preferences, turn on “Auto-manage ProPresenter on export.” DeckPro quits Pro7 (clicking through its "Are you sure you want to quit?" dialog if it appears), writes everything, and relaunches it for you. Turning this on asks macOS for the Accessibility permission it needs, the first time — approve it in the system prompt so the auto-quit can actually click that dialog.</li>
           <li><strong>Manual</strong> — close ProPresenter yourself first; DeckPro warns you if it's still open, then reopen it after.</li>
         </ul>
       </div>
@@ -14283,6 +14389,17 @@ function helpSections() {
         <li>All prop slots in Pro7's Configuration/Props — active slides get real content, unused slots get empty placeholders.</li>
         <li>A <strong>DeckPro</strong> collection folder in the Props panel, kept in sync. Your other prop collections are preserved byte-for-byte.</li>
       </ul>
+
+      <h4>Merge or Override — when Pro7 has hand-edits</h4>
+      <p>If you tweak something directly in ProPresenter after DeckPro exported a deck — resize a text box, retint a fill, retype a verse or point, tweak a macro — the <em>next</em> export detects it and pauses before writing anything, showing exactly what changed: which file, which slide, which element, which property, old value → new value.</p>
+      <ul>
+        <li><strong>Merge</strong> — carries those Pro7 edits forward into the new version, alongside whatever content changes you made in DeckPro.</li>
+        <li><strong>Override</strong> — exports fresh from DeckPro's own data and lets the Pro7 edits go.</li>
+      </ul>
+      <p>This covers anything a hand-edit could touch — position, size, colour, font, macros, props, elements added or removed entirely in Pro7 — and text content itself is safely reconstructed (not just flagged) for every real text field: Scripture body and reference-bar text, Point body text, Response Card text, and Start/End banners, bold emphasis included wherever it applies. A QR paired export tracks and merges its no-QR and QR files independently, since either one could be hand-edited on its own.</p>
+      <div class="help-callout">
+        <strong>Needs a baseline to compare against.</strong> Detection works by diffing what's currently in Pro7 against a snapshot DeckPro saved the last time <em>it</em> wrote that file. A deck's very first export — or one from before this feature existed — has nothing to compare against yet, so the very next export after that just proceeds normally. Detection kicks in starting from the export after that.
+      </div>
 
       <h4>After exporting</h4>
       <p>Open ProPresenter — the deck and its props are there. Recent exports are logged under <strong>···&nbsp;→&nbsp;Export History</strong>; click the folder icon to reveal a file in Finder.</p>
@@ -14414,7 +14531,7 @@ function helpSections() {
       <ol class="help-steps">
         <li>Expand slides → raw cues (blank-before injection, multi-body scripture, revealing bullets).</li>
         <li>Append Response Card cues before End (if enabled).</li>
-        <li>Inject the Message-Content macro; fire the configured QR macro on blank-before cues whose slide had <code>qrOn</code> (computed client-side — see <em>QR Code</em>); inject the queue element into every cue.</li>
+        <li>Inject the Message-Content macro; fire the configured QR macro on blank-before cues whose slide had <code>qrOn</code> (computed client-side — see <em>QR Code</em>); fire the Gradient macro (or its QR-version counterpart, based on <code>spec.qrCode</code>) on Scripture/Point/RC-content cues; inject the queue element into every cue.</li>
       </ol>
 
       <h4>Default element bounds (1920×1080)</h4>
@@ -14442,6 +14559,14 @@ function helpSections() {
         <li><code>computeSlideFitWidth(slide, scheme)</code> is the shared entry point used by both the per-slide toggle and the pre-export batch recompute. For scripture it strips newline spans first when Strip is also on; for revealing points it runs every bullet through <code>computeOptimalBodyWidth</code> and keeps the widest result, since all reveal cues share one <code>bodyW</code>/<code>bodyX</code> in <code>buildPointCues()</code>.</li>
         <li><code>computeOptimalBodyWidth(spans, rs, type, display)</code>'s <code>display</code> param (<code>'main'</code>|<code>'prop'</code>) selects Display 2's own canvas size/font size/body-width ceiling instead of Display 1's. <code>computeSlideFitWidth</code> only runs the <code>'prop'</code> search when <code>slide.propFitWidth</code> is true (the "+ Display 2" sub-toggle, only shown while <code>slide.fitWidth</code> is on — defaults to <code>true</code> on new slides, same as <code>fitWidth</code>, but is a genuinely independent flag: turn it off per-slide to leave a hand-tuned custom Display 2 box alone). It's independent rather than hard-coupled to <code>slide.fitWidth</code> because that was tried first and reverted — it silently resized/recentered custom Display 2 boxes the moment Display 1's Fit Width was turned on, with no way to opt out.</li>
         <li>Highlighted/emphasis (<code>alt</code>) text is rendered with ordinary spaces in the exported RTF — earlier builds substituted <code>\~</code> (RTF non-breaking space) for every space inside an <code>alt</code> span, which silently blocked ProPresenter from ever wrapping inside a highlighted phrase regardless of what Fit Width computed. That substitution is gone; <code>highlightSplit</code> in <code>FIT_WEIGHTS</code> is now the only thing discouraging (not preventing) a split there.</li>
+      </ul>
+
+      <h4>Merge/Override internals</h4>
+      <ul>
+        <li><code>diffPresentation.js</code>: <code>diffPresentations(baseline, current)</code> deep-diffs two decoded <code>rv.data.Presentation</code> objects — cues matched by index, elements within a cue matched by stable <code>name</code>. Any field shaped like a UUID reference (not just literally named <code>uuid</code>) is skipped on both sides, since builder.js mints a fresh one every export; a UUID going from present to absent is still reported. <code>applyChanges(target, changes, style)</code> reapplies changes onto a freshly-built structure the same way, using <code>textMergeKindFor(slideType, elementName)</code> to pick which renderer (if any) can safely reconstruct a given text field's <code>rtfData</code> — see there for the exact list and why some fields are still detect-only.</li>
+        <li><code>rtf.js</code>: <code>parseRtfSpans()</code> / <code>parsePointBodySpans()</code> are the reverse of the span-based encoders (<code>rtfBody</code>/<code>rtfPointBody</code> respectively) — rtfPointBody's per-span format (a repeated self-contained <code>\\f0\\b0\\fsN</code>/<code>\\f1\\bfsN</code> marker on every span, no shared state) is genuinely different from rtfBody's state-machine toggling, hence the separate parser.</li>
+        <li><code>library.js</code> stores one snapshot per export "role" (<code>single</code>/<code>noQr</code>/<code>qr</code>) — the decoded shape of whatever DeckPro last wrote — as the baseline the next export's hand-edit check diffs the currently-installed file against.</li>
+        <li>Classifying a cue by element names alone is a trap: Start/End/Response-Card-Hold cues also name their text element <code>body</code> (rendered via <code>rtfStartEnd</code>, not <code>rtfBody</code>) — the real discriminator is whether a <code>live</code> element is present (scripture/point/response-card have one, Start/End never does).</li>
       </ul>
 
       <h4>Tests</h4>
@@ -14906,6 +15031,7 @@ async function bootstrap() {
   initTheme();
   initLiveQuoteNormalization();
   initNotesFieldDragDrop();
+  initNotesSidebarDrop();
   syncUidCounter();
   attachHeaderHandlers();
   initDecks();
