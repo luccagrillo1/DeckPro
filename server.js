@@ -1122,10 +1122,17 @@ app.post('/api/generate', async (req, res) => {
 
       let result;
       try {
+        // A hand-edit found on EITHER file gets applied to BOTH on merge —
+        // the no-QR and QR files are the same underlying deck, just with/
+        // without the QR macro, so an edit made to one (a resize, a retype)
+        // is almost always meant for both, not just whichever happened to
+        // get hand-edited. `role` still tags each change for the decision
+        // modal's display, but doesn't filter which file it's applied to.
         const applyMerge = mergeChoice === 'merge';
+        const allChanges = applyMerge ? (mergeChanges || []) : null;
         result = await encodeDeliverPair(spec, pairSpec, {
-          mergeChangesA: applyMerge ? (mergeChanges || []).filter(c => c.role === 'noQr') : null,
-          mergeChangesB: applyMerge ? (mergeChanges || []).filter(c => c.role === 'qr')   : null,
+          mergeChangesA: allChanges,
+          mergeChangesB: allChanges,
         });
       } finally {
         // Relaunch even if the encode/patch step above threw — leaving

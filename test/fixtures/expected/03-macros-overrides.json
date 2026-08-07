@@ -154,8 +154,8 @@
           ]
         },
         {
-          "type": "CLEAR",
-          "clear": "CLEAR_TARGET_LAYER_PROP"
+          "type": "PROP",
+          "prop": "Background Image"
         },
         {
           "type": "MACRO",

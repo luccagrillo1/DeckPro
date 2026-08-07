@@ -2,9 +2,18 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.24.0';
+const APP_VERSION = '4.25.0';
 
 const CHANGELOG = [
+  {
+    version: '4.25.0',
+    date: '2026-08-07',
+    changes: [
+      'Divine-pronoun capitalization reworked so it stops capitalizing the wrong ones. The old setting silently capitalized every He/Him/His/Himself at export — including pronouns that refer to someone other than God (e.g. Mark 1:40, where the man with leprosy says "he said") — and you never saw it, so you couldn\'t fix it. No translation on a normal api.bible key capitalizes these for you (the ones that do — NASB, Amplified, LSB, MEV — aren\'t in the catalog), and no rule can tell a divine "he" from a human one, so the caps now live in the visible body text instead: the Preferences toggle capitalizes He/Him/His/Himself right in the editor when you look up a verse, and a new "Capitalize divine pronouns in this deck now" button applies it across the whole deck for text you typed or pasted. Either way you can see the result and lowercase any that shouldn\'t be capitalized — and that edit sticks, because nothing re-applies behind your back. Export uses exactly what you see. (Whole-word only, so "this"/"history" are never touched.)',
+      'Image slides now carry a placeholder prop instead of a Clear-props cue. Each Image slide gets its own reserved prop slot you can build out in Pro7, so the LED wall shows this deck\'s placeholder rather than clearing whatever the previous slide left up.',
+      'Merge fix: when a QR-paired export finds a hand-edit on only one of the two files (say the no-QR file got resized in Pro7), choosing Merge now applies that change to BOTH files, not just the one it was found on — they\'re the same deck with/without the QR macro, so an edit to one is meant for both.',
+    ],
+  },
   {
     version: '4.24.0',
     date: '2026-08-05',
@@ -5828,10 +5837,14 @@ function renderConfigPanel(panel) {
         }).join('')}
         <div class="rc-toggle-row" id="capitalize-pronouns-row" style="margin-top:10px">
           <div class="toggle ${cfg.capitalizeDivinePronouns === true ? 'on' : ''}" id="capitalize-pronouns-toggle"></div>
-          <span>Capitalize divine pronouns (He, Him, His, Himself)</span>
+          <span>Capitalize divine pronouns on Scripture lookup (He, Him, His, Himself)</span>
         </div>
         <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
-          Applied at export to body text — scripture, points, blanks. Whole-word only, so "this" and "history" are untouched.
+          When on, verses you look up get He/Him/His/Himself capitalized right in the editor — visible, so you can lowercase any that refer to someone other than God (e.g. Mark 1:40, where the man with leprosy says "he said"). No translation on your key does this automatically, and no rule can tell a divine "he" from a human one, so the caps are yours to review. Whole-word only — "this" and "history" are untouched.
+        </div>
+        <button class="btn-sm" id="btn-divine-caps-deck" style="margin-top:10px">Capitalize divine pronouns in this deck now</button>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
+          Applies the same capitalization to every body field already in this deck — handy for text you typed or pasted rather than looked up. Run it once, then fix any exceptions by hand.
         </div>
       </div>
 
@@ -6088,6 +6101,7 @@ function renderConfigPanel(panel) {
     document.getElementById('capitalize-pronouns-toggle').classList.toggle('on', cfg.capitalizeDivinePronouns);
     saveState();
   });
+  document.getElementById('btn-divine-caps-deck')?.addEventListener('click', () => applyDivineCapsToDeck());
 }
 
 // ─── Machine Setup / Onboarding ──────────────────────────────────────────────
@@ -10185,16 +10199,84 @@ function initNotesSidebarDrop() {
   });
 }
 
-// Whole-word capitalization of divine pronouns (He/Him/His/Himself) in body
-// text — opt-in via Preferences → Book Names, applied at export like the book
-// name overrides. Word-boundary matched so it never touches "this"/"shim"/etc.
-function applyDivinePronouns(text) {
-  if (!state.config.capitalizeDivinePronouns || !text) return text;
-  return text.replace(/\b(he|him|his|himself)\b/gi, m => m[0].toUpperCase() + m.slice(1));
+// Whole-word capitalization of divine pronouns (He/Him/His/Himself).
+//
+// No English translation on a typical API.Bible key capitalizes these — the ones
+// that do (NASB, Amplified, LSB, MEV) aren't in the catalog — and no rule can
+// perfectly tell a divine "he" from a human one: Mark 1:40-41 has both, worded
+// identically ("...he said" is the man with leprosy in v40, then Jesus in v41).
+// So instead of silently guessing at export — where a wrong cap like the leper's
+// "he said" was invisible and unfixable — DeckPro writes the caps INTO the
+// visible body text (on Scripture lookup when the pref is on, or on demand across
+// the deck). The user sees the result and can lowercase any wrong one, and that
+// edit sticks because nothing re-applies behind their back. Word-boundary matched
+// so "this"/"history" are never touched.
+function divineCapsText(text) {
+  if (!text) return text;
+  return String(text).replace(/\b(he|him|his|himself)\b/gi, m => m[0].toUpperCase() + m.slice(1));
+}
+
+// Count the lowercase divine pronouns in a string — i.e. how many words a
+// divineCapsText() pass would actually change (the case-sensitive pattern only
+// matches the lowercase forms). Used to report/skip no-op runs.
+function countLowercaseDivine(text) {
+  return (String(text || '').match(/\b(he|him|his|himself)\b/g) || []).length;
+}
+
+// Apply divine caps to a span array ([{text, bold}, ...]) in place-safe fashion,
+// returning fresh spans (preserves bold and any other per-span fields).
+function divineCapsSpans(spans) {
+  return (spans || []).map(s => ({ ...s, text: divineCapsText(s.text || '') }));
 }
 
 function normalizeBodyText(value) {
-  return applyDivinePronouns(normalizeDeckQuotes(value));
+  // Divine-pronoun caps are NOT applied here anymore — they live in the visible
+  // body text now (see divineCapsText). Export uses exactly what the user sees.
+  return normalizeDeckQuotes(value);
+}
+
+// On-demand: capitalize divine pronouns across every body field already in the
+// deck, so the pref can be applied retroactively (or after pasting/typing text
+// that didn't come through Scripture lookup). Visible + reviewable, never silent.
+function applyDivineCapsToDeck() {
+  let total = 0;
+  const doStr    = v => { total += countLowercaseDivine(v); return divineCapsText(v || ''); };
+  const doSpans  = arr => (arr || []).map(s => ({ ...s, text: doStr(s.text || '') }));
+  const doBullet = b => Array.isArray(b) ? doSpans(b) : doStr(b);
+
+  (state.slides || []).forEach(slide => {
+    switch (slide.type) {
+      case 'scripture':
+        if (Array.isArray(slide.bodies)) slide.bodies = slide.bodies.map(doSpans);
+        else if (slide.body)             slide.body   = doSpans(slide.body);
+        if (slide.blankSpans)            slide.blankSpans = doSpans(slide.blankSpans);
+        break;
+      case 'point':
+        if (slide.title != null)         slide.title    = doStr(slide.title);
+        if (slide.bodyText != null)      slide.bodyText = doStr(slide.bodyText);
+        if (slide._fitBrokenText != null)     slide._fitBrokenText     = divineCapsText(slide._fitBrokenText);
+        if (slide._fitPropBrokenText != null) slide._fitPropBrokenText = divineCapsText(slide._fitPropBrokenText);
+        if (Array.isArray(slide.bullets)) slide.bullets = slide.bullets.map(doBullet);
+        if (slide.blankSpans)            slide.blankSpans = doSpans(slide.blankSpans);
+        break;
+      case 'blank':
+      case 'custom':
+        if (slide.spans)                 slide.spans = doSpans(slide.spans);
+        break;
+      case 'image':
+        if (slide.blankSpans)            slide.blankSpans = doSpans(slide.blankSpans);
+        break;
+    }
+  });
+
+  if (total === 0) {
+    toast('info', 'Nothing to capitalize', 'No lowercase he/him/his/himself found in the deck’s body text.');
+    return;
+  }
+  saveState();
+  renderMain();
+  toast('success', 'Divine pronouns capitalized',
+    `Updated ${total} word${total === 1 ? '' : 's'}. Review them and lowercase any that refer to someone other than God.`);
 }
 
 function normalizeExportSpans(spans) {
@@ -12706,6 +12788,9 @@ async function lookupBibleVerse(slide, ref, overrideBibleId = '', boldPhrases = 
       ? parseVerseSpans(text, state.config.verseSuper !== false)
       : [{ text: text.replace(/\uE000[\d\u2013-]+\uE001\s*/g, ''), bold: false }];
     if (boldPhrases && boldPhrases.size) spans = applyNotesBoldToSpans(spans, boldPhrases);
+    // Capitalize divine pronouns right in the fetched text (visible + editable),
+    // so the user can lowercase any that refer to someone other than God.
+    if (state.config.capitalizeDivinePronouns) spans = divineCapsSpans(spans);
     if (!slide.bodies) slide.bodies = [[]];
     slide.bodies[0] = spans;
 

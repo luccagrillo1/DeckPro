@@ -61,7 +61,7 @@ const bodyRtf = c => {
   ok('scripture has SLIDE + PROP', has(by('X'), 'PRESENTATION_SLIDE') && has(by('X'), 'PROP'));
   ok('scripture prop name matches', propsOf(by('X')).includes('X'));
   ok('point has SLIDE + PROP', has(by('Pt'), 'PRESENTATION_SLIDE') && has(by('Pt'), 'PROP'));
-  ok('image has SLIDE + CLEAR', has(by('Im'), 'PRESENTATION_SLIDE') && has(by('Im'), 'CLEAR'));
+  ok('image has SLIDE + PROP (placeholder, not Clear)', has(by('Im'), 'PRESENTATION_SLIDE') && has(by('Im'), 'PROP') && !has(by('Im'), 'CLEAR'));
   ok('end has SLIDE + CLEAR', has(by('End of Notes'), 'PRESENTATION_SLIDE') && has(by('End of Notes'), 'CLEAR'));
 })();
 

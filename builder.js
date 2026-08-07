@@ -1519,6 +1519,7 @@ function buildImageCue(spec, rs) {
     makeSlot(gradEl, { info: 1 }),
   ];
 
+  const propName = spec.propName || spec.label || 'image';
   return {
     uuid: uuid(),
     _type: 'image',
@@ -1527,7 +1528,7 @@ function buildImageCue(spec, rs) {
     isEnabled: true,
     actions: [
       makeSlideAction(spec.label, slots, undefined, notesRtf),
-      clearPropAction(),
+      propAction(propName),
     ],
   };
 }

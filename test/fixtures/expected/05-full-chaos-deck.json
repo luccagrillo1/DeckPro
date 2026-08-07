@@ -361,8 +361,8 @@
           ]
         },
         {
-          "type": "CLEAR",
-          "clear": "CLEAR_TARGET_LAYER_PROP"
+          "type": "PROP",
+          "prop": "Sermon Bumper"
         },
         {
           "type": "MACRO",

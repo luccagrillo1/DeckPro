@@ -740,6 +740,16 @@ function collectPropSpecs(slides, responses = {}, includeResponseCard = false) {
           });
         }
       }
+    } else if (slide.type === 'image') {
+      // Same "manual" placeholder as a point's custom-prop option — a
+      // reserved, empty slot the user fills in Pro7. Images have no text
+      // content to put on the LED wall, but still want a real PROP action
+      // (not a CLEAR) so the LED wall shows this deck's placeholder instead
+      // of whatever the previous slide's prop happened to leave up there.
+      const pName = slide.propName || slide.label || 'image';
+      const slot  = nextSlot();
+      propUuidMap[pName] = slot.uuid;
+      propSpecs.push({ type: 'manual', propName: pName, slotName: slot.slot, slotUuid: slot.uuid });
     }
   }
 
