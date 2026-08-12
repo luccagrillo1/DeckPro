@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.25.0';
+const APP_VERSION = '4.25.1';
 
 const CHANGELOG = [
+  {
+    version: '4.25.1',
+    date: '2026-08-07',
+    changes: [
+      'Speaker Notes are now per-deck. Each deck already stored its own notes-doc link, but the panel was only built once when the app launched, so switching decks left the previous deck\'s notes pinned on screen — it looked like one notes doc shared across everything. Now opening a deck loads that deck\'s own notes (and clears the panel if it has none), and creating a new deck starts with a clean panel. (Dropped local PDFs still can\'t be restored — only a Google Doc/Drive link is saved with the deck — so a dropped PDF clears when you switch decks.)',
+    ],
+  },
   {
     version: '4.25.0',
     date: '2026-08-07',
@@ -3057,6 +3064,7 @@ function applyUndo() {
   state = JSON.parse(_undoStack.pop());
   _skipUndoPush = true;
   saveState(); render(); syncHeaderInputs();
+  _syncNotesPanelToDeck?.();  // keep notes panel in sync if undo crossed a load/clear
   _skipUndoPush = false;
   updateUndoButtons();
 }
@@ -3067,6 +3075,7 @@ function applyRedo() {
   state = JSON.parse(_redoStack.pop());
   _skipUndoPush = true;
   saveState(); render(); syncHeaderInputs();
+  _syncNotesPanelToDeck?.();  // keep notes panel in sync if redo crossed a load/clear
   _skipUndoPush = false;
   updateUndoButtons();
 }
@@ -11257,6 +11266,35 @@ async function readJsonResponse(resp, fallback) {
 
 let _pdfObjectUrl = null;
 let _pdfZoom = 100;
+
+// Speaker Notes are per-deck: each deck stores its own notes-doc URL in
+// state.config.gdriveUrl. The panel is built once at boot, though, so on its own
+// it would keep showing whatever deck was open at launch ("one notes doc for
+// everything"). `_syncNotesPanelToDeck` (assigned inside attachPdfHandlers, which
+// owns the loaders) reconciles the visible panel with the active deck; call it
+// whenever the deck changes. `_loadedNotesUrl` tracks what the panel is currently
+// showing so we skip a redundant re-fetch when it already matches — the sentinel
+// ' local' marks a dropped local PDF (no URL, can't persist, clears on switch).
+let _loadedNotesUrl = '';
+let _syncNotesPanelToDeck = null;
+
+// Reset the notes panel back to its empty drop-zone state (shared by the two
+// clear buttons and by _syncNotesPanelToDeck when a deck has no notes). Does NOT
+// touch state.config.gdriveUrl — callers decide whether to also clear that.
+function clearNotesPanelView() {
+  if (_pdfObjectUrl) { URL.revokeObjectURL(_pdfObjectUrl); _pdfObjectUrl = null; }
+  const frame   = document.getElementById('pdf-frame');       if (frame)   frame.src = '';
+  const docBody = document.getElementById('notes-doc-body');  if (docBody) docBody.innerHTML = '';
+  const docView = document.getElementById('notes-doc-view');  if (docView) docView.style.display = 'none';
+  const pdfView = document.getElementById('pdf-viewer');      if (pdfView) pdfView.style.display = 'none';
+  const dropZ   = document.getElementById('pdf-drop-zone');   if (dropZ)   dropZ.style.display = 'flex';
+  document.getElementById('notes-panel')?.classList.remove('pdf-open');
+  const gi = document.getElementById('pdf-gdrive-input');     if (gi) gi.value = '';
+  _notesDoc = null;
+  _pdfZoom = 100;
+  _loadedNotesUrl = '';
+}
+
 let _styleTab = 'text';      // Text | Layout | Motion | Preview
 let _motionTab = 'transitions'; // within Motion: transitions | build
 let _layoutSel = null;          // selected region slug in the Layout visual preview
@@ -11295,6 +11333,7 @@ function attachPdfHandlers() {
     document.getElementById('pdf-viewer').style.display    = 'flex';
     document.getElementById('notes-panel')?.classList.add('pdf-open');
     applyZoom();
+    _loadedNotesUrl = ' local';  // dropped file — not persisted; clears on deck switch
   }
 
   zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
@@ -11333,6 +11372,7 @@ function attachPdfHandlers() {
       applyZoom();
       // Persist the Drive URL so it survives a reload / redeploy
       state.config.gdriveUrl = url;
+      _loadedNotesUrl = url;
       saveState();
     } catch (e) {
       toast('error', 'Drive load failed', e.message);
@@ -11358,6 +11398,7 @@ function attachPdfHandlers() {
       const processed = processNotesHtml(data.html, data.id);
       showNotesDoc(processed, 'Google Doc');
       state.config.gdriveUrl = url;
+      _loadedNotesUrl = url;
       saveState();
     } catch (e) {
       toast('error', 'Doc load failed', e.message);
@@ -11373,11 +11414,22 @@ function attachPdfHandlers() {
   gdriveInput?.addEventListener('keydown', e => {
     if (e.key === 'Enter') loadGdriveNotes(gdriveInput.value.trim());
   });
-  // Restore a previously-loaded Drive doc after a reload / redeploy
-  if (gdriveInput && state.config.gdriveUrl) {
-    gdriveInput.value = state.config.gdriveUrl;
-    loadGdriveNotes(state.config.gdriveUrl);
-  }
+  // Reconcile the panel with whatever deck is active — restores this deck's own
+  // saved Drive doc (or clears the panel if it has none). Assigned here because
+  // the loaders (loadGdriveNotes) are closures scoped to attachPdfHandlers;
+  // loadDeckState()/newDeck() call it on every deck change.
+  _syncNotesPanelToDeck = function () {
+    const url = state.config.gdriveUrl || '';
+    if (url === _loadedNotesUrl) return;  // already showing the right doc
+    if (url) {
+      if (gdriveInput) gdriveInput.value = url;
+      loadGdriveNotes(url);               // sets _loadedNotesUrl on success
+    } else {
+      clearNotesPanelView();              // this deck has no notes doc
+    }
+  };
+  // Restore the current deck's doc on boot.
+  _syncNotesPanelToDeck();
 
   attachNotesDocHandlers();
 
@@ -11389,17 +11441,11 @@ function attachPdfHandlers() {
   });
 
   clearBtn?.addEventListener('click', () => {
-    if (_pdfObjectUrl) { URL.revokeObjectURL(_pdfObjectUrl); _pdfObjectUrl = null; }
-    document.getElementById('pdf-frame').src           = '';
-    document.getElementById('pdf-viewer').style.display = 'none';
-    document.getElementById('pdf-drop-zone').style.display = 'flex';
-    document.getElementById('notes-panel')?.classList.remove('pdf-open');
+    clearNotesPanelView();
     if (fileIn) fileIn.value = '';
-    if (gdriveInput) gdriveInput.value = '';
     // Forget the persisted Drive doc so it doesn't reload next launch
     state.config.gdriveUrl = '';
     saveState();
-    _pdfZoom = 100;
   });
 }
 
@@ -12362,11 +12408,7 @@ function attachNotesDocHandlers() {
 
   // Remove doc
   document.getElementById('btn-notes-doc-clear')?.addEventListener('click', () => {
-    document.getElementById('notes-doc-body').innerHTML = '';
-    document.getElementById('notes-doc-view').style.display = 'none';
-    document.getElementById('pdf-drop-zone').style.display  = 'flex';
-    document.getElementById('notes-panel')?.classList.remove('pdf-open');
-    _notesDoc = null;
+    clearNotesPanelView();
     state.config.gdriveUrl = '';
     saveState();
   });
@@ -13476,6 +13518,7 @@ async function loadDeckState(id) {
   clearTimeout(_autosaveTimer); // opening a deck isn't an edit — skip the echo save
   render();
   syncHeaderInputs();
+  _syncNotesPanelToDeck?.();    // load THIS deck's own notes doc (per-deck, not global)
   updateUndoButtons?.();
 }
 
@@ -13515,6 +13558,7 @@ async function newDeck({ series = '', title = '', date = '', schemeId = null, sp
   clearTimeout(_autosaveTimer);
   render();
   syncHeaderInputs();
+  _syncNotesPanelToDeck?.();    // new deck starts with its own (usually empty) notes
   updateUndoButtons?.();
   await autosaveDeck(); // create the library row immediately
   renderDecksList();
