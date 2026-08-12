@@ -2,9 +2,18 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.25.3';
+const APP_VERSION = '4.26.0';
 
 const CHANGELOG = [
+  {
+    version: '4.26.0',
+    date: '2026-08-07',
+    changes: [
+      'Export waits much longer for ProPresenter to close before giving up — 60 seconds instead of 20. Closing Pro7 by hand (clicking through its own prompts, letting it flush) could take longer than the old window, and giving up early forced a needless retry.',
+      'New: Cancel button on the export overlay. While DeckPro is waiting for ProPresenter to close, you can now stop the export instead of waiting it out — it bails cleanly before anything is written and leaves ProPresenter open. (Only available during that waiting phase, which is the only point where cancelling is safe; once files start writing it finishes to avoid a half-written config.)',
+      'The QR-pair export success screen now labels its two "reveal in Finder" buttons "Find Standard Export in Finder" and "Find Alternate Export in Finder" (was "Reveal first/second in Finder"), so it\'s clear which is the plain version and which is the QR/Saturday one.',
+    ],
+  },
   {
     version: '4.25.3',
     date: '2026-08-07',
@@ -10791,6 +10800,22 @@ function showDeliveryOverlay(steps, opts = {}) {
       stepsEl.parentNode.appendChild(notesDiv);
     }
   }
+  // Cancel button — only while there's a safe bail point (the "closing
+  // ProPresenter" wait). Clicking it stops the export before anything is
+  // written and leaves Pro7 open. Rebuilt each time so a stale handler can't
+  // linger from a previous overlay.
+  overlay.querySelector('.delivery-cancel')?.remove();
+  if (opts.onCancel) {
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'delivery-cancel btn-secondary';
+    cancelBtn.textContent = 'Cancel export';
+    cancelBtn.addEventListener('click', () => {
+      cancelBtn.disabled = true;
+      cancelBtn.textContent = 'Cancelling…';
+      opts.onCancel();
+    });
+    stepsEl.parentNode.appendChild(cancelBtn);
+  }
   overlay.classList.add('visible');
 }
 
@@ -10811,7 +10836,15 @@ function updateDeliveryStep(i, done) {
 
 function hideDeliveryOverlay() {
   const overlay = document.getElementById('delivery-overlay');
+  overlay?.querySelector('.delivery-cancel')?.remove();
   overlay?.classList.remove('visible');
+}
+
+// Ask the server to abort an in-flight export. Only has an effect while the
+// server is still waiting for ProPresenter to close (the safe bail point);
+// once past that the export finishes normally and this is a no-op.
+function requestExportCancel() {
+  fetch('/api/generate/cancel', { method: 'POST' }).catch(() => {});
 }
 
 // ─── Rebuild overlay ──────────────────────────────────────────────────────────
@@ -10944,9 +10977,11 @@ async function runGenerate(btn, deliverMode = false) {
         }),
       }).then(r => r.json());
 
-      showDeliveryOverlay(steps, {
+      const overlayOpts = {
         subtitle: "Exporting the non-QR and QR versions — don't switch to ProPresenter until this completes",
-      });
+        ...(specNoQR.autoManagePro7 ? { onCancel: requestExportCancel } : {}),
+      };
+      showDeliveryOverlay(steps, overlayOpts);
       updateDeliveryStep(0, false);
       let data = await postGenerate({});
 
@@ -10957,11 +10992,15 @@ async function runGenerate(btn, deliverMode = false) {
         hideDeliveryOverlay();
         const choice = await showMergeDecisionModal(data.changes);
         if (!choice) return; // cancelled — nothing was written, just stop
-        showDeliveryOverlay(steps, {
-          subtitle: "Exporting the non-QR and QR versions — don't switch to ProPresenter until this completes",
-        });
+        showDeliveryOverlay(steps, overlayOpts);
         updateDeliveryStep(0, false);
         data = await postGenerate({ mergeChoice: choice, mergeChanges: data.changes });
+      }
+
+      if (data.cancelled) {
+        hideDeliveryOverlay();
+        toast('info', 'Export cancelled', 'Nothing was written. ProPresenter was left open.');
+        return;
       }
 
       if (data.ok) {
@@ -11013,7 +11052,8 @@ async function runGenerate(btn, deliverMode = false) {
       body:    JSON.stringify({ spec, fileName, ...extra }),
     }).then(r => r.json());
 
-    showDeliveryOverlay(steps);
+    const overlayOpts = spec.autoManagePro7 ? { onCancel: requestExportCancel } : {};
+    showDeliveryOverlay(steps, overlayOpts);
     updateDeliveryStep(0, false);
     let data = await postGenerate({});
 
@@ -11026,9 +11066,15 @@ async function runGenerate(btn, deliverMode = false) {
       hideDeliveryOverlay();
       const choice = await showMergeDecisionModal(data.changes);
       if (!choice) return; // cancelled — nothing was written, just stop
-      showDeliveryOverlay(steps);
+      showDeliveryOverlay(steps, overlayOpts);
       updateDeliveryStep(0, false);
       data = await postGenerate({ mergeChoice: choice, mergeChanges: data.changes });
+    }
+
+    if (data.cancelled) {
+      hideDeliveryOverlay();
+      toast('info', 'Export cancelled', 'Nothing was written. ProPresenter was left open.');
+      return;
     }
 
     if (data.ok) {
@@ -12659,7 +12705,7 @@ function showGenerateModal(data, spec) {
     : `<div class="gen-modal-filename">${esc(data.presentationPath)}</div>`;
 
   const revealButtons = isPair
-    ? data.presentations.map((p, i) => `<button class="gen-modal-reveal-pair btn-secondary" data-path="${esc(p.path)}">Reveal ${i === 0 ? 'first' : 'second'} in Finder</button>`).join('')
+    ? data.presentations.map((p, i) => `<button class="gen-modal-reveal-pair btn-secondary" data-path="${esc(p.path)}">Find ${i === 0 ? 'Standard' : 'Alternate'} Export in Finder</button>`).join('')
     : (data.presentationPath ? `<button id="gen-modal-reveal" class="btn-secondary">Reveal in Finder</button>` : '');
 
   body.innerHTML = `

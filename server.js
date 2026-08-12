@@ -355,14 +355,22 @@ function dismissPro7QuitDialog() {
   } catch (_) { /* dialog not showing / no Accessibility permission — fine either way */ }
 }
 
-async function quitPro7AndWait(timeoutMs = 20000) {
+// Wait up to timeoutMs for ProPresenter to fully quit. Returns true if it
+// closed, false if it timed out, or 'cancelled' if shouldCancel() went true
+// mid-wait (the user hit Cancel). The timeout is generous on purpose — closing
+// Pro7 by hand (dismissing its own prompts, letting it flush) can take a while,
+// and giving up too early forced a needless retry; Cancel is the escape hatch
+// for when they'd rather stop than wait.
+async function quitPro7AndWait(timeoutMs = 60000, shouldCancel = null) {
   if (!pro7IsRunning()) return true;
   try { execSync(`osascript -e 'tell application "ProPresenter" to quit'`, { timeout: 5000 }); }
   catch (_) { /* may already be quitting */ }
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    if (shouldCancel && shouldCancel()) return 'cancelled';
     dismissPro7QuitDialog();
     await sleep(400);
+    if (shouldCancel && shouldCancel()) return 'cancelled';
     if (!pro7IsRunning()) return true;
   }
   return !pro7IsRunning();
@@ -373,6 +381,17 @@ function launchPro7() {
   try { execSync(`open -a ProPresenter`, { timeout: 5000 }); return true; }
   catch (_) { return false; }
 }
+
+// Set true by POST /api/generate/cancel while an export is waiting for
+// ProPresenter to close — the ONLY safe point to bail, since nothing has been
+// written to the Pro7 config yet. Reset at the start of every export and
+// ignored once the quit-wait has passed (a half-written config patch is worse
+// than finishing).
+let _exportCancelRequested = false;
+app.post('/api/generate/cancel', (req, res) => {
+  _exportCancelRequested = true;
+  res.json({ ok: true });
+});
 
 app.get('/api/pro7/process', (req, res) => {
   res.json({ running: pro7IsRunning() });
@@ -1084,6 +1103,9 @@ app.post('/api/generate', async (req, res) => {
     const safe = fileName.replace(/[^a-zA-Z0-9_\-. ]/g, '_');
     spec.name  = safe;
 
+    // Fresh export — clear any stale cancel request from a previous run.
+    _exportCancelRequested = false;
+
     if (spec.downloadMode) {
       const result = await encode(spec);
       return res.json({ ok: true, ...result });
@@ -1120,7 +1142,11 @@ app.post('/api/generate', async (req, res) => {
       let pro7Relaunched = false;
       if (spec.autoManagePro7 === true && pro7IsRunning()) {
         pro7WasRunning = true;
-        const quit = await quitPro7AndWait();
+        const quit = await quitPro7AndWait(60000, () => _exportCancelRequested);
+        if (quit === 'cancelled') {
+          if (pro7IsRunning()) launchPro7(); // leave Pro7 as we found it — nothing was written
+          return res.json({ ok: false, cancelled: true });
+        }
         if (!quit) {
           return res.status(409).json({ ok: false, error: 'Could not close ProPresenter — close it manually and retry.' });
         }
@@ -1183,7 +1209,11 @@ app.post('/api/generate', async (req, res) => {
     let pro7Relaunched = false;
     if (patchesConfig && spec.autoManagePro7 === true && pro7IsRunning()) {
       pro7WasRunning = true;
-      const quit = await quitPro7AndWait();
+      const quit = await quitPro7AndWait(60000, () => _exportCancelRequested);
+      if (quit === 'cancelled') {
+        if (pro7IsRunning()) launchPro7(); // leave Pro7 as we found it — nothing was written
+        return res.json({ ok: false, cancelled: true });
+      }
       if (!quit) {
         return res.status(409).json({ ok: false, error: 'Could not close ProPresenter — close it manually and retry.' });
       }
