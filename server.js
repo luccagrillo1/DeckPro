@@ -1239,7 +1239,10 @@ app.post('/api/generate', async (req, res) => {
     // Save what was ACTUALLY written as the baseline for the next export's
     // hand-edit check — every successful deliverMode export, merged or not.
     if (spec.deliverMode && spec.deckId && result.presentationSnapshot) {
-      library.setDeckSnapshot(spec.deckId, result.presentationSnapshot);
+      // Role 'single' — matches checkForHandEdits(deckId) default. Was missing
+      // the role argument, so the snapshot landed under a junk key and the
+      // single-export hand-edit check never had a baseline to compare against.
+      library.setDeckSnapshot(spec.deckId, 'single', result.presentationSnapshot);
     }
 
     res.json({

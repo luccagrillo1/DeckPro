@@ -308,13 +308,24 @@ function setDeckPairedExportPaths(deckId, noQrPath, qrPath) {
     .run(noQrPath || '', qrPath || '', deckId);
 }
 
-function recordGeneration({ deckId, fileName, path: filePath, sizeKB, delivered }) {
+function recordGeneration({ deckId, fileName, path: filePath, sizeKB, delivered, skipPathUpdate }) {
   const ts = now();
   db.prepare(`
     INSERT INTO generations (deck_id, file_name, path, size_kb, delivered, created_at)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(deckId || '', fileName || '', filePath || '', sizeKB || 0, delivered ? 1 : 0, ts);
-  if (deckId) {
+  if (deckId && skipPathUpdate) {
+    // Paired QR export: last_export_path (no-QR) and last_export_path_qr were
+    // already set authoritatively by setDeckPairedExportPaths. DON'T touch
+    // last_export_path here — this is called once PER FILE, and the second
+    // (QR) call would otherwise overwrite the no-QR path, making the next
+    // export's hand-edit check diff the no-QR snapshot against the QR file.
+    db.prepare(`
+      UPDATE decks SET dirty = 0, last_generated_at = ?,
+        last_delivered_at = CASE WHEN ? THEN ? ELSE last_delivered_at END
+      WHERE id = ?
+    `).run(ts, delivered ? 1 : 0, ts, deckId);
+  } else if (deckId) {
     db.prepare(`
       UPDATE decks SET dirty = 0, last_generated_at = ?, last_export_path = ?,
         last_delivered_at = CASE WHEN ? THEN ? ELSE last_delivered_at END

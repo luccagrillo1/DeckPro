@@ -2,9 +2,18 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.26.1';
+const APP_VERSION = '4.26.2';
 
 const CHANGELOG = [
+  {
+    version: '4.26.2',
+    date: '2026-08-07',
+    changes: [
+      'Fixed a big one: after a QR-paired export, the "changed in ProPresenter" screen could show a wall of bogus changes on the No-QR file — QR macros "added", "Gradient 90s → Gradient QrCode 90s" on every slide, "[object Object]" — none of which you actually did. Cause: recording the two exported files in history was overwriting the deck\'s saved path with the QR file\'s path, so the next export compared the No-QR file\'s baseline against the QR file. It now keeps each file\'s path straight, so the check only flags real hand-edits. (Heads up: your next paired export may show this false list one last time — pick Override to clear it, and it\'ll be clean after that.)',
+      'Fixed: single (non-paired) exports were never actually saving their baseline for hand-edit detection — a missing argument filed the snapshot under the wrong key — so a real hand-edit to a normally-exported deck could go undetected. Now stored correctly.',
+      'Any change that is an added/removed macro or prop now shows a readable label (e.g. macro "QR Code") instead of "[object Object]".',
+    ],
+  },
   {
     version: '4.26.1',
     date: '2026-08-07',
@@ -11017,13 +11026,16 @@ async function runGenerate(btn, deliverMode = false) {
         }
         hideDeliveryOverlay();
         // Record both files in history — same shared propsBackup on each.
+        // skipPathUpdate: the server already stored last_export_path (no-QR) and
+        // last_export_path_qr; these per-file writes must NOT overwrite them, or
+        // the next export would diff the no-QR snapshot against the QR file.
         for (const p of (data.presentations || [])) {
           addGenHistoryEntry({
             presentationPath:  p.path,
             presentationBytes: p.bytes,
             delivered:         data.delivered,
             propsBackup:       data.propsBackup,
-          });
+          }, { skipPathUpdate: true });
         }
         showGenerateModal(data, specQR);
         if (data.propsInstalled === false) {
@@ -11123,6 +11135,18 @@ function describeChangePath(c) {
 function formatChangeValue(v) {
   if (v === null || v === undefined) return '—';
   if (typeof v === 'number') return String(Math.round(v * 100) / 100);
+  if (typeof v === 'object') {
+    // An added/removed action (macro, prop, clear) comes through as an object —
+    // render something readable instead of "[object Object]".
+    const macroName = v.macro?.identification?.parameterName;
+    if (macroName) return `macro "${macroName}"`;
+    if (v.type === 'ACTION_TYPE_MACRO') return 'a macro';
+    if (v.type === 'ACTION_TYPE_CLEAR') return 'a clear-props cue';
+    if (v.type === 'ACTION_TYPE_PROP')  return 'a prop';
+    if (typeof v.name === 'string' && v.name) return v.name;
+    const s = JSON.stringify(v);
+    return s.length > 60 ? s.slice(0, 57) + '…' : s;
+  }
   const s = String(v);
   return s.length > 60 ? s.slice(0, 57) + '…' : s;
 }
@@ -12530,7 +12554,7 @@ function loadGenHistory() {
 function saveGenHistory(h) {
   try { localStorage.setItem(GEN_HISTORY_KEY, JSON.stringify(h)); } catch (_) {}
 }
-function addGenHistoryEntry(data) {
+function addGenHistoryEntry(data, { skipPathUpdate = false } = {}) {
   if (!data.presentationPath) return;
   const h = loadGenHistory();
   h.unshift({
@@ -12552,13 +12576,16 @@ function addGenHistoryEntry(data) {
     path:      data.presentationPath,
     sizeKB:    data.presentationBytes ? Math.round(data.presentationBytes / 1024) : 0,
     delivered: !!data.delivered,
+    // Paired export: the server already recorded both file paths; don't let
+    // this per-file history write overwrite the canonical last_export_path.
+    skipPathUpdate,
   } }).then(r => {
     if (r.ok && state.currentDeckId) {
       const row = _libCache.find(d => d.id === state.currentDeckId);
       if (row) {
         row.dirty = 0;
         row.last_generated_at = new Date().toISOString();
-        row.last_export_path  = data.presentationPath;
+        if (!skipPathUpdate) row.last_export_path = data.presentationPath;
         if (data.delivered) row.last_delivered_at = row.last_generated_at;
       }
     }
