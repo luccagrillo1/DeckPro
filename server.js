@@ -785,6 +785,12 @@ app.get('/api/gdrive-pdf', async (req, res) => {
 // ── Google Doc → HTML intake (rich Smart Notes) ───────────────────────────
 // Returns the doc as structured HTML so the client can render it in DeckPro's
 // own DOM and scan/suggest/drag/link. PDFs stay on the iframe viewer.
+// Cap on a fetched Google Doc's HTML export. Docs inline their images as base64,
+// which bloats the HTML far past the doc's visible length, so a big sermon doc
+// with a few images can run tens of MB. Kept generous but bounded so a runaway
+// response can't exhaust memory.
+const GDRIVE_HTML_MAX_MB = 50;
+
 app.get('/api/gdrive-html', async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ ok: false, error: 'Missing url' });
@@ -834,8 +840,8 @@ app.get('/api/gdrive-html', async (req, res) => {
               r.setEncoding('utf8');
               r.on('data', d => {
                 buf += d;
-                if (buf.length > 8 * 1024 * 1024) {
-                  fail(new Error('Doc too large (over 8 MB)'));
+                if (buf.length > GDRIVE_HTML_MAX_MB * 1024 * 1024) {
+                  fail(new Error(`Doc too large (over ${GDRIVE_HTML_MAX_MB} MB)`));
                   r.destroy();
                 }
               });

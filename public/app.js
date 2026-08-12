@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.25.1';
+const APP_VERSION = '4.25.2';
 
 const CHANGELOG = [
+  {
+    version: '4.25.2',
+    date: '2026-08-07',
+    changes: [
+      'Raised the Speaker Notes Google Doc size limit from 8 MB to 50 MB. Google Docs inline their images as base64, which inflates the exported HTML well past the doc\'s visible length, so a big sermon doc with a few images could trip the old cap and refuse to load. (PDFs already had no size limit.)',
+    ],
+  },
   {
     version: '4.25.1',
     date: '2026-08-07',
