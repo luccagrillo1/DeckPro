@@ -3828,17 +3828,25 @@ details[open] .font-adv-summary::before { transform: rotate(90deg); }
   background: var(--surface); border-radius: 12px;
   width: 480px; max-width: calc(100vw - 40px); padding: 20px 22px;
   box-shadow: 0 20px 60px rgba(0,0,0,.25);
+  /* Cap to the viewport and lay out as a column so a long list scrolls INSIDE
+     the box instead of pushing the header/action buttons off-screen. */
+  max-height: calc(100vh - 40px);
+  display: flex; flex-direction: column;
 }
 .warn-hdr {
   display: flex; align-items: center; gap: 9px;
   font-size: 14px; font-weight: 700;
   margin-bottom: 12px;
   color: #c97a00;
+  flex-shrink: 0;
 }
 .warn-list {
   list-style: none; padding: 0;
   font-size: 13px; color: var(--text); line-height: 1.5;
   margin-bottom: 18px; display: flex; flex-direction: column; gap: 6px;
+  /* Take the leftover height and scroll; min-height:0 lets a flex child
+     shrink below its content so overflow actually kicks in. */
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
 }
 .warn-item {
   display: flex; align-items: flex-start; gap: 8px;
@@ -3858,6 +3866,7 @@ details[open] .font-adv-summary::before { transform: rotate(90deg); }
 .warn-act-fix:hover { background: var(--blue); color: white; }
 .warn-actions {
   display: flex; gap: 8px; justify-content: flex-end; align-items: center;
+  flex-shrink: 0; /* stay pinned at the bottom, never scroll out of reach */
 }
 .warn-btn-cancel {
   padding: 7px 14px; border-radius: 7px;

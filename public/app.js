@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.26.0';
+const APP_VERSION = '4.26.1';
 
 const CHANGELOG = [
+  {
+    version: '4.26.1',
+    date: '2026-08-07',
+    changes: [
+      'Fixed: the "changed in ProPresenter" merge/override box could grow taller than the screen when there were a lot of changes — spilling the Merge/Override/Cancel buttons off the bottom with no way to scroll to them. The box is now capped to the window height, the list of changes scrolls inside it, and the buttons stay pinned and reachable no matter how many changes there are. (Same fix applies to the pre-export warnings box.)',
+    ],
+  },
   {
     version: '4.26.0',
     date: '2026-08-07',
