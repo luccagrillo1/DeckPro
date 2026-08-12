@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.25.2';
+const APP_VERSION = '4.25.3';
 
 const CHANGELOG = [
+  {
+    version: '4.25.3',
+    date: '2026-08-07',
+    changes: [
+      'Fixed: a bolded word in your notes that ended with punctuation — like "No," at the start of a verse — didn\'t carry its bold onto the fetched scripture, while every other bolded word did. The trailing comma got baked into the match pattern, and a word-boundary can\'t sit after a comma, so that one phrase silently failed. Punctuation on a bolded phrase\'s outer edges is now trimmed before matching (inner apostrophes and accented letters are left alone), so "No," bolds the "No" just like the rest.',
+    ],
+  },
   {
     version: '4.25.2',
     date: '2026-08-07',
@@ -12752,10 +12759,22 @@ function stripVerseSpans(spans) {
 // happens to be one of its words.
 function applyNotesBoldToSpans(spans, boldPhrases) {
   if (!boldPhrases || !boldPhrases.size) return spans;
+  // Strip punctuation off each word's OUTER edges before building the pattern.
+  // A phrase like "No," (bolded with its trailing comma in the notes) otherwise
+  // becomes /\bNo,\b/ — and the trailing \b can't match after a comma (comma→
+  // space is non-word→non-word, no boundary), so the whole phrase silently fails
+  // to bold while every phrase ending in a letter works. Stripping edge
+  // punctuation lands the \b anchors on letters; the separator between words
+  // still absorbs any punctuation that sat between them. Inner apostrophes and
+  // accented letters are preserved (only known punctuation is trimmed).
+  const EDGE_PUNCT = /^[\s,.;:!?'"()‘’“”\-–—]+|[\s,.;:!?'"()‘’“”\-–—]+$/g;
   const patterns = [...boldPhrases]
     .sort((a, b) => b.length - a.length)
     .map(p => {
-      const words = p.split(/\s+/).filter(Boolean).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      const words = p.split(/\s+/)
+        .map(w => w.replace(EDGE_PUNCT, ''))
+        .filter(Boolean)
+        .map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
       if (!words.length) return null;
       return new RegExp('\\b' + words.join('[\\s,.;:!?\'"()‘’“”-]+') + '\\b', 'gi');
     })
