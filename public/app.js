@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.26.2';
+const APP_VERSION = '4.26.3';
 
 const CHANGELOG = [
+  {
+    version: '4.26.3',
+    date: '2026-08-07',
+    changes: [
+      'New: refresh button (⟳) on the Speaker Notes doc header, next to Remove. Reloads the currently-loaded Google Doc so edits made after it was pulled into DeckPro show up without removing and re-adding it.',
+    ],
+  },
   {
     version: '4.26.2',
     date: '2026-08-07',
@@ -11521,6 +11528,20 @@ function attachPdfHandlers() {
   };
   // Restore the current deck's doc on boot.
   _syncNotesPanelToDeck();
+
+  // Manual reload — pulls in edits made to the Google Doc since it was last
+  // fetched. Calls loadGdriveNotes directly (not _syncNotesPanelToDeck, which
+  // skips a re-fetch when the URL already matches — here that's the whole
+  // point: same URL, fresh content).
+  document.getElementById('btn-notes-doc-refresh')?.addEventListener('click', async e => {
+    const url = state.config.gdriveUrl;
+    if (!url) return;
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.classList.add('spinning');
+    try { await loadGdriveNotes(url); }
+    finally { btn.disabled = false; btn.classList.remove('spinning'); }
+  });
 
   attachNotesDocHandlers();
 

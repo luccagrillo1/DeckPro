@@ -3943,6 +3943,9 @@ details[open] .font-adv-summary::before { transform: rotate(90deg); }
   color: var(--text); display: flex; align-items: center; justify-content: center;
 }
 .btn-pdf-zoom:hover { background: var(--surface); }
+.btn-pdf-zoom:disabled { opacity: .6; cursor: default; }
+.btn-pdf-zoom.spinning { animation: pdf-zoom-spin .8s linear infinite; }
+@keyframes pdf-zoom-spin { to { transform: rotate(360deg); } }
 .pdf-zoom-val { font-size: 10px; color: var(--muted); font-weight: 600; min-width: 30px; text-align: center; }
 .btn-pdf-clear {
   background: none; border: none; font-size: 11px; color: var(--muted);
