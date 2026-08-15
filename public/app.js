@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.26.3';
+const APP_VERSION = '4.26.4';
 
 const CHANGELOG = [
+  {
+    version: '4.26.4',
+    date: '2026-08-07',
+    changes: [
+      'Fixed: pressing Enter in Point text (or Scripture body) silently lost the line break. Left to the browser\'s default behavior, Enter in these fields wraps the new line in a hidden container that DeckPro\'s text extraction didn\'t recognize as a break — so the line looked right while typing, but the two lines quietly got glued back together with nothing between them. Enter now inserts a real line break directly, so hard returns actually stick. (The export side already fully supported multi-line point text — this was purely an editing-field bug.)',
+    ],
+  },
   {
     version: '4.26.3',
     date: '2026-08-07',
@@ -9272,6 +9279,15 @@ function attachPlainEditor(editorId, onSave) {
   });
   el.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && ['b', 'i', 'u'].includes(e.key.toLowerCase())) e.preventDefault();
+    // Left to the browser's default, Enter in a contenteditable wraps the new
+    // line in a <div> — but extractSpans() only recognizes <br> as a line
+    // break (matching how spans render back out), so a div-wrapped line
+    // silently loses its break the moment this field's 'input' handler reads
+    // it back. Force a real <br> instead, so hard returns actually stick.
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      document.execCommand('insertLineBreak');
+    }
   });
 }
 
@@ -9384,6 +9400,14 @@ function attachRichEditor(editorId, onSave) {
       const map = { b: 'bold', i: 'italic', u: 'underline' };
       const cmd = map[e.key.toLowerCase()];
       if (cmd && fmtBtns[cmd]) { e.preventDefault(); fmtBtns[cmd].click(); }
+      return;
+    }
+    // Same fix as attachPlainEditor: force <br> instead of the browser's
+    // default div-wrapped new line, which extractSpans() can't see (matters
+    // here for scripture poetry line breaks within a single body box).
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      document.execCommand('insertLineBreak');
     }
   });
   bodyEl.addEventListener('keyup',   updateFmtBtns);
