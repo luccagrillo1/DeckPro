@@ -2,9 +2,18 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.26.5';
+const APP_VERSION = '4.27.0';
 
 const CHANGELOG = [
+  {
+    version: '4.27.0',
+    date: '2026-08-25',
+    changes: [
+      'Hardening pass — mostly invisible, but worth knowing about. The auto-updater no longer deletes the installed app before copying the new one: it now stages the new version alongside the old, verifies it\'s actually a working, correctly-signed copy, and only then swaps it in — with an automatic rollback (and a clear in-app error) if anything about that swap goes wrong, instead of a failed update ever being able to leave you with nothing installed.',
+      'The local server now refuses any request that didn\'t come from DeckPro\'s own window — closes a gap where another page open in a browser on the same machine could otherwise reach it.',
+      'Housekeeping: removed a stale, unused copy of the app\'s old client code and some leftover reverse-engineering files from the repo; automated tests now run in CI on every change.',
+    ],
+  },
   {
     version: '4.26.5',
     date: '2026-08-07',
