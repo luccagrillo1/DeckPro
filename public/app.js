@@ -13796,7 +13796,7 @@ function deckRowHtml(deck) {
   const metaBits = [
     dateLabel,
     deck.speaker ? esc(deck.speaker) : '',
-    deck.slide_count != null ? `${deck.slide_count} slides` : '',
+    deck.slide_count != null ? `${deck.slide_count} slide${deck.slide_count === 1 ? '' : 's'}` : '',
   ].filter(Boolean).join(' · ');
 
   let exportLine;
@@ -15272,7 +15272,14 @@ async function syncCycle(reason) {
 
 function setSyncStatus(s) { _syncStatus = { state: s, at: Date.now() }; updateSyncStatusUI(); }
 
-function relTime(ts) {
+// Renamed from relTime() — this one takes a raw millisecond timestamp (e.g.
+// Date.now()), not an ISO string. Two same-named global functions with
+// incompatible argument types used to collide (this later declaration
+// silently overwrote the earlier ISO-string relTime() below in the shared
+// global scope), so every ISO-string caller — e.g. the Deck Library — was
+// actually invoking THIS numeric version against a string, and
+// `Date.now() - "2026-08-20T..."` coerces to NaN, producing "NaNd ago".
+function relTimeMs(ts) {
   if (!ts) return '';
   const s = Math.round((Date.now() - ts) / 1000);
   if (s < 5)   return 'just now';
@@ -15292,7 +15299,7 @@ function updateSyncStatusUI() {
   switch (_syncStatus.state) {
     case 'syncing': txt = 'Syncing…'; break;
     case 'paused':  txt = 'iCloud sync paused — will retry'; cls += ' paused'; break;
-    case 'synced':  txt = `Synced ${relTime(_syncMeta?.lastPulledAt)}`; cls += ' ok'; break;
+    case 'synced':  txt = `Synced ${relTimeMs(_syncMeta?.lastPulledAt)}`; cls += ' ok'; break;
     default:        txt = 'Waiting for iCloud…';
   }
   el.textContent = txt;
