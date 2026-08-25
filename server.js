@@ -23,6 +23,30 @@ const STATE_FILE = path.join(DATA_DIR, 'state.json');
 library.open();
 
 app.use(express.json({ limit: '20mb' }));
+
+// ── Same-origin guard ─────────────────────────────────────────────────────
+// The server binds to a fixed localhost port, which means any web page the
+// user has open can reach it. Reject anything that didn't come from our own
+// renderer: a bad Host header (DNS rebinding) or a foreign Origin (CSRF).
+const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
+
+app.use((req, res, next) => {
+  const hostname = (req.headers.host || '').replace(/:\d+$/, '');
+  if (!LOCAL_HOSTS.has(hostname)) {
+    return res.status(403).json({ ok: false, error: 'Forbidden host' });
+  }
+  const origin = req.headers.origin;
+  if (origin) {
+    let ok = false;
+    try {
+      const u = new URL(origin);
+      ok = LOCAL_HOSTS.has(u.hostname) && u.port === String(req.socket.localPort);
+    } catch (_) { ok = false; }
+    if (!ok) return res.status(403).json({ ok: false, error: 'Forbidden origin' });
+  }
+  next();
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 function ensureDataDir() {
@@ -127,7 +151,11 @@ app.get('/api/state', (req, res) => {
 
 app.post('/api/state', (req, res) => {
   try {
-    writeStateFile((req.body || {}).state || {});
+    const body = req.body;
+    if (!body || typeof body !== 'object' || typeof body.state !== 'object' || body.state === null) {
+      return res.status(400).json({ ok: false, error: 'Missing state' });
+    }
+    writeStateFile(body.state);
     res.json({ ok: true, path: STATE_FILE });
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
