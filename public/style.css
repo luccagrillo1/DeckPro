@@ -2656,33 +2656,30 @@ body.dark .si-tag-stage {
 }
 .btn-deck-qr.active:hover { background: var(--blue-dk); border-color: var(--blue-dk); color: #1a1a2e; }
 
-/* ─── Sidebar blank-before indicator row ─────────────────────────────── */
-
-.si-blank-indicator {
+/* ─── Sidebar blank-before gap ────────────────────────────────────────
+   Pure structure, not content — a thin rule instead of a full row, so a deck
+   full of auto-inserted blanks doesn't read as twice as many "real" slides.
+   Not a button: no click handler, just a hover affordance and a title
+   tooltip. The one thing shown is a small dot when QR fires on this blank —
+   everything else about it lives on the content slide below, unchanged. */
+.si-gap {
+  height: 4px;
+  margin: 4px 10px;
+  border-radius: 2px;
+  background: rgba(123,31,162,.18);
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 6px 2px 10px;
-  margin: 3px 6px 0;
-  border-radius: 4px;
-  background: rgba(123,31,162,.06);
-  border: 1px dashed rgba(123,31,162,.25);
+  justify-content: flex-end;
+  padding: 0 3px;
 }
-.si-blank-indicator .slide-badges { margin-left: auto; }
-.si-blank-indicator.hidden { display: none; }
-.si-blank-icon .badge-circle {
-  width: 7px;
-  height: 7px;
+.si-gap:hover { background: rgba(123,31,162,.32); }
+.si-gap.hidden { display: none; }
+.si-gap-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
   background: #7b1fa2;
-  opacity: .7;
-}
-.si-blank-label {
-  font-size: 9px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .4px;
-  color: #7b1fa2;
-  opacity: .8;
+  flex-shrink: 0;
 }
 
 /* ─── Slide prop section ──────────────────────────────────────────────── */

@@ -2912,7 +2912,13 @@ const DEFAULT_STATE = () => ({
   globalRcElements: DEFAULT_RC_ELEMENTS(),
   styleSchemes:  [DEFAULT_STYLE_SCHEME()],
   activeSchemeId: 'default',
-  showBlanks: true,
+  // Off by default for a fresh install — see applySavedState()'s
+  // `saved.showBlanks ?? true` below, which is intentionally a DIFFERENT
+  // fallback: it only runs when an existing save is being loaded, so anyone
+  // who already has a save (even one that predates this field) keeps seeing
+  // blanks exactly as they always have. This value only governs a genuinely
+  // brand-new state with no save file at all yet.
+  showBlanks: false,
   slides: [
     { id: 'start', type: 'start', label: 'Start of Notes', fixed: true },
     { id: 'end',   type: 'end',   label: 'End of Notes',   fixed: true },
@@ -3381,6 +3387,10 @@ function applySavedState(saved) {
     // Support old 'activeStyleId' key for migration
     state.activeSchemeId = saved.activeSchemeId || saved.activeStyleId
       || (state.styleSchemes[0]?.id ?? 'default');
+    // Deliberately `?? true`, NOT DEFAULT_STATE()'s (now false) default — this
+    // only runs for an existing save, so a missing field here means "this
+    // save predates the field," not "new user." Keep it true so no current
+    // user's deck silently changes appearance.
     state.showBlanks = saved.showBlanks ?? true;
     // Migrate global customMacros → per-scheme macros (v4.0.10+)
     if (Array.isArray(saved.config?.customMacros) && saved.config.customMacros.length) {
@@ -4468,14 +4478,19 @@ function renderSidebar() {
     const transBadge     = slide.transition?.type     ? slide.transition.type.toUpperCase()     : null;
     const propTransBadge = slide.propTransition?.type ? slide.propTransition.type.toUpperCase() : null;
 
-    // Blank-before indicator row (before content slides with blankBefore: true)
+    // Blank-before gap (before content slides with blankBefore: true) — pure
+    // structure, not content, so it recedes to a thin rule instead of a row
+    // the same visual weight as a real slide. Not currently clickable (no
+    // handler was ever attached here), so none is added now either. Macro/
+    // stage badges are dropped from this minimal view — deck-wide macro
+    // config, not something toggled per-blank — leaving only the one thing
+    // that DOES vary per-blank and matters at a glance: whether QR fires here.
     if (hasBB) {
       const indicator = document.createElement('div');
-      indicator.className = 'si-blank-indicator' + (!state.showBlanks ? ' hidden' : '');
-      const bbBadges = getSlideMacroBadges('blankBefore', posKey);
-      const bbStageBadges = stageDisplayBadgesHTML('blankBefore', posKey);
-      const bbQrBadge = qrBadgeHTML(effectiveQR(slide));
-      indicator.innerHTML = `<span class="si-blank-icon"><span class="badge-circle"></span></span><span class="si-blank-label">blank</span><div class="slide-badges" style="margin-left:auto">${macroBadgesHTML(bbBadges)}${bbStageBadges}${bbQrBadge}</div>`;
+      const bbQrOn = effectiveQR(slide);
+      indicator.className = 'si-gap' + (!state.showBlanks ? ' hidden' : '') + (bbQrOn ? ' si-gap-qr' : '');
+      indicator.title = bbQrOn ? 'Blank — QR code fires here' : 'Blank';
+      indicator.innerHTML = bbQrOn ? '<span class="si-gap-dot"></span>' : '';
       queue.appendChild(indicator);
     }
 
