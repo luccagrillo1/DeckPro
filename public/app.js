@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.26.4';
+const APP_VERSION = '4.26.5';
 
 const CHANGELOG = [
+  {
+    version: '4.26.5',
+    date: '2026-08-07',
+    changes: [
+      'Help Guide brought up to date and a real gap closed: added a full "Speaker Notes Panel" section (loading a doc, per-deck notes, the refresh button, dragging content into fields or the sidebar, Manual vs Intelligent mode, Style Map) — previously that whole feature area had just one throwaway sentence. Also documented: Cancel export and the longer 60s Pro7-close wait, the corrected paired-export merge behavior (a change on either file now applies to both), Image slides\' placeholder prop, manual line breaks (Return) in Point text, the "Find Standard/Alternate Export in Finder" button labels, and the reworked Capitalize Divine Pronouns preference.',
+    ],
+  },
   {
     version: '4.26.4',
     date: '2026-08-07',
@@ -14293,7 +14300,7 @@ function helpSections() {
       <p>The form for the selected slide. Its fields change with the slide type. This is where you type body text, references, bullets, and open the per-slide Overrides.</p>
 
       <h4>Right panel — Speaker Notes</h4>
-      <p>Toggle it with the <strong>Notes</strong> button. Drop a PDF or paste a Google Docs link to keep your script or ${D3} content alongside while you build. Drag its left edge to resize.</p>
+      <p>Toggle it with the <strong>Notes</strong> button. Drop a PDF or paste a Google Docs link to keep your script alongside while you build — it's saved per-deck, and you can drag content straight off it into your slides. Drag its left edge to resize. See <em>Speaker Notes Panel</em> for the full picture.</p>
 
       <h4>The ··· more menu</h4>
       <ul>
@@ -14391,6 +14398,7 @@ function helpSections() {
 
       <h4>Automatic line breaks</h4>
       <p>Point text is auto-fit: DeckPro sizes the text box to the content and, for multi-line points, breaks the lines intelligently — preferring to split after punctuation (a comma, colon or period) and never stranding a lone short word or a runt like “and” at the end of a line. A point that fits on one line stays on one line. See <em>Fit Width</em> for the full picture.</p>
+      <p>Want a break somewhere specific instead — say, between two separate thoughts? Press <span class="help-kbd">Return</span> in the text box for a manual line break. It works alongside the automatic fitting above, not instead of it.</p>
     `,
   },
   {
@@ -14401,7 +14409,7 @@ function helpSections() {
       <p>A black / empty slide. Optionally give it ${D3} text (bold supported). Blanks are also inserted automatically by the <strong>Blank Before</strong> toggle on scripture and point slides — see <em>Slide Notes &amp; Blank Before</em>.</p>
 
       <h3>Image</h3>
-      <p>A slide with a background image pulled from your Pro7 media library. Give it a label; reference the media by name.</p>
+      <p>A slide with a background image pulled from your Pro7 media library. Give it a label; reference the media by name. It gets its own reserved prop slot to build out in Pro7 — so the ${D2} shows a deliberate placeholder for this slide instead of whatever the previous slide's prop happened to leave up.</p>
 
       <h3>Custom</h3>
       <p>An escape hatch. A Custom slide exports as a <strong>blank slot carrying your label</strong> — a placeholder you finish by hand in ProPresenter (a video, a special graphic, anything DeckPro doesn't model). It still holds its place in the deck order, queue, and any macro/stage triggers you attach.</p>
@@ -14421,6 +14429,34 @@ function helpSections() {
         <li>Toggle <strong>Show prop during blank</strong> to keep the ${D2} prop up while the main screen is black.</li>
       </ul>
       <p class="help-muted">Hide the Blank Before or ${D3} fields in <strong>Preferences → Feature Visibility</strong> for a simpler editor.</p>
+    `,
+  },
+  {
+    id: 'speakernotes',
+    label: 'Speaker Notes Panel',
+    html: `
+      <h3>Keep your script or sermon doc alongside the deck</h3>
+      <p>The right-hand panel (toggle with the <strong>Notes</strong> button) holds your actual working document while you build — a Google Doc or a PDF — so you're not switching windows to copy references and points across. Drop a PDF, or paste a Google Doc link and click <strong>Load</strong>.</p>
+
+      <h4>It's per-deck</h4>
+      <p>Each deck remembers its own notes doc. Open a different deck and the panel switches to <em>that</em> deck's own doc (or shows the empty drop zone if it doesn't have one) — it's never one shared doc bleeding across every deck you work on.</p>
+
+      <h4>Refresh</h4>
+      <p>Editing the Google Doc after loading it? Click the <strong>⟳</strong> button next to Remove in the doc header to pull in those edits without removing and re-adding the link.</p>
+
+      <h4>Two ways to get content into a slide</h4>
+      <ul>
+        <li><strong>Drag straight off the doc</strong> — click-and-drag any paragraph, heading, or list item (no need to select text first). Drop it on a text field (Scripture/Point body, reference, etc.) and it lands as rich text with bold preserved. Drop it on the <strong>Deck sidebar</strong> instead and DeckPro figures out what it actually is — a verse reference, a point, a Response Card option — and creates the right kind of slide, fully filled in.</li>
+        <li><strong>Select a phrase and drag it</strong> — the classic way, still works exactly as before, anywhere in the doc.</li>
+      </ul>
+
+      <h4>Manual vs. Intelligent mode</h4>
+      <p>The toggle at the top of the doc view switches how suggestions work:</p>
+      <ul>
+        <li><strong>Manual</strong> — select any text and a small menu offers to add it as Scripture, Point, Confidence, or Response.</li>
+        <li><strong>Intelligent</strong> — DeckPro scans the whole doc and surfaces a <strong>Suggested Slides</strong> tray at the bottom: detected verse references become Scripture suggestions (Bible Lookup runs automatically), headings become Point suggestions, and a heading followed by a bulleted list offers a Revealing option. Each suggestion shows a confidence chip and warns if something matching is already in the deck. Click <strong>Add</strong> or <strong>Ignore</strong> per suggestion — nothing touches the deck until you do.</li>
+      </ul>
+      <p class="help-muted">Map specific headings or highlight colors to slide types in <strong>⚙ Style Map</strong> next to the mode toggle, if the doc's formatting doesn't match DeckPro's defaults.</p>
     `,
   },
   {
@@ -14676,13 +14712,17 @@ function helpSections() {
         <li><strong>Merge</strong> — carries those Pro7 edits forward into the new version, alongside whatever content changes you made in DeckPro.</li>
         <li><strong>Override</strong> — exports fresh from DeckPro's own data and lets the Pro7 edits go.</li>
       </ul>
-      <p>This covers anything a hand-edit could touch — position, size, colour, font, macros, props, elements added or removed entirely in Pro7 — and text content itself is safely reconstructed (not just flagged) for every real text field: Scripture body and reference-bar text, Point body text, Response Card text, and Start/End banners, bold emphasis included wherever it applies. A QR paired export tracks and merges its no-QR and QR files independently, since either one could be hand-edited on its own.</p>
+      <p>This covers anything a hand-edit could touch — position, size, colour, font, macros, props, elements added or removed entirely in Pro7 — and text content itself is safely reconstructed (not just flagged) for every real text field: Scripture body and reference-bar text, Point body text, Response Card text, and Start/End banners, bold emphasis included wherever it applies. A QR paired export tracks its no-QR and QR files independently — either one (or both) can be hand-edited on its own — but a change found on just <em>one</em> of the two still applies to <strong>both</strong> files when you choose Merge, since they're the same deck with the QR macro on or off, and an edit to one is almost always meant for both.</p>
       <div class="help-callout">
         <strong>Needs a baseline to compare against.</strong> Detection works by diffing what's currently in Pro7 against a snapshot DeckPro saved the last time <em>it</em> wrote that file. A deck's very first export — or one from before this feature existed — has nothing to compare against yet, so the very next export after that just proceeds normally. Detection kicks in starting from the export after that.
       </div>
+      <p class="help-muted">The change list scrolls inside its own box if there are a lot of them, so Merge/Override/Cancel always stay reachable at the bottom.</p>
+
+      <h4>Cancel export</h4>
+      <p>With Auto-manage on, DeckPro waits up to <strong>60 seconds</strong> for ProPresenter to actually close before giving up — enough room to dismiss Pro7's own prompts by hand if you're racing it. A <strong>Cancel export</strong> button sits on the overlay for exactly that waiting window: click it and the export bails cleanly, nothing gets written, and ProPresenter is left open. Once the wait ends and DeckPro starts writing files, the button is gone and the export runs to completion — that's the one point where cancelling could leave Pro7's config half-written, so it isn't offered there.</p>
 
       <h4>After exporting</h4>
-      <p>Open ProPresenter — the deck and its props are there. Recent exports are logged under <strong>···&nbsp;→&nbsp;Export History</strong>; click the folder icon to reveal a file in Finder.</p>
+      <p>Open ProPresenter — the deck and its props are there. Recent exports are logged under <strong>···&nbsp;→&nbsp;Export History</strong>; click the folder icon to reveal a file in Finder. A QR-paired export's success screen labels its two reveal buttons <strong>Find Standard Export in Finder</strong> (no QR) and <strong>Find Alternate Export in Finder</strong> (QR/Saturday), so it's clear which is which.</p>
     `,
   },
   {
@@ -14731,7 +14771,16 @@ function helpSections() {
         <li><strong>Feature Visibility</strong> — hide advanced fields (Blank Before, ${D3} text, Prop Name, Overrides, Fit Width/Strip, Verses) for simpler handoffs. Hiding never changes what's exported.</li>
         <li><strong>Bible Lookup</strong> — API key &amp; default translation.</li>
         <li><strong>Book Names</strong> — ambiguous book-name styling.</li>
+        <li><strong>Capitalize Divine Pronouns</strong> — see below.</li>
       </ul>
+
+      <h4>Capitalize Divine Pronouns</h4>
+      <p>No Bible translation available through a normal api.bible key capitalizes He/Him/His/Himself for God (the ones that do — NASB, Amplified, LSB, MEV — aren't in the catalog), and no automatic rule can tell a divine "he" from an ordinary one: Mark 1:40–41 has both back to back, worded identically. So DeckPro doesn't guess silently — it capitalizes visibly, where you can check it:</p>
+      <ul>
+        <li>Turn the toggle on, and looking up a verse capitalizes He/Him/His/Himself right in the body text as it's fetched.</li>
+        <li><strong>Capitalize divine pronouns in this deck now</strong> — a button below the toggle that applies the same capitalization across every body field already in the deck, for text you typed or pasted rather than looked up.</li>
+      </ul>
+      <p>Either way, look over the result and lowercase any pronoun that doesn't actually refer to God — that edit sticks, since nothing re-applies behind your back.</p>
     `,
   },
   {
