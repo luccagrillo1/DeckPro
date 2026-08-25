@@ -2659,9 +2659,14 @@ body.dark .si-tag-stage {
 /* ─── Sidebar blank-before gap ────────────────────────────────────────
    Pure structure, not content — a thin rule instead of a full row, so a deck
    full of auto-inserted blanks doesn't read as twice as many "real" slides.
-   Not a button: no click handler, just a hover affordance and a title
-   tooltip. The one thing shown is a small dot when QR fires on this blank —
-   everything else about it lives on the content slide below, unchanged. */
+   Not a button: no click handler, and deliberately no hover feedback either
+   — a hover state on something with nothing to click just trains people to
+   click it, for nothing to happen. A `title` tooltip is the only affordance.
+   The one thing shown is a small dot when QR fires on this blank; the dot is
+   intentionally taller than the 4px rule (a "bead on a wire") so it actually
+   reads at a glance instead of vanishing into a sliver — not an accidental
+   overflow. Everything else about the blank lives on the content slide
+   below, unchanged. */
 .si-gap {
   height: 4px;
   margin: 4px 10px;
@@ -2672,7 +2677,6 @@ body.dark .si-tag-stage {
   justify-content: flex-end;
   padding: 0 3px;
 }
-.si-gap:hover { background: rgba(123,31,162,.32); }
 .si-gap.hidden { display: none; }
 .si-gap-dot {
   width: 6px;

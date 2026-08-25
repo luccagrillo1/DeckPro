@@ -7190,7 +7190,7 @@ function layoutPreview(scheme, sel) {
         <div class="lp-canvas" data-canvas="prop" style="aspect-ratio:${propW} / ${propH}">${propRegions.map(box(propW, propH, propHidden)).join('')}</div>
       </div>
     </div>
-    <p class="style-group-hint" style="margin-top:8px">Click a region to highlight its row below. Boxes are drawn from this scheme's positions; off-canvas elements (e.g. Live) may sit outside the frame.</p>`;
+    <p class="style-group-hint" style="margin-top:8px">Click a region to highlight its row below and reveal its label. Boxes are drawn from this scheme's positions; off-canvas elements (e.g. Live) may sit outside the frame.</p>`;
 }
 
 // ── Palette tab + Global view helpers ─────────────────────────────────────────
