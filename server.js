@@ -981,8 +981,30 @@ app.get('/api/update/check', async (req, res) => {
   }
 });
 
+// Given the actual running executable path, walk up to the enclosing .app
+// bundle (e.g. ".../DeckPro.app/Contents/MacOS/DeckPro" -> ".../DeckPro.app").
+// Returns null when not running from inside a .app bundle (dev mode / plain
+// `node server.js`), so the update route can refuse to guess a location
+// instead of hardcoding /Applications.
+function findAppBundlePath(execPath) {
+  let dir = execPath;
+  while (dir && dir !== path.dirname(dir)) {
+    if (dir.endsWith('.app')) return dir;
+    dir = path.dirname(dir);
+  }
+  return null;
+}
+
 app.post('/api/update/install', async (req, res) => {
   try {
+    const appBundlePath = findAppBundlePath(process.execPath);
+    if (!appBundlePath) {
+      return res.json({ ok: false, error: 'Not running as an installed app — update manually' });
+    }
+    const appBundleName = path.basename(appBundlePath);          // "DeckPro.app"
+    const appName        = path.basename(appBundlePath, '.app'); // "DeckPro"
+    const installDir     = path.dirname(appBundlePath);          // wherever it actually lives
+
     const { latest, asset } = await fetchLatestRelease();
     if (cmpVer(latest, pkg.version) <= 0 || !asset) {
       return res.json({ ok: false, error: 'Already up to date' });
@@ -992,20 +1014,86 @@ app.post('/api/update/install', async (req, res) => {
     const unzipDir  = `/tmp/deckpro-update-${latest}`;
     await downloadFile(asset.browser_download_url, zipPath);
 
+    // No separate checksum is published alongside the release, so a
+    // truncated or tampered download is the one real risk here — catch it
+    // before anything installed is ever touched.
+    const downloadedBytes = fsu.statSync(zipPath).size;
+    if (downloadedBytes !== asset.size) {
+      throw new Error(`Downloaded update is the wrong size (expected ${asset.size} bytes, got ${downloadedBytes})`);
+    }
+
     execSync(`rm -rf "${unzipDir}" && mkdir -p "${unzipDir}" && ditto -xk "${zipPath}" "${unzipDir}"`, { timeout: 60000 });
-    if (!fsu.existsSync(`${unzipDir}/DeckPro.app`)) {
+    const extractedApp = path.join(unzipDir, appBundleName);
+    if (!fsu.existsSync(extractedApp)) {
       throw new Error('Update package did not contain DeckPro.app');
     }
 
-    // Swap the app bundle after this process exits, then relaunch
+    // electron-builder ad-hoc signs the app (no notarization) — a valid
+    // signature still confirms the bundle wasn't truncated or altered in transit.
+    try {
+      execSync(`codesign --verify --deep --strict "${extractedApp}"`, { timeout: 30000, stdio: 'pipe' });
+    } catch (_) {
+      throw new Error('Downloaded update failed signature verification');
+    }
+
+    // Swap the app bundle after this process exits, then relaunch. Stages into
+    // a sibling ".new" bundle and verifies it BEFORE anything installed is
+    // touched, so a failed copy (disk full, permissions, interrupted) never
+    // leaves the user without a working app. Every branch below is logged to
+    // /tmp/deckpro-update.log — there was previously no trace at all of a
+    // silently failed update.
+    const installedApp = path.join(installDir, appBundleName);
+    const stagedApp     = path.join(installDir, `${appName}.app.new`);
+    const backupApp     = path.join(installDir, `${appName}.app.old`);
+    const lsregister    = '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister';
+
     const swapScript = `/tmp/deckpro-update-swap.sh`;
     fsu.writeFileSync(swapScript, `#!/bin/bash
+exec >> /tmp/deckpro-update.log 2>&1
+echo "=== DeckPro update swap: $(date) ==="
+set -u
+
 sleep 1.5
-rm -rf /Applications/DeckPro.app
-cp -R "${unzipDir}/DeckPro.app" /Applications/
-"/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister" -f /Applications/DeckPro.app
-rm -rf "${unzipDir}" "${zipPath}"
-open -n /Applications/DeckPro.app --args --updated
+
+SRC="${extractedApp}"
+INSTALLED="${installedApp}"
+STAGED="${stagedApp}"
+BACKUP="${backupApp}"
+
+echo "Staging $SRC -> $STAGED"
+rm -rf "$STAGED"
+if ! cp -R "$SRC" "$STAGED"; then
+  echo "Stage copy failed — leaving installed app untouched"
+  rm -rf "$STAGED"
+  exit 1
+fi
+
+if [ ! -x "$STAGED/Contents/MacOS/${appName}" ]; then
+  echo "Staged bundle failed verification — executable missing at $STAGED/Contents/MacOS/${appName}"
+  rm -rf "$STAGED"
+  exit 1
+fi
+echo "Staged bundle verified"
+
+if ! mv "$INSTALLED" "$BACKUP"; then
+  echo "Could not move installed app aside — aborting, nothing changed"
+  rm -rf "$STAGED"
+  exit 1
+fi
+
+if ! mv "$STAGED" "$INSTALLED"; then
+  echo "Swap failed — restoring previous app"
+  mv "$BACKUP" "$INSTALLED"
+  "${lsregister}" -f "$INSTALLED"
+  open -n "$INSTALLED"
+  exit 1
+fi
+
+echo "Swap succeeded"
+"${lsregister}" -f "$INSTALLED"
+rm -rf "$BACKUP" "${unzipDir}" "${zipPath}"
+open -n "$INSTALLED" --args --updated
+echo "Done: $(date)"
 `, { mode: 0o755 });
 
     const { spawn } = require('child_process');
