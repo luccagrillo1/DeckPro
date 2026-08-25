@@ -12230,7 +12230,19 @@ function renderNotesTray() {
   const tray  = document.getElementById('notes-tray');
   if (!body || !tray) return;
 
-  tray.classList.toggle('collapsed', state.config.notesTrayOpen === false);
+  const collapsed = state.config.notesTrayOpen === false;
+  tray.classList.toggle('collapsed', collapsed);
+  // Drag-resizing (below) sets an explicit inline height + removes the 45%
+  // max-height cap. Collapsing only hides .notes-tray-body via CSS — it left
+  // that inline height/maxHeight in place, so a tray dragged tall and then
+  // collapsed kept its full dragged height (up to 700px) with nothing but its
+  // thin header actually showing, permanently starving .notes-doc-scroll of
+  // space it should have gotten back. Clearing it here lets a collapsed tray
+  // shrink to just its header, same as if it had never been dragged.
+  if (collapsed) {
+    tray.style.height = '';
+    tray.style.maxHeight = '';
+  }
 
   const mode = state.config.notesMode || 'manual';
   if (mode === 'manual') {
