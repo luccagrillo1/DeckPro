@@ -7116,22 +7116,63 @@ function layoutPreview(scheme, sel) {
     ['propPoint',  'Prop point',  sv.propPointX ?? sv.propBodyX ?? 0, sv.propPointY ?? sv.propBodyY ?? 0, sv.propPointW ?? sv.propBodyW ?? 0, sv.propPointH ?? sv.propBodyH ?? 0],
     ['propHeader', 'Prop title',  sv.propTitleX ?? 0, sv.propTitleY ?? 0, sv.propTitleW ?? 0, sv.propTitleH ?? 0],
   ];
-  const box = (cw, ch) => ([slug, lbl, x, y, w, h]) => {
+  // Two regions can legitimately share nearly the same rectangle — e.g. RC
+  // Title falls back to Title's own position, or Prop Point falls back to
+  // Prop Body's — and both boxes center their label the same way, so the
+  // labels print on top of each other into unreadable mush. Rather than pick
+  // an arbitrary "winner" (by z-order or size) that would quietly bias which
+  // region looks labeled — Body, arguably the most important region, would
+  // lose to Utility under a pure z-order rule on an uncustomized scheme where
+  // several regions still share Body's default position — every region
+  // involved in a significant overlap has its label suppressed by default.
+  // Nothing is guessed at; click the box (or hover for its title tooltip) to
+  // see which one it is, same as you'd already do to inspect its row below.
+  // Non-overlapping regions are unaffected and keep their always-on label.
+  function labelsToHide(regions) {
+    const visible = regions.filter(([, , , , w, h]) => w && h);
+    const overlapFraction = (a, b) => {
+      const [, , ax, ay, aw, ah] = a, [, , bx, by, bw, bh] = b;
+      const ix = Math.max(0, Math.min(ax + aw, bx + bw) - Math.max(ax, bx));
+      const iy = Math.max(0, Math.min(ay + ah, by + bh) - Math.max(ay, by));
+      const inter = ix * iy;
+      if (!inter) return 0;
+      return inter / Math.min(aw * ah, bw * bh);
+    };
+    const hide = new Set();
+    for (let i = 0; i < visible.length; i++) {
+      for (let j = i + 1; j < visible.length; j++) {
+        if (overlapFraction(visible[i], visible[j]) > 0.5) {
+          hide.add(visible[i][0]);
+          hide.add(visible[j][0]);
+        }
+      }
+    }
+    return hide;
+  }
+  const box = (cw, ch, hidden) => ([slug, lbl, x, y, w, h]) => {
     if (!w || !h) return '';
     const pct = (v, d) => (v / d) * 100;
+    // The label is always in the DOM — clicking a region only ever toggles
+    // its '.sel' class (see selectRegion() / the click handlers below; there's
+    // no re-render per click), so a label that was left out of the HTML here
+    // could never come back on selection. Instead it's rendered every time
+    // and CSS reveals a "muted" (auto-hidden) one whenever its box is '.sel'.
+    const muted = hidden.has(slug) ? ' lp-region-lbl-muted' : '';
     return `<div class="lp-region lp-region-${slug}${sel === slug ? ' sel' : ''}" data-region="${slug}"
       style="left:${pct(x, cw).toFixed(2)}%;top:${pct(y, ch).toFixed(2)}%;width:${pct(w, cw).toFixed(2)}%;height:${pct(h, ch).toFixed(2)}%"
-      title="${esc(lbl)}"><span class="lp-region-lbl">${esc(lbl)}</span></div>`;
+      title="${esc(lbl)}"><span class="lp-region-lbl${muted}">${esc(lbl)}</span></div>`;
   };
+  const mainHidden = labelsToHide(mainRegions);
+  const propHidden = labelsToHide(propRegions);
   return `
     <div class="lp-wrap">
       <div class="lp-canvas-block">
         <div class="lp-canvas-lbl">${dn('mainScreen')} · ${Math.round(mainW)}×${Math.round(mainH)}</div>
-        <div class="lp-canvas" data-canvas="main" style="aspect-ratio:${mainW} / ${mainH}">${mainRegions.map(box(mainW, mainH)).join('')}</div>
+        <div class="lp-canvas" data-canvas="main" style="aspect-ratio:${mainW} / ${mainH}">${mainRegions.map(box(mainW, mainH, mainHidden)).join('')}</div>
       </div>
       <div class="lp-canvas-block">
         <div class="lp-canvas-lbl">${dn('ledWall')} · ${Math.round(propW)}×${Math.round(propH)}</div>
-        <div class="lp-canvas" data-canvas="prop" style="aspect-ratio:${propW} / ${propH}">${propRegions.map(box(propW, propH)).join('')}</div>
+        <div class="lp-canvas" data-canvas="prop" style="aspect-ratio:${propW} / ${propH}">${propRegions.map(box(propW, propH, propHidden)).join('')}</div>
       </div>
     </div>
     <p class="style-group-hint" style="margin-top:8px">Click a region to highlight its row below. Boxes are drawn from this scheme's positions; off-canvas elements (e.g. Live) may sit outside the frame.</p>`;

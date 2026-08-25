@@ -2046,6 +2046,12 @@ details[open].settings-disclosure .settings-disclosure-summary::before { transfo
   font-size: 8px; font-weight: 700; color: rgba(255,255,255,.85);
   text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; pointer-events: none;
 }
+/* Regions that significantly overlap another region (see labelsToHide() in
+   layoutPreview) start muted so their labels don't print on top of each
+   other into unreadable mush — click the box (its .sel class is set by the
+   existing click handlers, no extra JS needed) to reveal which one it is. */
+.lp-region-lbl-muted { display: none; }
+.lp-region.sel .lp-region-lbl-muted { display: inline; }
 .lp-region-gradient { background: rgba(255,255,255,.045); border-style: dashed; }
 .lp-region-gradient .lp-region-lbl { color: rgba(255,255,255,.4); }
 .lp-region-queue { background: rgba(255,255,255,.06); }
