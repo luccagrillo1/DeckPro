@@ -127,7 +127,6 @@ function buildMenu() {
           visible: isDev,
           click: () => {
             if (!isDev) return;
-            const appDir = '/Users/grillo.lucca/LocalDocuments/Claude/pro7-decode';
             dialog.showMessageBox(win, {
               type: 'question',
               buttons: ['Redeploy', 'Cancel'],
@@ -141,7 +140,7 @@ function buildMenu() {
               // Show in-app progress overlay immediately
               renderer(`typeof showRebuildOverlay === 'function' && showRebuildOverlay()`);
 
-              const script = '/Users/grillo.lucca/LocalDocuments/Claude/pro7-decode/rebuild.sh';
+              const script = path.join(app.getAppPath(), 'rebuild.sh');
               const proc   = spawn('/bin/bash', [script]);
 
               proc.stdout.on('data', (data) => {

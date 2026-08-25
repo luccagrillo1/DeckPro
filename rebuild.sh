@@ -1,6 +1,6 @@
 #!/bin/bash
 export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
-cd "/Users/grillo.lucca/LocalDocuments/Claude/pro7-decode"
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 LOG="/tmp/deckpro-rebuild.log"
 echo "=== DeckPro Rebuild $(date) ===" > "$LOG"

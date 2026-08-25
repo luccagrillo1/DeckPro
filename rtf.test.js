@@ -1,4 +1,4 @@
-const { rtfBody, rtfTitle, rtfLive, rtfStartEnd, rtfPointList, rtfPointBody, rtfEmpty } = require('/Users/grillo.lucca/LocalDocuments/Claude/pro7-decode/rtf.js');
+const { rtfBody, rtfTitle, rtfLive, rtfStartEnd, rtfPointList, rtfPointBody, rtfEmpty } = require('./rtf.js');
 
 let pass = 0, fail = 0;
 
