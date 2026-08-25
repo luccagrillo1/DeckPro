@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.27.0';
+const APP_VERSION = '4.27.1';
 
 const CHANGELOG = [
+  {
+    version: '4.27.1',
+    date: '2026-08-25',
+    changes: [
+      'Internal test release verifying the new auto-update rollback path end-to-end. No functional changes.',
+    ],
+  },
   {
     version: '4.27.0',
     date: '2026-08-25',
