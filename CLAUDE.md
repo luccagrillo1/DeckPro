@@ -10,7 +10,7 @@ A local web app that generates ProPresenter 7 (.pro) presentation files automati
 - **Pro7 version**: 20.0.1 (protobuf binary format, NOT JSON)
 
 ## File Format
-Pro7 `.pro` files are protobuf binary. They were decoded using `protobufjs` and the `rv.data.Presentation` type from `propresenter.proto`. The decoded output is in `~/pro7-decode/output.json` — this is the actual last week's presentation file decoded.
+Pro7 `.pro` files are protobuf binary. They're decoded using `protobufjs` and the `rv.data.Presentation` type from `propresenter.proto`. To inspect a real presentation file, regenerate the decoded JSON on demand rather than looking for a committed copy: `node decode.js path/to/file.pro > output.json`.
 
 ## Confirmed Slide Structure (from output.json)
 The presentation has 21 cues (slides). Each cue contains multiple **actions**:
@@ -155,18 +155,11 @@ On scripture slides, the `title` bar sits directly above the `this slide` body b
 QR is a macro, not an image DeckPro draws — it fires a single deck-wide configured macro (Palettes → QR Code tab, `state.config.qrMacro`) on blank-before cues whose slide had `qrOn` true. Three pieces: (1) the QR macro picker in Palettes, (2) this deck's own QR toggle (Decks → edit this deck, `state.config.qrCode`) which sets the *default* for untouched blanks, (3) a `qrmarker` slide type ("QR Stop") — a non-exporting sidebar divider — whose position splits the deck into a default-on zone (before it) and default-off zone (at/after it). A per-slide QR toggle (next to "Blank slide before this one") lets a manual override always win over the auto default, computed client-side by `effectiveQR()`/`autoQRDefault()` in `public/app.js` and passed through the export spec as each slide's `qrOn` boolean.
 
 ## Working Directory
-`~/pro7-decode/` — proto schema, decode script, and output.json are all here.
+`~/pro7-decode/` — proto schema and decode script live here. There's no committed decoded-output file to open; regenerate one from any real `.pro` file with `node decode.js path/to/file.pro > output.json` (see File Format above).
 
 ## Key Reference Files
-- `~/pro7-decode/output.json` — decoded last week's full presentation (21 cues)
-- `~/pro7-decode/ProPresenter7-Proto/proto/propresenter.proto` — Pro7 protobuf schema
-- `~/Downloads/Message_26.02.18_Multiplier_Church.pro` — original binary file
-
-## Key Reference Files
-- `output.json` — decoded last week's full presentation (21 cues, 10929 lines)
-- `pro7_analysis.txt` — full extracted analysis of all element bounds/styles per slide type
 - `ProPresenter7-Proto/proto/propresenter.proto` — Pro7 protobuf schema entry point
-- `~/Downloads/Message_26.02.18_Multiplier_Church.pro` — original binary source file
+- `decode.js` — regenerates a decoded JSON dump of any `.pro` file (see File Format above)
 
 ## RTF Generator (`rtf.js`)
 
