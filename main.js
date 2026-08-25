@@ -394,6 +394,17 @@ app.whenReady().then(async () => {
       }, 800);
     });
   }
+  // The update swap script relaunches with this flag when it bails out and
+  // leaves the current version in place. Without it the app just quits and
+  // reopens with no explanation and no visible reason it's still on the old
+  // version — the failure is only recorded in /tmp/deckpro-update.log.
+  if (process.argv.includes('--update-failed')) {
+    win.webContents.once('did-finish-load', () => {
+      setTimeout(() => {
+        renderer(`typeof toast === 'function' && toast('error', 'Update failed', 'DeckPro is still on the current version. Details in /tmp/deckpro-update.log')`);
+      }, 800);
+    });
+  }
   if (process.argv.includes('--updated')) {
     win.webContents.once('did-finish-load', () => {
       setTimeout(() => {

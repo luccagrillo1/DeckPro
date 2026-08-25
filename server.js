@@ -1014,10 +1014,15 @@ app.get('/api/update/check', async (req, res) => {
 // Returns null when not running from inside a .app bundle (dev mode / plain
 // `node server.js`), so the update route can refuse to guess a location
 // instead of hardcoding /Applications.
+// The bundle must be named after THIS app. Without that check, `npm run
+// electron` resolves to node_modules/electron/dist/Electron.app and the
+// "not an installed app" branch never fires in dev; a renamed bundle would
+// likewise be misidentified. Either way we'd rather refuse than guess.
 function findAppBundlePath(execPath) {
+  const expected = `${pkg.productName || 'DeckPro'}.app`;
   let dir = execPath;
   while (dir && dir !== path.dirname(dir)) {
-    if (dir.endsWith('.app')) return dir;
+    if (dir.endsWith('.app')) return path.basename(dir) === expected ? dir : null;
     dir = path.dirname(dir);
   }
   return null;
@@ -1093,19 +1098,29 @@ rm -rf "$STAGED"
 if ! cp -R "$SRC" "$STAGED"; then
   echo "Stage copy failed — leaving installed app untouched"
   rm -rf "$STAGED"
+  open -n "$INSTALLED" --args --update-failed
   exit 1
 fi
 
 if [ ! -x "$STAGED/Contents/MacOS/${appName}" ]; then
   echo "Staged bundle failed verification — executable missing at $STAGED/Contents/MacOS/${appName}"
   rm -rf "$STAGED"
+  open -n "$INSTALLED" --args --update-failed
   exit 1
 fi
 echo "Staged bundle verified"
 
+# A leftover .app.old from an interrupted earlier swap MUST be cleared first:
+# mv into an existing directory moves the source INSIDE it, producing
+# DeckPro.app.old/DeckPro.app — which the rollback below would then restore as
+# a nested, unlaunchable bundle. The one path where that matters most is the
+# recovery path, so never let a stale backup survive into it.
+rm -rf "$BACKUP"
+
 if ! mv "$INSTALLED" "$BACKUP"; then
   echo "Could not move installed app aside — aborting, nothing changed"
   rm -rf "$STAGED"
+  open -n "$INSTALLED" --args --update-failed
   exit 1
 fi
 
@@ -1113,7 +1128,7 @@ if ! mv "$STAGED" "$INSTALLED"; then
   echo "Swap failed — restoring previous app"
   mv "$BACKUP" "$INSTALLED"
   "${lsregister}" -f "$INSTALLED"
-  open -n "$INSTALLED"
+  open -n "$INSTALLED" --args --update-failed
   exit 1
 fi
 
