@@ -3955,6 +3955,64 @@ function _fitLineWidth(inner, lineWords) {
   return inner.scrollWidth;
 }
 
+// PostScript font-name suffix ("ExtraBold", "Medium", "Black", ...) → the
+// numeric CSS font-weight it actually represents. The measurement DOM used to
+// assume every row was Montserrat at a fixed weight (500, or 900 for points)
+// regardless of what font the scheme actually named — this is what lets it
+// measure at the real weight instead.
+const _FIT_WEIGHT_MAP = {
+  thin: 100, hairline: 100, extralight: 200, ultralight: 200, light: 300,
+  regular: 400, normal: 400, book: 400, roman: 400,
+  medium: 500, semibold: 600, demibold: 600, bold: 700,
+  extrabold: 800, ultrabold: 800, black: 900, heavy: 900,
+};
+function _fitFontWeightStyle(psName) {
+  const { style } = parseFontPS(psName || '');
+  const norm = (style || '').toLowerCase().replace(/[\s_-]/g, '');
+  const italic = /italic|oblique/.test(norm);
+  const weight = _FIT_WEIGHT_MAP[norm.replace(/italic|oblique/g, '')] || 400;
+  return { weight, italic };
+}
+
+// Resolve the CSS a row actually renders at — family, weight, italic, letter
+// spacing, and capitalization — from the scheme's own font choice + FontAdv.
+// Previously none of this reached the measurement: capitalization and
+// character spacing were never applied at all, and font family/weight/italic
+// were guessed from `type` instead of read from the scheme, so a Bold row set
+// to ALL CAPS (or a Point row set to a lighter weight than 900) measured
+// narrower than what ProPresenter actually draws.
+function _fitFontDescriptor(fontName, adv) {
+  const a = adv || FONT_ADV_DEFAULTS();
+  const { family } = parseFontPS(fontName || '');
+  const { weight: styleWeight, italic: styleItalic } = _fitFontWeightStyle(fontName);
+  const weight = a.bold ? Math.max(styleWeight, 700) : styleWeight;
+  const italic = !!(a.italic || styleItalic);
+  const cap = a.capitalization || '';
+  return {
+    // Try the exact PostScript name first (matches a locally-installed static
+    // weight file directly, e.g. "Montserrat-Black" as its own family); fall
+    // back to the bare family + numeric weight for the Google-Fonts-loaded case.
+    fontFamily: `"${fontName || family || 'Montserrat'}", "${family || 'Montserrat'}", sans-serif`,
+    fontWeight: String(weight),
+    fontStyle: italic ? 'italic' : 'normal',
+    letterSpacing: `${a.charSpacing || 0}px`,
+    textTransform: cap === 'allCaps' ? 'uppercase' : (cap === 'titleCase' || cap === 'startCase') ? 'capitalize' : 'none',
+    fontVariant: cap === 'smallCaps' ? 'small-caps' : 'normal',
+  };
+}
+function _fitApplyDescriptor(styleObj, d) {
+  styleObj.fontFamily    = d.fontFamily;
+  styleObj.fontWeight    = d.fontWeight;
+  styleObj.fontStyle     = d.fontStyle;
+  styleObj.letterSpacing = d.letterSpacing;
+  styleObj.textTransform = d.textTransform;
+  styleObj.fontVariant   = d.fontVariant;
+}
+function _fitDescriptorCss(d) {
+  return `font-family:${d.fontFamily};font-weight:${d.fontWeight};font-style:${d.fontStyle};`
+       + `letter-spacing:${d.letterSpacing};text-transform:${d.textTransform};font-variant:${d.fontVariant}`;
+}
+
 // Enumerate line partitions that break ONLY after punctuation words (comma,
 // clause, or sentence end). These reach layouts that box-width alone can't —
 // e.g. a point split cleanly after every comma — and are the candidates that,
@@ -4021,10 +4079,22 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
   // heuristic, which routinely disagreed with what Fit Width actually rendered.
   const centered = (w, brokenText = null, lines = null) => ({ bodyW: w, bodyX: Math.round((canvasW - w) / 2), brokenText, lines });
 
+  // Resolve the real per-row typography (family/weight/italic/capitalization/
+  // character spacing) for the base text and for bold spans, instead of a
+  // fixed Montserrat-at-a-guessed-weight assumption — see _fitFontDescriptor.
+  const baseFontField = type === 'point' ? (isProp ? 'propPointFont' : 'pointFont')
+                                          : (isProp ? 'propBodyFont'  : 'bodyFont');
+  const baseAdvField  = type === 'point' ? (isProp ? 'propPointFontAdv' : 'pointFontAdv')
+                                          : (isProp ? 'propBodyFontAdv'  : 'bodyFontAdv');
+  const boldFontField = isProp ? 'propBoldFont'    : 'boldFont';
+  const boldAdvField  = isProp ? 'propBoldFontAdv' : 'boldFontAdv';
+  const baseDesc = _fitFontDescriptor(st[baseFontField], st[baseAdvField]);
+  const boldDesc = _fitFontDescriptor(st[boldFontField] || st[baseFontField], st[boldAdvField] || st[baseAdvField]);
+
   // Hidden measurement container — 1:1 canvas coordinate space.
   const msr   = document.createElement('div');
   const style = document.createElement('style');
-  style.textContent = '._msr strong{font-family:Montserrat,"Montserrat-Black",sans-serif;font-weight:900}._msr em{font-style:italic}._msr ._fw{display:inline}';
+  style.textContent = `._msr strong{${_fitDescriptorCss(boldDesc)}}._msr em{font-style:italic}._msr ._fw{display:inline}`;
   const inner = document.createElement('div');
   inner.className = '_msr';
   msr.appendChild(style);
@@ -4033,10 +4103,9 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
     position: 'fixed', top: '-9999px', left: '-9999px',
     visibility: 'hidden', pointerEvents: 'none',
     fontSize: `${size}px`,
-    fontFamily: 'Montserrat,"Montserrat-Medium",sans-serif',
-    fontWeight: type === 'point' ? '900' : '500',
     lineHeight: '1.3',
   });
+  _fitApplyDescriptor(msr.style, baseDesc);
   document.body.appendChild(msr);
 
   try {
@@ -15373,6 +15442,12 @@ async function bootstrap() {
   if (_tvEl) _tvEl.textContent = 'v' + APP_VERSION;
 
   await loadState();
+  // Fit Width measures text in a hidden DOM node at Montserrat's real metrics —
+  // if the Google Fonts stylesheet/files haven't finished loading yet, that
+  // measurement silently falls back to the system sans-serif's metrics instead,
+  // which are close enough to look right and different enough to be wrong.
+  // This is a one-time wait at boot, not on every measurement.
+  try { await document.fonts.ready; } catch (_) {}
   initTheme();
   initLiveQuoteNormalization();
   initNotesFieldDragDrop();
