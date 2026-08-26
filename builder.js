@@ -669,14 +669,19 @@ function makeLiveElement(rs = {}) {
  * bar jitter down the deck line to line. Cap height adapts to font/weight/
  * capitalization while landing every line identically.
  *
- * Without both `knownLines` and `metrics` (a caller with no Fit Width
- * result — currently only Response Card's title, a separate, deliberately
- * unmigrated path) falls back to counting wrapped lines via a char-width
- * estimate. That fallback routinely disagrees with Fit Width's real wrap
- * when one IS available, which is why callers that have real numbers must
- * always pass them rather than relying on this to guess.
+ * `strict` (default false) governs what happens without real `knownLines`/
+ * `metrics`: scripture (buildScriptureCues) passes true, because by the time
+ * export reaches here the caller has already guaranteed a real Fit Width
+ * result — see the staleness-hash recompute in public/app.js. Missing data
+ * there is a bug, not a legitimate case to approximate; a silent guess that
+ * disagrees with the real measurement is how this exact class of bug (the
+ * title dropping onto the body) has hidden three times now, so this throws
+ * instead. Response Card's title (makeRCSlide1) has never had a real Fit
+ * Width result behind it and isn't in scope for this rewrite — its call
+ * site passes neither knownLines/metrics nor strict, and keeps landing on
+ * the char-width estimate below exactly as it always has.
  */
-function estimateTitleY(displayBody, bw, rs, knownLines, metrics) {
+function estimateTitleY(displayBody, bw, rs, knownLines, metrics, strict = false) {
   const bodySize = rs.bodySize ?? 44;
   const gap      = rs.titleAutoGap ?? 16;
   const by       = rs.bodyY ?? 0;
@@ -685,6 +690,14 @@ function estimateTitleY(displayBody, bw, rs, knownLines, metrics) {
 
   const hasReal = Number.isFinite(knownLines) && knownLines > 0 && metrics
     && Number.isFinite(metrics.ascent) && Number.isFinite(metrics.descent) && Number.isFinite(metrics.capAscent);
+
+  if (!hasReal && strict) {
+    throw new Error(
+      `estimateTitleY: strict mode requires a real Fit Width result (knownLines + ascent/descent/capAscent) but one wasn't available ` +
+      `(knownLines=${knownLines}, metrics=${JSON.stringify(metrics)}). This means a slide with autoTitleY on reached export without a ` +
+      `valid cached fit — a bug upstream, not something to approximate here.`
+    );
+  }
 
   if (hasReal) {
     const lineH    = bodySize * (rs.bodyFontAdv?.lineHeight || 1.3);
@@ -1421,7 +1434,7 @@ function buildScriptureCues(spec, rs) {
     const liveEl  = makeLiveElement(rs);
     // Auto Title Y: estimate from line count if enabled; otherwise use scheme titleY directly
     const computedTitleY = rs.autoTitleY
-      ? estimateTitleY(displayBody, bw, rs, spec.bodyLines, { ascent: spec.ascent, descent: spec.descent, capAscent: spec.capAscent })
+      ? estimateTitleY(displayBody, bw, rs, spec.bodyLines, { ascent: spec.ascent, descent: spec.descent, capAscent: spec.capAscent }, true)
       : (rs.titleY ?? 0);
     const titleEl = makeTitleElement({ reference: spec.reference, titleY: computedTitleY }, rs);
     const bodyEl  = makeBodyElement({ x: bx, y: by + bodyYOff, w: bw, h: bh, rtfData: bodyRtf, charCount: plainBody.length, spans: displayBody }, rs);

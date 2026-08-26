@@ -4053,6 +4053,79 @@ function _fitFontMetrics(desc, size) {
   };
 }
 
+// Resolve the scheme, row typography, and width ceiling for a Fit Width
+// search — shared by computeOptimalBodyWidth (the real DOM measurement) and
+// _fitHash (a cheap fingerprint used to decide whether a cached result is
+// stale, with none of the expensive part). Splitting this out guarantees the
+// two always agree on what a Fit Width result actually depends on.
+function _fitResolveContext(rs, type, display) {
+  // Resolve the scheme so inherited body width / sizes are real numbers, not
+  // nulls — otherwise the cap silently falls back to the full canvas and the
+  // measurement font size is wrong (the two long-standing Fit Width bugs).
+  const st = styleForExport(rs || activeStyleScheme()) || {};
+  const isProp  = display === 'prop';
+  const canvasW = isProp ? (st.propCanvasW ?? 3200) : (st.canvasW ?? 1920);
+  const size    = isProp
+    ? (type === 'point' ? (st.propPointSize ?? st.propBodySize ?? 80) : (st.propBodySize ?? 80))
+    : (type === 'point' ? (st.pointSize ?? st.bodySize ?? 44) : (st.bodySize ?? 44));
+  // Width ceiling: stay within the palette's own configured box for the
+  // element being measured — body width for scripture, point width for
+  // points — never wider than that regardless of how short the text is.
+  const cap     = (isProp
+    ? (type === 'point' ? st.propPointW : st.propBodyW)
+    : (type === 'point' ? st.pointW     : st.bodyW)) || canvasW;
+  const maxW    = Math.max(1, Math.min(cap, canvasW));
+  // Resolve the real per-row typography (family/weight/italic/capitalization/
+  // character spacing) for the base text and for bold spans, instead of a
+  // fixed Montserrat-at-a-guessed-weight assumption — see _fitFontDescriptor.
+  const baseFontField = type === 'point' ? (isProp ? 'propPointFont' : 'pointFont')
+                                          : (isProp ? 'propBodyFont'  : 'bodyFont');
+  const baseAdvField  = type === 'point' ? (isProp ? 'propPointFontAdv' : 'pointFontAdv')
+                                          : (isProp ? 'propBodyFontAdv'  : 'bodyFontAdv');
+  const boldFontField = isProp ? 'propBoldFont'    : 'boldFont';
+  const boldAdvField  = isProp ? 'propBoldFontAdv' : 'boldFontAdv';
+  const baseDesc = _fitFontDescriptor(st[baseFontField], st[baseAdvField]);
+  const boldDesc = _fitFontDescriptor(st[boldFontField] || st[baseFontField], st[boldAdvField] || st[baseAdvField]);
+  return { st, isProp, canvasW, size, maxW, baseDesc, boldDesc };
+}
+
+// A deterministic fingerprint of everything that can change a Fit Width
+// result: the spans' own content/formatting, both rows' resolved typography,
+// the font size, and the box-width ceiling. Used to decide at export whether
+// a slide's cached bodyW/bodyLines/etc. are still trustworthy — a stale
+// cache (text edited, scheme's font/weight/capitalization changed, or the
+// Styles width changed, all without Fit Width re-running) doesn't show up
+// as `null`, so a plain "recompute when null" check misses it. Not a
+// cryptographic hash — a plain, fast, collision-safe-enough string key is
+// all a same-session staleness check needs.
+function _fitHash(spans, ctx) {
+  const spanKey = (spans || []).map(s => `${s.text || ''}|${!!s.bold}|${!!s.italic}|${!!s.underline}`).join('');
+  const descKey = d => `${d.fontFamily}|${d.fontWeight}|${d.fontStyle}|${d.letterSpacing}|${d.fontVariant}|${d.cap}`;
+  return [spanKey, descKey(ctx.baseDesc), descKey(ctx.boldDesc), ctx.size, ctx.maxW].join('');
+}
+
+// What _fitHash WOULD compute for this slide's current spans/scheme right
+// now, for `display` — cheap (typography + width-ceiling resolution only,
+// none of computeOptimalBodyWidth's DOM sweep), so it's safe to call on
+// every fitWidth slide at export just to decide whether a real recompute is
+// even needed. Only single-mode point and scripture have a well-defined
+// single hash (revealing points share one box across a whole bullet
+// sequence — no single result to fingerprint, so they're always recomputed,
+// same as before this existed).
+function _fitCurrentBodyHash(slide, scheme, display) {
+  const isProp = display === 'prop';
+  if (slide.type === 'scripture') {
+    const rawSpans = (slide.bodies || [[]])[0] || [];
+    const spans = (!isProp && slide.stripNewlines) ? stripNewlineSpans(rawSpans) : rawSpans;
+    return _fitHash(spans, _fitResolveContext(scheme, 'scripture', display));
+  }
+  if (slide.type === 'point' && slide.mode !== 'revealing') {
+    const spans = [{ text: slide.bodyText || '', bold: true }];
+    return _fitHash(spans, _fitResolveContext(scheme, 'point', display));
+  }
+  return null;
+}
+
 // Apply a FontAdv capitalization setting to actual characters, matching what
 // ProPresenter renders — not CSS text-transform, which can't express "Title
 // Case" (capitalize each word AND lowercase the rest in the same string; the
@@ -4168,46 +4241,25 @@ function _fitSpansFromWinningLayout(words, lineWordCounts) {
  * alongside `lines` since builder.js has no DOM to measure them itself.
  */
 function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
-  // Resolve the scheme so inherited body width / sizes are real numbers, not
-  // nulls — otherwise the cap silently falls back to the full canvas and the
-  // measurement font size is wrong (the two long-standing Fit Width bugs).
-  const st = styleForExport(rs || activeStyleScheme()) || {};
-  const isProp  = display === 'prop';
-  const canvasW = isProp ? (st.propCanvasW ?? 3200) : (st.canvasW ?? 1920);
-  const size    = isProp
-    ? (type === 'point' ? (st.propPointSize ?? st.propBodySize ?? 80) : (st.propBodySize ?? 80))
-    : (type === 'point' ? (st.pointSize ?? st.bodySize ?? 44) : (st.bodySize ?? 44));
-  // Width ceiling: stay within the palette's own configured box for the
-  // element being measured — body width for scripture, point width for
-  // points — never wider than that regardless of how short the text is.
-  const cap     = (isProp
-    ? (type === 'point' ? st.propPointW : st.propBodyW)
-    : (type === 'point' ? st.pointW     : st.bodyW)) || canvasW;
-  const maxW    = Math.max(1, Math.min(cap, canvasW));
+  // Resolve the scheme, row typography, and width ceiling — shared with the
+  // cheap staleness check at export (_fitCurrentHash) so both always agree
+  // on what a Fit Width result depends on. See _fitResolveContext.
+  const ctx = _fitResolveContext(rs, type, display);
+  const { canvasW, size, maxW, baseDesc, boldDesc } = ctx;
   const padding = 80; // breathing room for the poetry branch
 
   const hasExplicit = (spans || []).some(s => s.text?.includes('\n'));
   // `lines` is the REAL measured line count at the winning width — Auto Title Y
   // uses this instead of independently re-guessing it from a char-width
   // heuristic, which routinely disagreed with what Fit Width actually rendered.
-  // `metrics` (ascent/descent/capAscent) is assigned right below, before
-  // `centered` is ever actually called — see estimateTitleY in builder.js.
-  let metrics = null;
+  // `metrics` (ascent/descent/capAscent) and `fitHash` (staleness fingerprint,
+  // see _fitHash) are assigned right below, before `centered` is ever called.
+  let metrics = null, fitHash = null;
   const centered = (w, brokenText = null, lines = null, brokenSpans = null) =>
-    ({ bodyW: w, bodyX: Math.round((canvasW - w) / 2), brokenText, brokenSpans, lines, ...metrics });
+    ({ bodyW: w, bodyX: Math.round((canvasW - w) / 2), brokenText, brokenSpans, lines, fitHash, ...metrics });
 
-  // Resolve the real per-row typography (family/weight/italic/capitalization/
-  // character spacing) for the base text and for bold spans, instead of a
-  // fixed Montserrat-at-a-guessed-weight assumption — see _fitFontDescriptor.
-  const baseFontField = type === 'point' ? (isProp ? 'propPointFont' : 'pointFont')
-                                          : (isProp ? 'propBodyFont'  : 'bodyFont');
-  const baseAdvField  = type === 'point' ? (isProp ? 'propPointFontAdv' : 'pointFontAdv')
-                                          : (isProp ? 'propBodyFontAdv'  : 'bodyFontAdv');
-  const boldFontField = isProp ? 'propBoldFont'    : 'boldFont';
-  const boldAdvField  = isProp ? 'propBoldFontAdv' : 'boldFontAdv';
-  const baseDesc = _fitFontDescriptor(st[baseFontField], st[baseAdvField]);
-  const boldDesc = _fitFontDescriptor(st[boldFontField] || st[baseFontField], st[boldAdvField] || st[baseAdvField]);
   metrics = _fitFontMetrics(baseDesc, size);
+  fitHash = _fitHash(spans, ctx);
   // Capitalization is applied only to what gets *rendered* into the
   // measurement DOM (spansToHtml(_fitCasedSpans(...)) below, and `mtext` in
   // _fitWordList) — never to `spans`/`words[].text` themselves. Those flow
@@ -4411,7 +4463,7 @@ function computeSlideFitWidth(slide, scheme) {
     if (!rawSpans.length || rawSpans.every(s => !s.text)) return null;
     const mainSpans = slide.stripNewlines ? stripNewlineSpans(rawSpans) : rawSpans;
     const main = computeOptimalBodyWidth(mainSpans, scheme, 'scripture', 'main');
-    if (!wantsProp) return { ...main, bodyLines: main.lines, propBodyW: null, propBodyX: null, propBodyLines: null, propBrokenText: null, propBrokenSpans: null, propAscent: null, propDescent: null, propCapAscent: null };
+    if (!wantsProp) return { ...main, bodyLines: main.lines, propBodyW: null, propBodyX: null, propBodyLines: null, propBrokenText: null, propBrokenSpans: null, propAscent: null, propDescent: null, propCapAscent: null, propFitHash: null };
     // Display 2 gets its own independent search against rawSpans (unstripped —
     // Strip is a Display-1-only setting) — never derived from Display 1's result.
     const prop = computeOptimalBodyWidth(rawSpans, scheme, 'scripture', 'prop');
@@ -4420,6 +4472,7 @@ function computeSlideFitWidth(slide, scheme) {
       propBodyW: prop.bodyW, propBodyX: prop.bodyX, propBodyLines: prop.lines,
       propBrokenText: prop.brokenText || null, propBrokenSpans: prop.brokenSpans || null,
       propAscent: prop.ascent, propDescent: prop.descent, propCapAscent: prop.capAscent,
+      propFitHash: prop.fitHash,
     };
   }
   if (slide.type === 'point') {
@@ -4442,9 +4495,9 @@ function computeSlideFitWidth(slide, scheme) {
     if (!text) return null;
     const spans = [{ text, bold: true }];
     const main = computeOptimalBodyWidth(spans, scheme, 'point', 'main');
-    if (!wantsProp) return { ...main, propBodyW: null, propBodyX: null, propBrokenText: null, propBrokenSpans: null };
+    if (!wantsProp) return { ...main, propBodyW: null, propBodyX: null, propBrokenText: null, propBrokenSpans: null, propFitHash: null };
     const prop = computeOptimalBodyWidth(spans, scheme, 'point', 'prop');
-    return { ...main, propBodyW: prop.bodyW, propBodyX: prop.bodyX, propBrokenText: prop.brokenText || null, propBrokenSpans: prop.brokenSpans || null };
+    return { ...main, propBodyW: prop.bodyW, propBodyX: prop.bodyX, propBrokenText: prop.brokenText || null, propBrokenSpans: prop.brokenSpans || null, propFitHash: prop.fitHash };
   }
   return null;
 }
@@ -10066,6 +10119,12 @@ function attachFormHandlers(slide) {
     slide.propAscent = result.propAscent ?? null;
     slide.propDescent = result.propDescent ?? null;
     slide.propCapAscent = result.propCapAscent ?? null;
+    // Staleness fingerprint (see _fitHash/_fitCurrentBodyHash) — lets export
+    // skip recomputing a slide whose text/typography/width hasn't actually
+    // changed since this ran, instead of unconditionally re-measuring every
+    // fitWidth slide on every export.
+    slide.bodyFitHash = result.fitHash ?? null;
+    slide.propBodyFitHash = result.propFitHash ?? null;
   }
 
   const fitBtn     = get('btn-fit-width');
@@ -10097,6 +10156,8 @@ function attachFormHandlers(slide) {
         slide.propAscent = null;
         slide.propDescent = null;
         slide.propCapAscent = null;
+        slide.bodyFitHash = null;
+        slide.propBodyFitHash = null;
       }
       saveState();
       renderMain(); // the "+ Display 2" sub-toggle only shows while Fit Width is on
@@ -11120,11 +11181,21 @@ async function generate() {
   btn.disabled = true;
   btn.textContent = 'Exporting…';
 
-  // Compute fit-width for any slides that have it on (catches slides never visited in this session)
+  // Recompute fit-width for any slide whose cache is actually stale — catches
+  // slides never visited this session (bodyFitHash never set) AND slides
+  // whose text, scheme typography/capitalization, or Styles width changed
+  // since the last real fit pass without Fit Width re-running (none of which
+  // show up as bodyLines being null — see _fitHash/_fitCurrentBodyHash). A
+  // slide whose hash still matches is trusted as-is instead of unconditionally
+  // re-measuring every fitWidth slide on every export.
   try {
     const scheme = activeStyleScheme();
     for (const slide of state.slides) {
       if (!slide.fitWidth) continue;
+      const bodyStale = slide.bodyFitHash == null || slide.bodyFitHash !== _fitCurrentBodyHash(slide, scheme, 'main');
+      const propStale = slide.propFitWidth &&
+        (slide.propBodyFitHash == null || slide.propBodyFitHash !== _fitCurrentBodyHash(slide, scheme, 'prop'));
+      if (!bodyStale && !propStale) continue;
       const r = computeSlideFitWidth(slide, scheme);
       if (r) {
         slide.bodyW = r.bodyW; slide.bodyX = r.bodyX; slide.bodyLines = r.bodyLines ?? null;
@@ -11142,6 +11213,8 @@ async function generate() {
         slide.propAscent = r.propAscent ?? null;
         slide.propDescent = r.propDescent ?? null;
         slide.propCapAscent = r.propCapAscent ?? null;
+        slide.bodyFitHash = r.fitHash ?? null;
+        slide.propBodyFitHash = r.propFitHash ?? null;
       }
     }
   } catch (_) { /* non-fatal — export continues without fit-width pre-computation */ }

@@ -47,8 +47,13 @@ function sinkDeck() {
     responses: { decision: 'D', r1: 'A', r2: 'B', r3: 'C' },
     slides: [
       { type: 'start', label: 'START', text: 'START' },
+      // bodyLines/ascent/descent/capAscent stand in for a real Fit Width pass
+      // (app.js normally supplies these) — estimateTitleY runs in strict mode
+      // for scripture now (see Task 3, builder.js) and throws without them,
+      // since a missing real result there is a bug, not something to guess at.
       { type: 'scripture', label: 'John 3:16', reference: 'John 3:16',
-        bodies: [[{ text: 'plain verse ' }, { text: 'emphasis', alt: true }]] },
+        bodies: [[{ text: 'plain verse ' }, { text: 'emphasis', alt: true }]],
+        bodyLines: 1, ascent: 43, descent: 11, capAscent: 31 },
       { type: 'point', mode: 'single', label: 'Pt', bodyText: 'A point' },
       { type: 'point', mode: 'revealing', label: 'Rev', points: ['One', 'Two'] },
       { type: 'image', label: 'Img' },
