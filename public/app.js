@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.27.1';
+const APP_VERSION = '4.27.2';
 
 const CHANGELOG = [
+  {
+    version: '4.27.2',
+    date: '2026-08-26',
+    changes: [
+      'Fit Width now measures text using the actual font, weight, italic, capitalization, and character spacing set for that row — not a fixed assumption. Previously: bold/emphasis text set to ALL CAPS could measure narrower than it actually renders, risking an extra overflow line; a Point row using a lighter weight than the built-in default could measure wider than it actually renders, needlessly forcing a second line; and All Lower wasn\'t applied to the measurement at all. All four capitalization options (All Caps, Title Case, Start Case, All Lower) are now honored.',
+      'Fixed: Fit Width\'s hard line-break suggestion could be silently discarded on export whenever a row had capitalization set, even though the layout it found was correct — the suggestion is measured with the row\'s real casing now, but the text that\'s actually saved and exported is untouched.',
+    ],
+  },
   {
     version: '4.27.1',
     date: '2026-08-25',

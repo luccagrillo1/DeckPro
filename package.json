@@ -1,7 +1,7 @@
 {
   "name": "deckpro",
   "productName": "DeckPro",
-  "version": "4.27.1",
+  "version": "4.27.2",
   "description": "ProPresenter 7 slide deck builder for Canvas Church",
   "main": "main.js",
   "scripts": {
