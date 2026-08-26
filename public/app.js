@@ -3974,30 +3974,34 @@ function _fitFontWeightStyle(psName) {
   return { weight, italic };
 }
 
-// Resolve the CSS a row actually renders at — family, weight, italic, letter
-// spacing, and capitalization — from the scheme's own font choice + FontAdv.
-// Previously none of this reached the measurement: capitalization and
-// character spacing were never applied at all, and font family/weight/italic
-// were guessed from `type` instead of read from the scheme, so a Bold row set
-// to ALL CAPS (or a Point row set to a lighter weight than 900) measured
-// narrower than what ProPresenter actually draws.
+// Resolve the CSS a row actually renders at — family, weight, italic, and
+// letter spacing — from the scheme's own font choice + FontAdv. Previously
+// none of this reached the measurement: character spacing was never applied
+// at all, and font family/weight/italic were guessed from `type` instead of
+// read from the scheme, so a Point row set to a lighter weight than the
+// hardcoded 900 measured narrower than what ProPresenter actually draws.
+// Capitalization is NOT handled here — see _fitCaseText below, applied to the
+// actual characters, since Title Case needs to both capitalize and lowercase
+// within one string, which no single CSS text-transform value can express.
 function _fitFontDescriptor(fontName, adv) {
   const a = adv || FONT_ADV_DEFAULTS();
   const { family } = parseFontPS(fontName || '');
   const { weight: styleWeight, italic: styleItalic } = _fitFontWeightStyle(fontName);
   const weight = a.bold ? Math.max(styleWeight, 700) : styleWeight;
   const italic = !!(a.italic || styleItalic);
-  const cap = a.capitalization || '';
   return {
     // Try the exact PostScript name first (matches a locally-installed static
     // weight file directly, e.g. "Montserrat-Black" as its own family); fall
     // back to the bare family + numeric weight for the Google-Fonts-loaded case.
     fontFamily: `"${fontName || family || 'Montserrat'}", "${family || 'Montserrat'}", sans-serif`,
+    bareFamily: family || 'Montserrat',
     fontWeight: String(weight),
     fontStyle: italic ? 'italic' : 'normal',
     letterSpacing: `${a.charSpacing || 0}px`,
-    textTransform: cap === 'allCaps' ? 'uppercase' : (cap === 'titleCase' || cap === 'startCase') ? 'capitalize' : 'none',
-    fontVariant: cap === 'smallCaps' ? 'small-caps' : 'normal',
+    // 'smallCaps' has no reachable UI control (dropped from the capitalization
+    // picker) but is kept here as a harmless fallback for any legacy saved value.
+    fontVariant: a.capitalization === 'smallCaps' ? 'small-caps' : 'normal',
+    cap: a.capitalization || '',
   };
 }
 function _fitApplyDescriptor(styleObj, d) {
@@ -4005,12 +4009,37 @@ function _fitApplyDescriptor(styleObj, d) {
   styleObj.fontWeight    = d.fontWeight;
   styleObj.fontStyle     = d.fontStyle;
   styleObj.letterSpacing = d.letterSpacing;
-  styleObj.textTransform = d.textTransform;
   styleObj.fontVariant   = d.fontVariant;
 }
 function _fitDescriptorCss(d) {
   return `font-family:${d.fontFamily};font-weight:${d.fontWeight};font-style:${d.fontStyle};`
-       + `letter-spacing:${d.letterSpacing};text-transform:${d.textTransform};font-variant:${d.fontVariant}`;
+       + `letter-spacing:${d.letterSpacing};font-variant:${d.fontVariant}`;
+}
+
+// Apply a FontAdv capitalization setting to actual characters, matching what
+// ProPresenter renders — not CSS text-transform, which can't express "Title
+// Case" (capitalize each word AND lowercase the rest in the same string; the
+// old `capitalize` mapping left the remainder in whatever case was typed).
+// `startCase`'s exact rule (e.g. minor-word exceptions) isn't documented
+// anywhere accessible here, so it gets the same normalization as titleCase
+// rather than a guessed-at distinct one — closer to correct than the old
+// blanket `capitalize`, and `allLower` — previously unhandled entirely, so a
+// row set to All Lower measured at whatever case the text was typed in —
+// now actually lowercases.
+function _fitCaseText(text, cap) {
+  if (!text) return text;
+  if (cap === 'allCaps')  return text.toUpperCase();
+  if (cap === 'allLower') return text.toLowerCase();
+  if (cap === 'titleCase' || cap === 'startCase') {
+    return text.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
+  }
+  return text;
+}
+// Case-transform each span's text using its own row's capitalization — bold
+// spans (emphasis) use the bold row's setting, everything else uses the base
+// row's, matching the split the `strong` CSS rule already makes for weight.
+function _fitCasedSpans(spans, baseCap, boldCap) {
+  return (spans || []).map(s => ({ ...s, text: _fitCaseText(s.text, s.bold ? boldCap : baseCap) }));
 }
 
 // Enumerate line partitions that break ONLY after punctuation words (comma,
@@ -4090,6 +4119,21 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
   const boldAdvField  = isProp ? 'propBoldFontAdv' : 'boldFontAdv';
   const baseDesc = _fitFontDescriptor(st[baseFontField], st[baseAdvField]);
   const boldDesc = _fitFontDescriptor(st[boldFontField] || st[baseFontField], st[boldAdvField] || st[baseAdvField]);
+  // Apply each row's capitalization to the actual characters before anything
+  // is measured — see _fitCaseText for why this can't be a CSS text-transform.
+  spans = _fitCasedSpans(spans, baseDesc.cap, boldDesc.cap);
+
+  // computeOptimalBodyWidth is synchronous and can't await a font load — if a
+  // weight/style combo this row needs hasn't finished loading yet (Google
+  // Fonts fetches a specific weight only once something actually renders at
+  // it), Chromium silently measures against the fallback font instead. Warn
+  // rather than fail silently; the boot-time load below should make this rare.
+  for (const d of [baseDesc, boldDesc]) {
+    const spec = `${d.fontStyle === 'italic' ? 'italic ' : ''}${d.fontWeight} ${size}px "${d.bareFamily}"`;
+    if (document.fonts && !document.fonts.check(spec)) {
+      console.warn(`[Fit Width] "${d.bareFamily}" ${spec.split(' ').slice(0, -2).join(' ')} isn't loaded yet — this measurement may be against a fallback font.`);
+    }
+  }
 
   // Hidden measurement container — 1:1 canvas coordinate space.
   const msr   = document.createElement('div');
@@ -15443,11 +15487,20 @@ async function bootstrap() {
 
   await loadState();
   // Fit Width measures text in a hidden DOM node at Montserrat's real metrics —
-  // if the Google Fonts stylesheet/files haven't finished loading yet, that
-  // measurement silently falls back to the system sans-serif's metrics instead,
-  // which are close enough to look right and different enough to be wrong.
-  // This is a one-time wait at boot, not on every measurement.
-  try { await document.fonts.ready; } catch (_) {}
+  // if the specific weight/style it needs hasn't actually been fetched yet,
+  // that measurement silently falls back to the system sans-serif's metrics
+  // instead, which are close enough to look right and different enough to be
+  // wrong. Google Fonts only fetches a given weight's file once something
+  // actually renders at it — `document.fonts.ready` resolves as soon as
+  // nothing is *currently* pending, which can be immediately (nothing has
+  // asked for Montserrat yet), so it doesn't guarantee any of this is loaded.
+  // Explicitly request every weight/style DeckPro's schemes can pick instead.
+  try {
+    await Promise.allSettled(
+      [400, 500, 700, 900].flatMap(w => [`${w} 16px Montserrat`, `italic ${w} 16px Montserrat`])
+        .map(f => document.fonts.load(f))
+    );
+  } catch (_) {}
   initTheme();
   initLiveQuoteNormalization();
   initNotesFieldDragDrop();
