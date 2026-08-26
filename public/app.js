@@ -11,6 +11,7 @@ const CHANGELOG = [
     changes: [
       'Fit Width now measures text using the actual font, weight, italic, capitalization, and character spacing set for that row — not a fixed assumption. Previously: bold/emphasis text set to ALL CAPS could measure narrower than it actually renders, risking an extra overflow line; a Point row using a lighter weight than the built-in default could measure wider than it actually renders, needlessly forcing a second line; and All Lower wasn\'t applied to the measurement at all. All four capitalization options (All Caps, Title Case, Start Case, All Lower) are now honored.',
       'Fixed: Fit Width\'s hard line-break suggestion could be silently discarded on export whenever a row had capitalization set, even though the layout it found was correct — the suggestion is measured with the row\'s real casing now, but the text that\'s actually saved and exported is untouched.',
+      'Fixed a build issue found while preparing this release: the Intel Mac (x64) build was coming out of packaging completely unsigned — not even ad-hoc-signed like the Apple Silicon build — which the hardened auto-updater\'s signature check would have silently rejected on every Intel Mac. Was true of the last release too, not something this one introduced; caught it before publishing this one.',
     ],
   },
   {
