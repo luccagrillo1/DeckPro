@@ -3787,42 +3787,39 @@ function activeStyleScheme() {
 // one induces, and scores it against a set of tunable penalties. The lowest
 // cost wins. Tune the feel by editing FIT_WEIGHTS — nothing else changes.
 //
-// Cost model (all soft terms are >= 0, so more lines always costs more baseline
-// and the punctuation terms only decide *where* a needed break lands, never add
-// lines): each line adds `perLine`; an internal break adds 0..breakMidClause
-// depending on the punctuation it follows; a lone short word on the last line
-// adds `orphan`; splitting an emphasis (bold) phrase across lines adds
-// `highlightSplit`. The last-line term depends on type: points add a raggedness
-// cost for uneven line widths across the whole block; scripture/body instead adds
-// `shortLast` only when the last line is under `shortLastRatio` of the average of
-// the lines above it. Hard constraints (line wider than the box, or more than
-// maxLines) disqualify a candidate.
+// Line count is a TIER, not a term here — see computeOptimalBodyWidth, which
+// only ever scores candidates that share the floor line count N. Every term
+// below is a soft, within-tier preference: the competing preferences are
+// supposed to compete, they just can't add a line to win. An internal break
+// costs 0..breakMidClause depending on the punctuation it follows; a lone
+// word (or a bare function word) at the end of ANY line costs extra; an
+// emphasis (bold) run split across a break costs `highlightSplit`; and
+// `raggedPerPx` rewards even line widths, for every type — scripture used to
+// have no evenness term at all, which is how a widow like "Great" could end
+// a line at zero cost. Hard constraints (a line wider than the box, or more
+// than maxLines) disqualify a candidate outright.
 const FIT_WEIGHTS = {
-  perLine:        16,   // baseline cost per line → prefer fewer lines
-  orphan:         60,   // last line is a single short word (widow)
-  orphanMaxChars:  7,   // "short" = this many letters or fewer
-  shortLast:      50,   // last line's width is < shortLastRatio of the lines above it (scripture/body only)
-  shortLastRatio: 1/3,
-  breakSentence:   0,   // breaking after . ! ? … is the ideal break point
-  breakClause:     1,   // after : ;
-  breakSoft:       3,   // after ,
-  breakMidClause: 10,   // breaking with NO punctuation is the worst place
-  lineEndRunt:    12,   // a line ending on a runt (conjunction/article/prep)
-  highlightSplit: 40,   // an emphasis phrase straddling two lines
-  raggedPerPx:  0.04,   // penalty per px of line-width std-deviation (points only)
-  maxLines:        6,   // hard cap on line count
-  pad:            24,   // breathing room added to the winning width
+  orphan:          60,   // last line is a single short word (widow)
+  orphanMaxChars:   7,   // "short" = this many letters or fewer
+  breakSentence:    0,   // breaking after . ! ? … is the ideal break point
+  breakClauseMark:  3,   // after ; : ,
+  breakDash:        6,   // after — – or -
+  breakMidClause:  10,   // breaking with NO punctuation at all is the worst place
+  lineEndFunction: 12,   // a line ends on a bare function word (the, of, and, ...)
+  highlightSplit:  40,   // an emphasis (bold) run straddling two lines
+  raggedPerPx:    0.04,  // penalty per px of line-width std-deviation — every type
+  maxLines:         6,   // hard cap on line count
+  pad:             24,   // breathing room added to the winning width
 };
 
-// Short function words that read badly at the end of a line ("...your heart and",
-// "...all things through"). Ending a line on one of these — with no punctuation
-// to justify it — earns the lineEndRunt penalty so the scorer prefers ending
-// lines on content words instead.
-const FIT_RUNT_WORDS = new Set([
-  'a','an','the','and','or','but','nor','for','yet','so','of','to','in','on','at',
-  'by','as','with','from','into','onto','over','under','through','upon','that','than',
-  'this','these','those','my','your','his','her','its','our','their','not','is','are',
-  'was','were','be','if','it','he','she','we','they','you','i',
+// Function words that read badly ending a line ("...your heart and",
+// "...all things through") — ending a line on one of these with no
+// punctuation of its own to justify the break earns lineEndFunction. This is
+// the exact list from the spec, not a fuzzy "short word" heuristic: it's
+// what actually reads as a mid-clause break in practice, and is far more
+// reliable to detect than guessing from word length.
+const FIT_FUNCTION_WORDS = new Set([
+  'the','of','and','a','an','to','in','for','with','on','at','by','from','as',
 ]);
 
 // Flatten spans into words, tagging each with style, the punctuation that ends
@@ -3840,13 +3837,16 @@ function _fitWordList(spans, baseCap = '', boldCap = '') {
     if (!s || !s.text) continue;
     for (const tok of String(s.text).split(/\s+/)) {
       if (!tok) continue;
-      const m = tok.match(/[.!?…:;,]+$/);
+      // Three punctuation tiers, ranked best→worst: sentence-final beats a
+      // clause mark (; : ,) beats a dash. No trailing punctuation at all
+      // (rank 0) is worse than any of them — that's breakMidClause.
+      const m = tok.match(/[.!?…:;,—–-]+$/);
       const end = m ? m[0] : '';
-      const rank = /[.!?…]$/.test(end) ? 3 : /[:;]$/.test(end) ? 2 : /,$/.test(end) ? 1 : 0;
+      const rank = /[.!?…]$/.test(end) ? 3 : /[:;,]$/.test(end) ? 2 : /[—–-]$/.test(end) ? 1 : 0;
       const bare = tok.replace(/[^A-Za-z']/g, '').toLowerCase();
       // A runt only if it carries no trailing punctuation of its own — a comma or
       // period after the word already makes it a legitimate place to break.
-      const runt = rank === 0 && (bare.length <= 2 || FIT_RUNT_WORDS.has(bare));
+      const runt = rank === 0 && FIT_FUNCTION_WORDS.has(bare);
       const mtext = _fitCaseText(tok, s.bold ? boldCap : baseCap);
       words.push({ text: tok, mtext, bold: !!s.bold, italic: !!s.italic, underline: !!s.underline, punctRank: rank, runt });
     }
@@ -3887,10 +3887,10 @@ function _fitLinesAtWidth(inner, words, w) {
 }
 
 // Score a line breakdown. Lower is better; returns Infinity if disqualified.
-// `type` controls which last-line term applies: points want every line (including
-// the last) close to the same length, so they get the raggedness term; scripture/body
-// just needs the last line to not be conspicuously shorter than the ones above it.
-function _fitScore(lines, words, boxW, type) {
+// Line count plays NO role here — computeOptimalBodyWidth only ever calls
+// this on candidates that already share the tier's line count, so every term
+// below is purely about which of those equally-tall layouts reads best.
+function _fitScore(lines, words, boxW) {
   const W = FIT_WEIGHTS;
   const n = lines.length;
   if (!n) return Infinity;
@@ -3898,17 +3898,21 @@ function _fitScore(lines, words, boxW, type) {
   // Hard constraint: a single word wider than the box (guaranteed overflow).
   for (const ln of lines) if (ln.width > boxW + 1) return Infinity;
 
-  let cost = n * W.perLine;
+  let cost = 0;
 
-  // Where each internal break lands (rate by the punctuation it follows, plus a
-  // penalty if the line ends on a runt word like "and" / "the" / "through").
-  for (let i = 0; i < n - 1; i++) {
+  // Where each internal break lands (rate by the punctuation it follows), plus
+  // a penalty on ANY line — internal or last — that ends on a bare function
+  // word like "and" / "the" / "with", with no punctuation of its own to
+  // justify it.
+  for (let i = 0; i < n; i++) {
     const lw = lines[i].words[lines[i].words.length - 1];
-    cost += lw.punctRank === 3 ? W.breakSentence
-          : lw.punctRank === 2 ? W.breakClause
-          : lw.punctRank === 1 ? W.breakSoft
-          :                       W.breakMidClause;
-    if (lw.runt) cost += W.lineEndRunt;
+    if (i < n - 1) {
+      cost += lw.punctRank === 3 ? W.breakSentence
+            : lw.punctRank === 2 ? W.breakClauseMark
+            : lw.punctRank === 1 ? W.breakDash
+            :                       W.breakMidClause;
+    }
+    if (lw.runt) cost += W.lineEndFunction;
   }
 
   // Orphan / widow: a lone short word stranded on the final line.
@@ -3936,21 +3940,15 @@ function _fitScore(lines, words, boxW, type) {
     }
   }
 
+  // Reward evenly-filled lines across the whole block — every type now, not
+  // just points. This is what makes a widow like "Great" ending a line cost
+  // something even for scripture: leaving it alone on a short last line
+  // widens the variance across the block.
   if (n > 1) {
-    if (type === 'point') {
-      // Points: reward evenly-filled lines across the whole block.
-      const ws   = lines.map(l => l.width);
-      const mean = ws.reduce((a, b) => a + b, 0) / n;
-      const varc = ws.reduce((a, b) => a + (b - mean) * (b - mean), 0) / n;
-      cost += Math.sqrt(varc) * W.raggedPerPx;
-    } else {
-      // Scripture/body: only the last line matters — penalize it landing
-      // conspicuously shorter than the average of the lines above it.
-      const above = lines.slice(0, n - 1);
-      const avgAbove = above.reduce((a, l) => a + l.width, 0) / above.length;
-      const last = lines[n - 1];
-      if (avgAbove > 0 && last.width < avgAbove * W.shortLastRatio) cost += W.shortLast;
-    }
+    const ws   = lines.map(l => l.width);
+    const mean = ws.reduce((a, b) => a + b, 0) / n;
+    const varc = ws.reduce((a, b) => a + (b - mean) * (b - mean), 0) / n;
+    cost += Math.sqrt(varc) * W.raggedPerPx;
   }
 
   return cost;
@@ -4092,23 +4090,57 @@ function _fitPunctPartitions(words) {
   return partitions;
 }
 
+// Rebuild a spans array — preserving each word's bold/italic/underline —
+// from the tokenized `words` list (see _fitWordList) and a winning layout's
+// per-line word count, with a literal '\n' span inserted between lines.
+// Shared by scripture and point: a hard-break layout used to be flattened to
+// a plain string (best.broken.join('\n')) and handed to rtf.js as one
+// non-bold span, which silently dropped bold formatting on any slide where a
+// punctuation-partition layout won — including points, which already had
+// this bug before scripture could hit it too. Uses word.text (the real,
+// original-case string), never word.mtext — mtext exists only to render
+// capitalization into the measurement DOM and must never reach output (see
+// the note on _fitWordList).
+function _fitSpansFromWinningLayout(words, lineWordCounts) {
+  const out = [];
+  let idx = 0;
+  lineWordCounts.forEach((count, li) => {
+    if (li > 0) out.push({ text: '\n', bold: false, italic: false, underline: false });
+    let run = null;
+    for (let k = 0; k < count; k++) {
+      const w = words[idx++];
+      if (run && run.bold === w.bold && run.italic === w.italic && run.underline === w.underline) {
+        run.text += ' ' + w.text;
+      } else {
+        if (run) out.push(run);
+        run = { text: w.text, bold: w.bold, italic: w.italic, underline: w.underline };
+      }
+    }
+    if (run) out.push(run);
+  });
+  return out;
+}
+
 /**
  * Measure text spans in a hidden div and find the optimal body width.
  * Poetry mode (has \n): tightest width that fits each explicit line no-wrap.
  * Balance mode (no \n): sweep candidate widths, score the induced line break,
- *   pick the lowest-cost layout (see FIT_WEIGHTS).
+ *   pick the lowest-cost layout (see FIT_WEIGHTS) among candidates that share
+ *   the floor line count — see the tiering note inside the function.
  * `type` selects the render size/weight ('point' → pointSize + bold).
  * `display` selects which screen's metrics to measure at: 'main' (Display 1)
  *   or 'prop' (Display 2 / LED wall) — these have independent canvas size,
  *   font size, and body-width ceiling, so a box fit for one is not fit for
  *   the other and each needs its own search.
- * For points, the search also proposes explicit punctuation-break layouts;
- *   when one wins and box-width can't reproduce it, `brokenText` carries the
- *   text with hard line breaks (\n) for the caller to export.
+ * The search also proposes explicit punctuation-break layouts (any type, not
+ *   just points); when one wins and box-width can't reproduce it, `brokenText`
+ *   carries the flattened text and `brokenSpans` the same layout as real spans
+ *   (bold/italic/underline preserved per word) for the caller to export.
  * `lines` is the real measured line count the winning width actually wraps
  *   into — used for Auto Title Y instead of a separate, disagreement-prone
  *   estimate.
- * Returns { bodyW, bodyX, brokenText, lines } in Pro7 canvas coordinates.
+ * Returns { bodyW, bodyX, brokenText, brokenSpans, lines } in Pro7 canvas
+ * coordinates.
  */
 function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
   // Resolve the scheme so inherited body width / sizes are real numbers, not
@@ -4133,7 +4165,8 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
   // `lines` is the REAL measured line count at the winning width — Auto Title Y
   // uses this instead of independently re-guessing it from a char-width
   // heuristic, which routinely disagreed with what Fit Width actually rendered.
-  const centered = (w, brokenText = null, lines = null) => ({ bodyW: w, bodyX: Math.round((canvasW - w) / 2), brokenText, lines });
+  const centered = (w, brokenText = null, lines = null, brokenSpans = null) =>
+    ({ bodyW: w, bodyX: Math.round((canvasW - w) / 2), brokenText, brokenSpans, lines });
 
   // Resolve the real per-row typography (family/weight/italic/capitalization/
   // character spacing) for the base text and for bold spans, instead of a
@@ -4222,50 +4255,67 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
     }
     const floorW = Math.min(Math.ceil(widestWord) + 4, maxW);
 
+    // Line count is a TIER, not a scored term. Fit Width may only ever
+    // shrink the box (the Styles width is a hard ceiling — see the module
+    // doc), so the line count the text needs at that full width is the floor:
+    // no narrower box can ever produce fewer lines, only the same or more.
+    // Only candidates that hit this exact count are ever scored against each
+    // other — a two-line layout can no longer out-score a one-line layout by
+    // accumulating enough break-quality/evenness credit, because they're
+    // never compared to begin with.
+    const N = _fitLinesAtWidth(inner, words, maxW).length;
+
     // Sweep widths from floor → maxW; keep the narrowest width that yields each
     // distinct line layout, score it, and track the best. A fine step matters:
     // some strictly-better layouts live in a narrow width window (e.g. shifting
     // a runt "and" down a line), so a coarse sweep would skip right over them.
     const STEP = 12;
     const seen = new Set();
-    let best = null;   // { cost, width, broken:string[]|null }
-    const consider = (lines, boxW, broken) => {
-      const cost = _fitScore(lines, words, boxW, type);
+    let best = null;   // { cost, width, broken:string[]|null, lineWordCounts }
+    const consider = (lines, boxW, broken, lineWordCounts) => {
+      if (lines.length !== N) return;
+      const cost = _fitScore(lines, words, boxW);
       if (cost === Infinity) return;
       const tight = Math.min(Math.max(...lines.map(l => l.width)) + FIT_WEIGHTS.pad, boxW, maxW);
-      if (!best || cost < best.cost - 0.01) best = { cost, width: Math.ceil(tight), broken, lineCount: lines.length };
+      if (!best || cost < best.cost - 0.01) best = { cost, width: Math.ceil(tight), broken, lineWordCounts, lineCount: lines.length };
     };
     for (let w = floorW; w <= maxW; w += STEP) {
       const lines = _fitLinesAtWidth(inner, words, w);
       const sig = lines.map(l => l.words.length).join(',');
       if (seen.has(sig)) continue;
       seen.add(sig);
-      consider(lines, w, null);
+      consider(lines, w, null, null);
     }
     // Always consider the full-width layout too (covers the single-line case).
-    consider(_fitLinesAtWidth(inner, words, maxW), maxW, null);
+    consider(_fitLinesAtWidth(inner, words, maxW), maxW, null, null);
 
-    // Points also get explicit punctuation-break candidates — layouts that break
-    // only after . ! ? … : ; , and can beat anything box-width alone produces.
-    if (type === 'point') {
-      for (const part of _fitPunctPartitions(words)) {
-        const lines = part.map(lw => ({ words: lw, width: _fitLineWidth(inner, lw) }));
-        consider(lines, maxW, lines.map(l => l.words.map(w => w.text).join(' ')));
-      }
+    // Punctuation-break candidates — layouts that break only after sentence/
+    // clause punctuation and can beat anything box-width alone produces. Every
+    // type gets these now, not just points (see the tiering note above: with
+    // line count no longer a scored term, a partition that adds a line can
+    // never win purely by having great break quality — it's excluded by the
+    // N-line filter in `consider`, same as any other candidate).
+    for (const part of _fitPunctPartitions(words)) {
+      if (part.length !== N) continue;
+      const lines = part.map(lw => ({ words: lw, width: _fitLineWidth(inner, lw) }));
+      consider(lines, maxW, lines.map(l => l.words.map(w => w.text).join(' ')), part.map(lw => lw.length));
     }
 
     if (!best) return centered(maxW);
     const width = Math.min(best.width, maxW);
     // Emit hard breaks only when the winning layout can't be reproduced by the
     // natural wrap at this width — otherwise box-width alone already gives it.
-    let brokenText = null;
+    let brokenText = null, brokenSpans = null;
     if (best.broken) {
       const nat = _fitLinesAtWidth(inner, words, width)
         .map(l => l.words.map(w => w.text).join(' ')).join('\n');
       const brk = best.broken.join('\n');
-      if (nat !== brk) brokenText = brk;
+      if (nat !== brk) {
+        brokenText = brk;
+        brokenSpans = _fitSpansFromWinningLayout(words, best.lineWordCounts);
+      }
     }
-    return centered(width, brokenText, best.lineCount);
+    return centered(width, brokenText, best.lineCount, brokenSpans);
   } finally {
     document.body.removeChild(msr);
   }
@@ -4332,9 +4382,11 @@ function computeSlideFitWidth(slide, scheme) {
     if (!rawSpans.length || rawSpans.every(s => !s.text)) return null;
     const mainSpans = slide.stripNewlines ? stripNewlineSpans(rawSpans) : rawSpans;
     const main = computeOptimalBodyWidth(mainSpans, scheme, 'scripture', 'main');
-    if (!wantsProp) return { ...main, bodyLines: main.lines, propBodyW: null, propBodyX: null, propBodyLines: null };
+    if (!wantsProp) return { ...main, bodyLines: main.lines, propBodyW: null, propBodyX: null, propBodyLines: null, propBrokenText: null, propBrokenSpans: null };
+    // Display 2 gets its own independent search against rawSpans (unstripped —
+    // Strip is a Display-1-only setting) — never derived from Display 1's result.
     const prop = computeOptimalBodyWidth(rawSpans, scheme, 'scripture', 'prop');
-    return { ...main, bodyLines: main.lines, propBodyW: prop.bodyW, propBodyX: prop.bodyX, propBodyLines: prop.lines };
+    return { ...main, bodyLines: main.lines, propBodyW: prop.bodyW, propBodyX: prop.bodyX, propBodyLines: prop.lines, propBrokenText: prop.brokenText || null, propBrokenSpans: prop.brokenSpans || null };
   }
   if (slide.type === 'point') {
     if (slide.mode === 'revealing') {
@@ -4356,9 +4408,9 @@ function computeSlideFitWidth(slide, scheme) {
     if (!text) return null;
     const spans = [{ text, bold: true }];
     const main = computeOptimalBodyWidth(spans, scheme, 'point', 'main');
-    if (!wantsProp) return { ...main, propBodyW: null, propBodyX: null, propBrokenText: null };
+    if (!wantsProp) return { ...main, propBodyW: null, propBodyX: null, propBrokenText: null, propBrokenSpans: null };
     const prop = computeOptimalBodyWidth(spans, scheme, 'point', 'prop');
-    return { ...main, propBodyW: prop.bodyW, propBodyX: prop.bodyX, propBrokenText: prop.brokenText || null };
+    return { ...main, propBodyW: prop.bodyW, propBodyX: prop.bodyX, propBrokenText: prop.brokenText || null, propBrokenSpans: prop.brokenSpans || null };
   }
   return null;
 }
@@ -9963,8 +10015,15 @@ function attachFormHandlers(slide) {
     slide.propBodyW = result.propBodyW ?? null;
     slide.propBodyX = result.propBodyX ?? null;
     slide.propBodyLines = result.propBodyLines ?? null;
-    slide._fitBrokenText = (slide.type === 'point' && slide.mode !== 'revealing') ? (result.brokenText || null) : null;
-    slide._fitPropBrokenText = (slide.type === 'point' && slide.mode !== 'revealing') ? (result.propBrokenText || null) : null;
+    // Revealing points share one box across the whole reveal sequence and
+    // never get hard breaks (see computeSlideFitWidth) — everything else
+    // (single-mode points, scripture) can carry a winning punctuation-break
+    // layout now that partitions run for every type, not just points.
+    const carriesBreaks = slide.type === 'scripture' || (slide.type === 'point' && slide.mode !== 'revealing');
+    slide._fitBrokenText = carriesBreaks ? (result.brokenText || null) : null;
+    slide._fitBrokenSpans = carriesBreaks ? (result.brokenSpans || null) : null;
+    slide._fitPropBrokenText = carriesBreaks ? (result.propBrokenText || null) : null;
+    slide._fitPropBrokenSpans = carriesBreaks ? (result.propBrokenSpans || null) : null;
   }
 
   const fitBtn     = get('btn-fit-width');
@@ -9987,7 +10046,9 @@ function attachFormHandlers(slide) {
         slide.propBodyX = null;
         slide.propBodyLines = null;
         slide._fitBrokenText = null;
+        slide._fitBrokenSpans = null;
         slide._fitPropBrokenText = null;
+        slide._fitPropBrokenSpans = null;
       }
       saveState();
       renderMain(); // the "+ Display 2" sub-toggle only shows while Fit Width is on
@@ -10593,6 +10654,27 @@ function buildSpec() {
 
     if (slide.type === 'scripture') {
       const bodies = (slide.bodies || [slide.body || []]).map(normalizeExportSpans);
+      // Fit Width's hard-break overrides for bodies[0] — one per display,
+      // each guarded against its OWN winning layout matching the live body
+      // text (case-insensitive, same invariant as point's bodyDisplayText
+      // below: a mismatch only ever means a stale cache). `bodies` itself
+      // stays the natural, unbroken content — buildScripturePropCue in
+      // buildProp.js also reads spec.bodies for Display 2, so mutating
+      // bodies[0] here would leak Display 1's break into Display 2's
+      // independently-computed layout. Spans, not a flattened string, so
+      // bold/italic/underline survive (see _fitSpansFromWinningLayout).
+      let bodyDisplaySpans = null, propBodyDisplaySpans = null;
+      if (bodies[0]) {
+        const liveText = bodies[0].map(s => s.text || '').join('').trim();
+        if (slide.fitWidth && slide._fitBrokenSpans &&
+            _fitTextsMatch((slide._fitBrokenText || '').replace(/\n/g, ' ').trim(), liveText)) {
+          bodyDisplaySpans = normalizeExportSpans(slide._fitBrokenSpans);
+        }
+        if (slide.fitWidth && slide.propFitWidth && slide._fitPropBrokenSpans &&
+            _fitTextsMatch((slide._fitPropBrokenText || '').replace(/\n/g, ' ').trim(), liveText)) {
+          propBodyDisplaySpans = normalizeExportSpans(slide._fitPropBrokenSpans);
+        }
+      }
       // Auto-fill blankSpans from all bodies when split and not manually set
       const blankSpans = (slide.blankSpans && slide.blankSpans.length)
         ? slide.blankSpans
@@ -10608,6 +10690,8 @@ function buildSpec() {
         label:         normalizeDeckQuotes(slide.label || slide.reference || 'Scripture'),
         reference:     normalizeDeckQuotes(displayRef),
         bodies,
+        bodyDisplaySpans,
+        propBodyDisplaySpans,
         propName:      normalizeDeckQuotes(slide.propName || slide.reference || 'scripture'),
         blankBefore:   !!slide.blankBefore,
         blankSpans:    normalizeExportSpans(blankSpans),
@@ -10659,14 +10743,26 @@ function buildSpec() {
         // Main-screen body only: same text with Fit Width's chosen hard breaks.
         // Prop name, notes and queue keep the unbroken bodyText. Guarded against
         // a stale cache: only used if collapsing the breaks reproduces the text.
+        // bodyDisplayText stays a flat string for Pro7's plain-text cache field;
+        // bodyDisplaySpans (via _fitSpansFromWinningLayout) is the real spans
+        // version, preserving bold/italic/underline per word, used for the
+        // actual RTF — bulletToSpans() in rtf.js treats a bare string as one
+        // non-bold span, which used to silently flatten emphasis to plain text
+        // on any point where a punctuation-partition layout won.
         bodyDisplayText: (slide.fitWidth && slide._fitBrokenText &&
           _fitTextsMatch(slide._fitBrokenText.replace(/\n/g, ' ').trim(), (slide.bodyText || '').trim()))
           ? normalizeBodyText(slide._fitBrokenText) : null,
+        bodyDisplaySpans: (slide.fitWidth && slide._fitBrokenSpans &&
+          _fitTextsMatch((slide._fitBrokenText || '').replace(/\n/g, ' ').trim(), (slide.bodyText || '').trim()))
+          ? normalizeExportSpans(slide._fitBrokenSpans) : null,
         // Same idea for Display 2 (LED wall) — its own hard breaks, independent
         // of Display 1's, since it wraps at its own box width.
         propBodyDisplayText: (slide.fitWidth && slide.propFitWidth && slide._fitPropBrokenText &&
           _fitTextsMatch(slide._fitPropBrokenText.replace(/\n/g, ' ').trim(), (slide.bodyText || '').trim()))
           ? normalizeBodyText(slide._fitPropBrokenText) : null,
+        propBodyDisplaySpans: (slide.fitWidth && slide.propFitWidth && slide._fitPropBrokenSpans &&
+          _fitTextsMatch((slide._fitPropBrokenText || '').replace(/\n/g, ' ').trim(), (slide.bodyText || '').trim()))
+          ? normalizeExportSpans(slide._fitPropBrokenSpans) : null,
         propName:      normalizeDeckQuotes(slide.propName || slide.bodyText || 'point'),
         customProp:    !!slide.customProp,
         blankBefore:   !!slide.blankBefore,
@@ -10976,9 +11072,13 @@ async function generate() {
       if (r) {
         slide.bodyW = r.bodyW; slide.bodyX = r.bodyX; slide.bodyLines = r.bodyLines ?? null;
         slide.propBodyW = r.propBodyW ?? null; slide.propBodyX = r.propBodyX ?? null; slide.propBodyLines = r.propBodyLines ?? null;
-        // Hard punctuation breaks apply to single-mode point body text only.
-        slide._fitBrokenText = (slide.type === 'point' && slide.mode !== 'revealing') ? (r.brokenText || null) : null;
-        slide._fitPropBrokenText = (slide.type === 'point' && slide.mode !== 'revealing') ? (r.propBrokenText || null) : null;
+        // Hard punctuation breaks apply to single-mode point body text and to
+        // scripture — never to revealing points (see computeSlideFitWidth).
+        const carriesBreaks = slide.type === 'scripture' || (slide.type === 'point' && slide.mode !== 'revealing');
+        slide._fitBrokenText = carriesBreaks ? (r.brokenText || null) : null;
+        slide._fitBrokenSpans = carriesBreaks ? (r.brokenSpans || null) : null;
+        slide._fitPropBrokenText = carriesBreaks ? (r.propBrokenText || null) : null;
+        slide._fitPropBrokenSpans = carriesBreaks ? (r.propBrokenSpans || null) : null;
       }
     }
   } catch (_) { /* non-fatal — export continues without fit-width pre-computation */ }
@@ -15042,9 +15142,9 @@ function helpSections() {
 
       <h4>Fit Width internals</h4>
       <ul>
-        <li><code>computeOptimalBodyWidth(spans, scheme, type)</code> measures in a hidden DOM node at the resolved font/size (Point uses pointSize + weight 900), sweeps candidate widths (12px steps), and scores each layout with the tunable <code>FIT_WEIGHTS</code> block via <code>_fitScore(lines, words, boxW, type)</code>.</li>
-        <li>The last-line term is type-dependent: points score raggedness across every line (<code>raggedPerPx</code>); scripture/body instead adds <code>shortLast</code> only when the last line falls under <code>shortLastRatio</code> (1/3) of the average width of the lines above it.</li>
-        <li>For points it also proposes punctuation-only break layouts; if one wins and box-width alone can't reproduce it, it emits hard breaks as <code>bodyDisplayText</code> (main-screen body only — notes/queue/prop keep the unbroken text). Revealing points don't get hard breaks, only single-mode.</li>
+        <li><code>computeOptimalBodyWidth(spans, scheme, type)</code> measures in a hidden DOM node at the row's real font/weight/italic/capitalization/letter-spacing (never a hardcoded guess), sweeps candidate widths (12px steps), and computes <code>N</code> — the line count the text needs at the full Styles width, which Fit Width can only ever shrink from, never exceed. Only candidates whose line count equals <code>N</code> are scored against each other via the tunable <code>FIT_WEIGHTS</code> block (<code>_fitScore(lines, words, boxW)</code>) — line count itself is a tier, not a scored term, so a two-line layout can never out-score a one-line one by accumulating break-quality credit.</li>
+        <li>Within a tier, every type scores the same terms: three punctuation tiers for where an internal break lands (sentence-final beats a clause mark beats a dash beats no punctuation at all), a penalty for any line ending on a bare function word or a lone short word, a penalty for splitting a bold run across a break, and <code>raggedPerPx</code> rewarding even line widths across the whole block.</li>
+        <li>Punctuation-only break layouts are proposed for every type now (not just points, as before); if one wins a tier and box-width alone can't reproduce it, it emits hard breaks as <code>bodyDisplayText</code> for points (main-screen body only — notes/queue/prop keep the unbroken text) or as reconstructed <code>bodies[0]</code> spans for scripture, both preserving bold/italic/underline per word via <code>_fitSpansFromWinningLayout</code> rather than flattening to a plain string. Revealing points don't get hard breaks, only single-mode.</li>
         <li><code>computeSlideFitWidth(slide, scheme)</code> is the shared entry point used by both the per-slide toggle and the pre-export batch recompute. For scripture it strips newline spans first when Strip is also on; for revealing points it runs every bullet through <code>computeOptimalBodyWidth</code> and keeps the widest result, since all reveal cues share one <code>bodyW</code>/<code>bodyX</code> in <code>buildPointCues()</code>.</li>
         <li><code>computeOptimalBodyWidth(spans, rs, type, display)</code>'s <code>display</code> param (<code>'main'</code>|<code>'prop'</code>) selects Display 2's own canvas size/font size/body-width ceiling instead of Display 1's. <code>computeSlideFitWidth</code> only runs the <code>'prop'</code> search when <code>slide.propFitWidth</code> is true (the "+ Display 2" sub-toggle, only shown while <code>slide.fitWidth</code> is on — defaults to <code>true</code> on new slides, same as <code>fitWidth</code>, but is a genuinely independent flag: turn it off per-slide to leave a hand-tuned custom Display 2 box alone). It's independent rather than hard-coupled to <code>slide.fitWidth</code> because that was tried first and reverted — it silently resized/recentered custom Display 2 boxes the moment Display 1's Fit Width was turned on, with no way to opt out.</li>
         <li>Highlighted/emphasis (<code>alt</code>) text is rendered with ordinary spaces in the exported RTF — earlier builds substituted <code>\~</code> (RTF non-breaking space) for every space inside an <code>alt</code> span, which silently blocked ProPresenter from ever wrapping inside a highlighted phrase regardless of what Fit Width computed. That substitution is gone; <code>highlightSplit</code> in <code>FIT_WEIGHTS</code> is now the only thing discouraging (not preventing) a split there.</li>

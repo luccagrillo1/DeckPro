@@ -434,9 +434,12 @@ function estimatePropTitleY(spans, bw, prs, knownLines) {
 function buildScripturePropCue(spec, rs = {}) {
   const { propName, reference, bodies } = spec;
   const prs = makePropStyle(rs);
+  // bodies[0] uses Fit Width's OWN Display-2 hard-break override when one won
+  // (see buildSpec in public/app.js) — independently computed against this
+  // display's own metrics, never Display 1's spec.bodyDisplaySpans.
   const allSpans = bodies.reduce((acc, body, idx) => {
     if (idx > 0) acc.push({ text: '\n', bold: false });
-    return acc.concat(body);
+    return acc.concat((idx === 0 && spec.propBodyDisplaySpans) ? spec.propBodyDisplaySpans : body);
   }, []);
 
   const bodyRtf   = rtf.rtfBody(allSpans, prs);
@@ -502,8 +505,11 @@ function buildScripturePropCue(spec, rs = {}) {
  */
 function buildPointSinglePropCue(spec, rs = {}) {
   const { propName, bodyText } = spec;
-  const prs     = makePropStyle(rs);
-  const bodyRtf = rtf.rtfPointBody(bodyText, prs);
+  const prs = makePropStyle(rs);
+  // Display 2's own hard-break override (spans, bold preserved), independent
+  // of Display 1's spec.bodyDisplaySpans — see buildSpec in public/app.js.
+  const bodyDisplay = spec.propBodyDisplaySpans || spec.propBodyDisplayText || bodyText;
+  const bodyRtf = rtf.rtfPointBody(bodyDisplay, prs);
   const adv     = prs.pointFontAdv || prs.boldFontAdv || {};
 
   // Fit Width override (per-slide, computed against Display 2's own metrics)

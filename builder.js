@@ -1372,9 +1372,16 @@ function buildScriptureCues(spec, rs) {
   return allBodies.map((body, idx) => {
     // Strip newlines for main slide if requested (prop always keeps them).
     // Verse numbers (if any) live as { verseNum, super } spans in the body content already.
-    const displayBody = spec.stripNewlines
-      ? stripNewlineSpans(body || [])
-      : (body || []);
+    // bodies[0] uses Fit Width's hard-break override when one won and its
+    // round-trip guard matched the live text (see buildSpec in app.js) — that
+    // was already measured against stripNewlines' own setting, so it's used
+    // as-is here, never re-stripped (stripping would collapse the very
+    // breaks Fit Width just chose back into spaces).
+    const displayBody = (idx === 0 && spec.bodyDisplaySpans)
+      ? spec.bodyDisplaySpans
+      : spec.stripNewlines
+        ? stripNewlineSpans(body || [])
+        : (body || []);
     const bodyRtf   = rtf.rtfBody(displayBody, rs);
     const plainBody = displayBody.map(s => s.text).join('');
 
@@ -1478,11 +1485,14 @@ function buildPointCues(spec, rs) {
     });
   }
 
-  // Single mode. The on-screen body uses bodyDisplayText when Fit Width chose
-  // hard line breaks (\n after punctuation); prop name, notes and queue below
-  // still use the unbroken spec.bodyText.
+  // Single mode. The on-screen body uses bodyDisplaySpans/bodyDisplayText when
+  // Fit Width chose hard line breaks (\n after punctuation); prop name, notes
+  // and queue below still use the unbroken spec.bodyText. Spans preserve
+  // bold/italic/underline for the actual RTF; the flat string is kept only
+  // for Pro7's plain-text cache field below (bulletToSpans() would otherwise
+  // treat a bare string as one non-bold span, silently dropping emphasis).
   const bodyDisplay = spec.bodyDisplayText || spec.bodyText || '';
-  const bodyRtf = rtf.rtfPointBody(bodyDisplay, rs);
+  const bodyRtf = rtf.rtfPointBody(spec.bodyDisplaySpans || bodyDisplay, rs);
   const gradEl  = makeGradientElement(rs);
   const liveEl  = makeLiveElement(rs);
   const bodyEl  = makePointBodyElement({ x: bx, y: by + boldYOff, w: bw, h: bh, rtfData: bodyRtf, text: bodyDisplay }, rs);
