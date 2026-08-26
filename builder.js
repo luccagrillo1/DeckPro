@@ -650,23 +650,56 @@ function makeLiveElement(rs = {}) {
  * Estimate title Y when autoTitleY is enabled, then position the title bar
  * `titleAutoGap` px above the body text's top edge.
  *
- * `knownLines`, when given, is the REAL line count Fit Width already measured
- * in the browser (DOM-accurate, aware of the exact wrap Fit Width chose,
- * bold-width, punctuation breaks, etc.) — used as-is instead of re-deriving
- * it here. Without it (Fit Width off, or a caller that doesn't have a
- * browser) falls back to counting wrapped lines via a char-width estimate,
- * which routinely disagreed with Fit Width's real wrap and threw the title
- * bar's gap off — sometimes a lot, since a one-line miscount shifts textTop
- * by a full line height.
+ * `knownLines` is the REAL line count Fit Width already measured in the
+ * browser (DOM-accurate, aware of the exact wrap Fit Width chose, bold
+ * width, punctuation breaks, etc.); `metrics` is that same measurement
+ * pass's real font metrics — { ascent, descent, capAscent }, see
+ * _fitFontMetrics in public/app.js. Together they give the exact formula:
+ *
+ *   lineH     = bodySize × (bodyFontAdv.lineHeight || 1.3)
+ *   blockTop  = (bodyY + bodyH) − N × lineH        (body is bottom-anchored)
+ *   halfLead  = (lineH − (ascent + descent)) / 2
+ *   inkTop    = blockTop + halfLead + (ascent − capAscent)
+ *   titleY    = inkTop − gap − titleH
+ *
+ * capAscent — the actual ink-top of a reference capital "H" in the resolved
+ * font/weight/style/size — is used instead of the real first line's own ink
+ * top on purpose: a line starting "The" sits a few px lower than one
+ * starting "were" for the same visual gap, which would make the title
+ * bar jitter down the deck line to line. Cap height adapts to font/weight/
+ * capitalization while landing every line identically.
+ *
+ * Without both `knownLines` and `metrics` (a caller with no Fit Width
+ * result — currently only Response Card's title, a separate, deliberately
+ * unmigrated path) falls back to counting wrapped lines via a char-width
+ * estimate. That fallback routinely disagrees with Fit Width's real wrap
+ * when one IS available, which is why callers that have real numbers must
+ * always pass them rather than relying on this to guess.
  */
-function estimateTitleY(displayBody, bw, rs, knownLines) {
-  const bodySize     = rs.bodySize ?? 44;
-  const lineH        = bodySize * 1.3;
-  const gap          = rs.titleAutoGap ?? 16;
-  const by           = rs.bodyY ?? 0;
-  const bh           = rs.bodyH ?? 100;
-  const th           = rs.titleH ?? 100;
+function estimateTitleY(displayBody, bw, rs, knownLines, metrics) {
+  const bodySize = rs.bodySize ?? 44;
+  const gap      = rs.titleAutoGap ?? 16;
+  const by       = rs.bodyY ?? 0;
+  const bh       = rs.bodyH ?? 100;
+  const th       = rs.titleH ?? 100;
 
+  const hasReal = Number.isFinite(knownLines) && knownLines > 0 && metrics
+    && Number.isFinite(metrics.ascent) && Number.isFinite(metrics.descent) && Number.isFinite(metrics.capAscent);
+
+  if (hasReal) {
+    const lineH    = bodySize * (rs.bodyFontAdv?.lineHeight || 1.3);
+    const blockTop = (by + bh) - knownLines * lineH;
+    const halfLead = (lineH - (metrics.ascent + metrics.descent)) / 2;
+    const inkTop   = blockTop + halfLead + (metrics.ascent - metrics.capAscent);
+    const titleY   = inkTop - gap - th;
+    // Deferred: auto-shrinking the body font when a long body leaves no room
+    // is a separate, explicitly out-of-scope feature. For now, clamp instead
+    // of silently changing the body font size — the gap just ends up tighter
+    // than requested on a slide that genuinely doesn't have room for both.
+    return Math.round(Math.max(0, titleY));
+  }
+
+  const lineH = bodySize * 1.3;
   let totalLines = Number.isFinite(knownLines) && knownLines > 0 ? knownLines : null;
 
   if (totalLines === null) {
@@ -1388,7 +1421,7 @@ function buildScriptureCues(spec, rs) {
     const liveEl  = makeLiveElement(rs);
     // Auto Title Y: estimate from line count if enabled; otherwise use scheme titleY directly
     const computedTitleY = rs.autoTitleY
-      ? estimateTitleY(displayBody, bw, rs, spec.bodyLines)
+      ? estimateTitleY(displayBody, bw, rs, spec.bodyLines, { ascent: spec.ascent, descent: spec.descent, capAscent: spec.capAscent })
       : (rs.titleY ?? 0);
     const titleEl = makeTitleElement({ reference: spec.reference, titleY: computedTitleY }, rs);
     const bodyEl  = makeBodyElement({ x: bx, y: by + bodyYOff, w: bw, h: bh, rtfData: bodyRtf, charCount: plainBody.length, spans: displayBody }, rs);

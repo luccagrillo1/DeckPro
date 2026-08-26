@@ -4030,6 +4030,29 @@ function _fitDescriptorCss(d) {
        + `letter-spacing:${d.letterSpacing};font-variant:${d.fontVariant}`;
 }
 
+// Real font metrics for Auto Title Y (see estimateTitleY in builder.js), in
+// the row's resolved font/weight/style/size — builder.js has no DOM, so these
+// have to be measured here and threaded through the spec alongside bodyLines.
+// `ascent`/`descent` are the font's own line-box metrics (fontBoundingBox*,
+// content-independent); `capAscent` is the actual ink-top of a reference
+// capital "H" in this exact font — cap height, not the ink top of the real
+// first line's string. Measuring the real string would make a line starting
+// "The" sit ~7px lower than one starting "were" (a constant gap, but a title
+// that jitters down the deck); cap height adapts to font/weight/capitalization
+// while landing every line identically.
+function _fitFontMetrics(desc, size) {
+  const canvas = _fitFontMetrics._canvas || (_fitFontMetrics._canvas = document.createElement('canvas'));
+  const ctx = canvas.getContext('2d');
+  ctx.font = `${desc.fontStyle === 'italic' ? 'italic ' : ''}${desc.fontWeight} ${size}px ${desc.fontFamily}`;
+  const line = ctx.measureText('Hg');
+  const cap  = ctx.measureText('H');
+  return {
+    ascent:    line.fontBoundingBoxAscent  ?? size * 0.9,
+    descent:   line.fontBoundingBoxDescent ?? size * 0.2,
+    capAscent: cap.actualBoundingBoxAscent ?? size * 0.7,
+  };
+}
+
 // Apply a FontAdv capitalization setting to actual characters, matching what
 // ProPresenter renders — not CSS text-transform, which can't express "Title
 // Case" (capitalize each word AND lowercase the rest in the same string; the
@@ -4139,8 +4162,10 @@ function _fitSpansFromWinningLayout(words, lineWordCounts) {
  * `lines` is the real measured line count the winning width actually wraps
  *   into — used for Auto Title Y instead of a separate, disagreement-prone
  *   estimate.
- * Returns { bodyW, bodyX, brokenText, brokenSpans, lines } in Pro7 canvas
- * coordinates.
+ * Returns { bodyW, bodyX, brokenText, brokenSpans, lines, ascent, descent,
+ * capAscent } in Pro7 canvas coordinates — ascent/descent/capAscent are the
+ * base row's real font metrics (see _fitFontMetrics), fed to Auto Title Y
+ * alongside `lines` since builder.js has no DOM to measure them itself.
  */
 function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
   // Resolve the scheme so inherited body width / sizes are real numbers, not
@@ -4165,8 +4190,11 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
   // `lines` is the REAL measured line count at the winning width — Auto Title Y
   // uses this instead of independently re-guessing it from a char-width
   // heuristic, which routinely disagreed with what Fit Width actually rendered.
+  // `metrics` (ascent/descent/capAscent) is assigned right below, before
+  // `centered` is ever actually called — see estimateTitleY in builder.js.
+  let metrics = null;
   const centered = (w, brokenText = null, lines = null, brokenSpans = null) =>
-    ({ bodyW: w, bodyX: Math.round((canvasW - w) / 2), brokenText, brokenSpans, lines });
+    ({ bodyW: w, bodyX: Math.round((canvasW - w) / 2), brokenText, brokenSpans, lines, ...metrics });
 
   // Resolve the real per-row typography (family/weight/italic/capitalization/
   // character spacing) for the base text and for bold spans, instead of a
@@ -4179,6 +4207,7 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
   const boldAdvField  = isProp ? 'propBoldFontAdv' : 'boldFontAdv';
   const baseDesc = _fitFontDescriptor(st[baseFontField], st[baseAdvField]);
   const boldDesc = _fitFontDescriptor(st[boldFontField] || st[baseFontField], st[boldAdvField] || st[baseAdvField]);
+  metrics = _fitFontMetrics(baseDesc, size);
   // Capitalization is applied only to what gets *rendered* into the
   // measurement DOM (spansToHtml(_fitCasedSpans(...)) below, and `mtext` in
   // _fitWordList) — never to `spans`/`words[].text` themselves. Those flow
@@ -4382,11 +4411,16 @@ function computeSlideFitWidth(slide, scheme) {
     if (!rawSpans.length || rawSpans.every(s => !s.text)) return null;
     const mainSpans = slide.stripNewlines ? stripNewlineSpans(rawSpans) : rawSpans;
     const main = computeOptimalBodyWidth(mainSpans, scheme, 'scripture', 'main');
-    if (!wantsProp) return { ...main, bodyLines: main.lines, propBodyW: null, propBodyX: null, propBodyLines: null, propBrokenText: null, propBrokenSpans: null };
+    if (!wantsProp) return { ...main, bodyLines: main.lines, propBodyW: null, propBodyX: null, propBodyLines: null, propBrokenText: null, propBrokenSpans: null, propAscent: null, propDescent: null, propCapAscent: null };
     // Display 2 gets its own independent search against rawSpans (unstripped —
     // Strip is a Display-1-only setting) — never derived from Display 1's result.
     const prop = computeOptimalBodyWidth(rawSpans, scheme, 'scripture', 'prop');
-    return { ...main, bodyLines: main.lines, propBodyW: prop.bodyW, propBodyX: prop.bodyX, propBodyLines: prop.lines, propBrokenText: prop.brokenText || null, propBrokenSpans: prop.brokenSpans || null };
+    return {
+      ...main, bodyLines: main.lines,
+      propBodyW: prop.bodyW, propBodyX: prop.bodyX, propBodyLines: prop.lines,
+      propBrokenText: prop.brokenText || null, propBrokenSpans: prop.brokenSpans || null,
+      propAscent: prop.ascent, propDescent: prop.descent, propCapAscent: prop.capAscent,
+    };
   }
   if (slide.type === 'point') {
     if (slide.mode === 'revealing') {
@@ -10024,6 +10058,14 @@ function attachFormHandlers(slide) {
     slide._fitBrokenSpans = carriesBreaks ? (result.brokenSpans || null) : null;
     slide._fitPropBrokenText = carriesBreaks ? (result.propBrokenText || null) : null;
     slide._fitPropBrokenSpans = carriesBreaks ? (result.propBrokenSpans || null) : null;
+    // Real font metrics (see _fitFontMetrics) for Auto Title Y — builder.js has
+    // no DOM, so these have to be measured here and threaded through the spec.
+    slide.bodyAscent = result.ascent ?? null;
+    slide.bodyDescent = result.descent ?? null;
+    slide.bodyCapAscent = result.capAscent ?? null;
+    slide.propAscent = result.propAscent ?? null;
+    slide.propDescent = result.propDescent ?? null;
+    slide.propCapAscent = result.propCapAscent ?? null;
   }
 
   const fitBtn     = get('btn-fit-width');
@@ -10049,6 +10091,12 @@ function attachFormHandlers(slide) {
         slide._fitBrokenSpans = null;
         slide._fitPropBrokenText = null;
         slide._fitPropBrokenSpans = null;
+        slide.bodyAscent = null;
+        slide.bodyDescent = null;
+        slide.bodyCapAscent = null;
+        slide.propAscent = null;
+        slide.propDescent = null;
+        slide.propCapAscent = null;
       }
       saveState();
       renderMain(); // the "+ Display 2" sub-toggle only shows while Fit Width is on
@@ -10705,9 +10753,18 @@ function buildSpec() {
         bodyW:         slide.fitWidth ? (slide.bodyW || null) : null,
         bodyX:         slide.fitWidth ? (slide.bodyX || null) : null,
         bodyLines:     slide.fitWidth ? (slide.bodyLines || null) : null,
+        // Real font metrics for Auto Title Y (see _fitFontMetrics/estimateTitleY)
+        // — gated the same as bodyLines/propBodyLines, since they come from the
+        // same measurement pass and are meaningless without it.
+        ascent:        slide.fitWidth ? (slide.bodyAscent ?? null) : null,
+        descent:       slide.fitWidth ? (slide.bodyDescent ?? null) : null,
+        capAscent:     slide.fitWidth ? (slide.bodyCapAscent ?? null) : null,
         propBodyW:     (slide.fitWidth && slide.propFitWidth) ? (slide.propBodyW || null) : null,
         propBodyX:     (slide.fitWidth && slide.propFitWidth) ? (slide.propBodyX || null) : null,
         propBodyLines: (slide.fitWidth && slide.propFitWidth) ? (slide.propBodyLines || null) : null,
+        propAscent:    (slide.fitWidth && slide.propFitWidth) ? (slide.propAscent ?? null) : null,
+        propDescent:   (slide.fitWidth && slide.propFitWidth) ? (slide.propDescent ?? null) : null,
+        propCapAscent: (slide.fitWidth && slide.propFitWidth) ? (slide.propCapAscent ?? null) : null,
       };
     }
 
@@ -11079,6 +11136,12 @@ async function generate() {
         slide._fitBrokenSpans = carriesBreaks ? (r.brokenSpans || null) : null;
         slide._fitPropBrokenText = carriesBreaks ? (r.propBrokenText || null) : null;
         slide._fitPropBrokenSpans = carriesBreaks ? (r.propBrokenSpans || null) : null;
+        slide.bodyAscent = r.ascent ?? null;
+        slide.bodyDescent = r.descent ?? null;
+        slide.bodyCapAscent = r.capAscent ?? null;
+        slide.propAscent = r.propAscent ?? null;
+        slide.propDescent = r.propDescent ?? null;
+        slide.propCapAscent = r.propCapAscent ?? null;
       }
     }
   } catch (_) { /* non-fatal — export continues without fit-width pre-computation */ }
