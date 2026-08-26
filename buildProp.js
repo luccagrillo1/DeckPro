@@ -382,47 +382,45 @@ function resolveTextShadow(adv, defaultShadow) {
 
 // ─── Auto prop title Y estimation ────────────────────────────────────────
 
-// `knownLines`: see estimateTitleY's doc comment in builder.js — same idea,
-// for Display 2 (LED wall).
-function estimatePropTitleY(spans, bw, prs, knownLines) {
+// Display 2 (LED wall) counterpart to estimateTitleY in builder.js — same
+// formula, same reasoning (see that function's doc comment for the full
+// derivation and why capAscent, not the real first line's ink top). `metrics`
+// is { ascent, descent, capAscent } for Display 2's OWN resolved font —
+// independent of Display 1's, since Display 2 has its own canvas size, font,
+// and box width (see computeOptimalBodyWidth's `display` param). `knownLines`
+// must be Display 2's own propBodyLines, never Display 1's bodyLines — this
+// function has exactly one caller (buildScripturePropCue), always reached
+// only when propAutoTitleY is on, so unlike estimateTitleY there's no
+// legitimate caller left that would ever need to approximate: missing real
+// data here is always a bug upstream, so this always throws rather than
+// falling back to a char-width guess.
+function estimatePropTitleY(spans, bw, prs, knownLines, metrics) {
   // Real canvas pixels throughout this function (by/bh/th are all pixel
   // coordinates) — NOT RTF half-points, so bodySize must NOT be doubled here.
-  // The old `* 2` made every line-height estimate 2x too tall, pushing the
-  // reference bar far too high above the body on any multi-line verse.
   const bodySize = prs.propBodySize ?? 80;
-  const lineH = bodySize * 1.3;
   const gap = prs.propTitleAutoGap ?? 16;
   const by = prs.propBodyY ?? 729.98;
   const bh = prs.propBodyH ?? 350.02;
   const th = prs.propTitleH ?? 50.51;
 
-  let totalLines = Number.isFinite(knownLines) && knownLines > 0 ? knownLines : null;
-
-  if (totalLines === null) {
-    const fullText = (spans || []).map(s => s.text || '').join('');
-    const paragraphs = fullText.split('\n');
-    const avgCharW = bodySize * 0.52;
-    const charsPerLine = Math.max(1, bw / avgCharW);
-    totalLines = 0;
-    for (const para of paragraphs) {
-      const trimmed = para.trim();
-      if (!trimmed) continue;
-      const words = trimmed.split(/\s+/);
-      let lineLen = 0, lines = 1;
-      for (const word of words) {
-        const wLen = word.length;
-        if (lineLen > 0 && lineLen + 1 + wLen > charsPerLine) { lines++; lineLen = wLen; }
-        else lineLen += (lineLen > 0 ? 1 : 0) + wLen;
-      }
-      totalLines += lines;
-    }
-    if (totalLines === 0) totalLines = 1;
+  const hasReal = Number.isFinite(knownLines) && knownLines > 0 && metrics
+    && Number.isFinite(metrics.ascent) && Number.isFinite(metrics.descent) && Number.isFinite(metrics.capAscent);
+  if (!hasReal) {
+    throw new Error(
+      `estimatePropTitleY: a real Fit Width result (knownLines + ascent/descent/capAscent, Display 2's own — never Display 1's) ` +
+      `is required but wasn't available (knownLines=${knownLines}, metrics=${JSON.stringify(metrics)}). This means a scripture slide ` +
+      `with propAutoTitleY on reached prop export without a valid cached Display-2 fit — a bug upstream, not something to approximate.`
+    );
   }
 
-  const marginBottom = prs.propBodyFontAdv?.marginBottom ?? prs.bodyMarginBottom ?? 60;
-  const estimatedTextH = totalLines * lineH;
-  const textTop = by + bh - marginBottom - estimatedTextH;
-  return Math.round(textTop - gap - th);
+  const lineH    = bodySize * (prs.propBodyFontAdv?.lineHeight || 1.3);
+  const blockTop = (by + bh) - knownLines * lineH;
+  const halfLead = (lineH - (metrics.ascent + metrics.descent)) / 2;
+  const inkTop   = blockTop + halfLead + (metrics.ascent - metrics.capAscent);
+  const titleY   = inkTop - gap - th;
+  // See estimateTitleY: auto-shrinking the body font when a long body leaves
+  // no room is explicitly deferred — clamp instead of silently resizing.
+  return Math.round(Math.max(0, titleY));
 }
 
 // ─── Prop cue builders ────────────────────────────────────────────────────
@@ -477,7 +475,11 @@ function buildScripturePropCue(spec, rs = {}) {
   const titleYOff = prs.titleFontAdv?.yOffset ?? 0;
   let titleY;
   if (prs.propAutoTitleY) {
-    titleY = estimatePropTitleY(allSpans, bw, prs, spec.bodyLines);
+    // Display 2's own independent result — never spec.bodyLines/ascent/etc,
+    // which are Display 1's (see computeSlideFitWidth in public/app.js: main
+    // and prop are two separate computeOptimalBodyWidth searches).
+    titleY = estimatePropTitleY(allSpans, bw, prs, spec.propBodyLines,
+      { ascent: spec.propAscent, descent: spec.propDescent, capAscent: spec.propCapAscent });
   } else {
     titleY = prs.propTitleY ?? (by + (prs.propTitleGapShort ?? 0));
   }
