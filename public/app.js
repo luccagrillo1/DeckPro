@@ -3819,7 +3819,13 @@ const FIT_RUNT_WORDS = new Set([
 // Flatten spans into words, tagging each with style, the punctuation that ends
 // it (rates break quality), and whether it's a runt (rates line-end quality).
 // Assumes no explicit newlines.
-function _fitWordList(spans) {
+// `mtext` carries the capitalization-transformed text used ONLY for rendering
+// into the measurement DOM (see _fitCaseText) — `text` stays the real,
+// original string. Keeping them separate matters: `text` is what ends up in
+// `best.broken` → slide._fitBrokenText → bodyDisplayText at export, and a
+// cased `text` would silently fail the case-sensitive equality guard there,
+// discarding the hard breaks Fit Width just computed.
+function _fitWordList(spans, baseCap = '', boldCap = '') {
   const words = [];
   for (const s of (spans || [])) {
     if (!s || !s.text) continue;
@@ -3832,7 +3838,8 @@ function _fitWordList(spans) {
       // A runt only if it carries no trailing punctuation of its own — a comma or
       // period after the word already makes it a legitimate place to break.
       const runt = rank === 0 && (bare.length <= 2 || FIT_RUNT_WORDS.has(bare));
-      words.push({ text: tok, bold: !!s.bold, italic: !!s.italic, underline: !!s.underline, punctRank: rank, runt });
+      const mtext = _fitCaseText(tok, s.bold ? boldCap : baseCap);
+      words.push({ text: tok, mtext, bold: !!s.bold, italic: !!s.italic, underline: !!s.underline, punctRank: rank, runt });
     }
   }
   return words;
@@ -3845,7 +3852,7 @@ function _fitLinesAtWidth(inner, words, w) {
   inner.style.display    = 'block';
   inner.style.width      = `${w}px`;
   inner.innerHTML = words.map((wd, i) => {
-    let h = esc(wd.text);
+    let h = esc(wd.mtext ?? wd.text);
     if (wd.underline) h = `<u>${h}</u>`;
     if (wd.italic)    h = `<em>${h}</em>`;
     if (wd.bold)      h = `<strong>${h}</strong>`;
@@ -3946,7 +3953,7 @@ function _fitLineWidth(inner, lineWords) {
   inner.style.display    = 'inline-block';
   inner.style.width      = 'auto';
   inner.innerHTML = lineWords.map(wd => {
-    let h = esc(wd.text);
+    let h = esc(wd.mtext ?? wd.text);
     if (wd.underline) h = `<u>${h}</u>`;
     if (wd.italic)    h = `<em>${h}</em>`;
     if (wd.bold)      h = `<strong>${h}</strong>`;
@@ -4042,6 +4049,17 @@ function _fitCasedSpans(spans, baseCap, boldCap) {
   return (spans || []).map(s => ({ ...s, text: _fitCaseText(s.text, s.bold ? boldCap : baseCap) }));
 }
 
+// Guard used before trusting a cached _fitBrokenText against the live
+// bodyText at export (collapsing the hard breaks back to spaces should
+// reproduce the original text exactly, or the cache is stale and gets
+// dropped). Case-insensitive on purpose: a mismatch here should only ever
+// mean a stale cache, never a legitimate signal, so it shouldn't be able to
+// fail merely because a row's capitalization setting cased the two sides
+// differently upstream.
+function _fitTextsMatch(a, b) {
+  return String(a || '').toLowerCase() === String(b || '').toLowerCase();
+}
+
 // Enumerate line partitions that break ONLY after punctuation words (comma,
 // clause, or sentence end). These reach layouts that box-width alone can't —
 // e.g. a point split cleanly after every comma — and are the candidates that,
@@ -4119,9 +4137,12 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
   const boldAdvField  = isProp ? 'propBoldFontAdv' : 'boldFontAdv';
   const baseDesc = _fitFontDescriptor(st[baseFontField], st[baseAdvField]);
   const boldDesc = _fitFontDescriptor(st[boldFontField] || st[baseFontField], st[boldAdvField] || st[baseAdvField]);
-  // Apply each row's capitalization to the actual characters before anything
-  // is measured — see _fitCaseText for why this can't be a CSS text-transform.
-  spans = _fitCasedSpans(spans, baseDesc.cap, boldDesc.cap);
+  // Capitalization is applied only to what gets *rendered* into the
+  // measurement DOM (spansToHtml(_fitCasedSpans(...)) below, and `mtext` in
+  // _fitWordList) — never to `spans`/`words[].text` themselves. Those flow
+  // into best.broken → slide._fitBrokenText → bodyDisplayText at export,
+  // where a case-transformed value would fail the equality guard against the
+  // real bodyText and silently discard the hard breaks Fit Width just found.
 
   // computeOptimalBodyWidth is synchronous and can't await a font load — if a
   // weight/style combo this row needs hasn't finished loading yet (Google
@@ -4171,14 +4192,14 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
       for (const line of lines) {
         if (!line.length) continue;
         lineCount++;
-        inner.innerHTML = spansToHtml(line);
+        inner.innerHTML = spansToHtml(_fitCasedSpans(line, baseDesc.cap, boldDesc.cap));
         widest = Math.max(widest, inner.scrollWidth);
       }
       return centered(Math.min(Math.ceil(widest) + padding, maxW), null, Math.max(1, lineCount));
     }
 
     // ── Balance mode: weighted candidate search ──
-    const words = _fitWordList(spans);
+    const words = _fitWordList(spans, baseDesc.cap, boldDesc.cap);
     if (!words.length) return centered(maxW);
 
     // Floor: never narrower than the widest single word (would force overflow).
@@ -4186,7 +4207,8 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
     inner.style.whiteSpace = 'nowrap';
     inner.style.display    = 'inline-block';
     for (const wd of words) {
-      inner.innerHTML = wd.bold ? `<strong>${esc(wd.text)}</strong>` : esc(wd.text);
+      const mh = esc(wd.mtext);
+      inner.innerHTML = wd.bold ? `<strong>${mh}</strong>` : mh;
       widestWord = Math.max(widestWord, inner.scrollWidth);
     }
     const floorW = Math.min(Math.ceil(widestWord) + 4, maxW);
@@ -10629,12 +10651,12 @@ function buildSpec() {
         // Prop name, notes and queue keep the unbroken bodyText. Guarded against
         // a stale cache: only used if collapsing the breaks reproduces the text.
         bodyDisplayText: (slide.fitWidth && slide._fitBrokenText &&
-          slide._fitBrokenText.replace(/\n/g, ' ').trim() === (slide.bodyText || '').trim())
+          _fitTextsMatch(slide._fitBrokenText.replace(/\n/g, ' ').trim(), (slide.bodyText || '').trim()))
           ? normalizeBodyText(slide._fitBrokenText) : null,
         // Same idea for Display 2 (LED wall) — its own hard breaks, independent
         // of Display 1's, since it wraps at its own box width.
         propBodyDisplayText: (slide.fitWidth && slide.propFitWidth && slide._fitPropBrokenText &&
-          slide._fitPropBrokenText.replace(/\n/g, ' ').trim() === (slide.bodyText || '').trim())
+          _fitTextsMatch(slide._fitPropBrokenText.replace(/\n/g, ' ').trim(), (slide.bodyText || '').trim()))
           ? normalizeBodyText(slide._fitPropBrokenText) : null,
         propName:      normalizeDeckQuotes(slide.propName || slide.bodyText || 'point'),
         customProp:    !!slide.customProp,
