@@ -2,9 +2,18 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.27.2';
+const APP_VERSION = '4.28.0';
 
 const CHANGELOG = [
+  {
+    version: '4.28.0',
+    date: '2026-09-08',
+    changes: [
+      'Fit Width rewrite: it now picks the fewest lines the text needs at your configured Styles width, and never adds a line just because a longer layout happened to read better — that ordering was backwards before, and is exactly how a point that fit on one line could end up on two. Among layouts with the same line count, it now prefers breaking after a period or comma over a dash, over no punctuation at all; avoids ending a line on a bare word like "the" or "and"; keeps a bolded phrase from splitting across a line break; and favors even line lengths for scripture as well as points (previously only points got that treatment, which is why a lone short last word could end a scripture slide for free).',
+      'Auto Title Y now measures the same way Fit Width does — the real font, weight, and capitalization your Styles panel is set to — instead of guessing from an average character width. That guess ran wide for bold/ALL-CAPS rows, which is what could drop the title bar onto the body text on a long or heavily-styled verse. Display 2 (LED wall) title position is now computed independently from Display 1\'s, instead of accidentally reusing Display 1\'s line count.',
+      'Fixed a bug introduced (and caught) during this work: a scripture or point body with a capitalization setting turned on could silently lose Fit Width\'s chosen line break at export, even though Fit Width had found the right one.',
+    ],
+  },
   {
     version: '4.27.2',
     date: '2026-08-26',
