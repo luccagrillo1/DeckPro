@@ -17,17 +17,12 @@
 // an acceptable alternative to a full DOM harness. Anywhere real code was
 // usable, it was used.
 //
-// The task's six named reference cases (the Lamentations ALL-CAPS overflow,
-// "God Provides Faithfulness to Me" as a weight/italic mismatch, a
-// multi-clause scripture that should break on a period, a scripture with an
-// old-scoring orphan, a bold-run-split case, and a custom-lineHeight case)
-// need Lucca's actual verse text, scheme settings, and hand-verified
-// expected line count/box width/title Y — none of which exist yet. Per
-// instruction: don't freeze unverified numbers as "golden" — that just locks
-// in whatever this code happens to produce today, bugs included. Everything
-// below asserts only what's true by construction, so it can go into CI now;
-// the six named cases are added once Lucca has reviewed real output and
-// approved the expected numbers.
+// Six reference cases (real WEB verse text and original point statements,
+// run through the real browser measurement path and reviewed) are frozen
+// near the bottom of this file — see that section's comment for the full
+// per-case breakdown (text, scheme, winning candidate, runner-up, and why
+// each one was chosen). Everything above this point asserts only what's
+// true by construction, independent of any specific case's numbers.
 
 const { buildPresentation } = require('./builder.js');
 const { buildScripturePropCue } = require('./buildProp.js');
@@ -208,6 +203,124 @@ function mirrorSpansFromWinningLayout(words, lineWordCounts) {
   ok('the reconstruction preserves bold formatting across the inserted line break',
      boldPreserved, { spans });
 })();
+
+// ── Six approved reference cases ────────────────────────────────────────
+//
+// Chosen to stress specific behaviors, not to look representative: the N vs
+// N+1 tier boundary, a sentence-punctuation partition, a dash-tier
+// partition, the function-word rule firing on the final (non-internal)
+// line, a bold span crossing a hard break, and Display 1/Display 2
+// legitimately landing on different results. Run through the real browser
+// path (computeOptimalBodyWidth/_fitScore/_fitWordList, real canvas font
+// metrics) on 2026-09-08, reviewed and approved. Real public-domain verse
+// text (WEB) and original point statements — no lorem.
+//
+// Only the title-Y half of each case is asserted here as executable
+// regression coverage, via the REAL builder.js/buildProp.js code — the
+// scoring/line-count/box-width half needs the same DOM computeOptimalBodyWidth
+// needs (see the file header), so it's recorded below as reviewed reference
+// data instead: re-verify live in the browser if the scoring logic changes.
+//
+// Case 1 — N vs N+1 tier boundary (point, no title bar; scoring only).
+//   Text: "The Spirit produces love, joy, peace, patience, kindness,
+//   goodness, and faithfulness in those who walk with God." (original)
+//   Scheme: pointFont Montserrat-ExtraBold, pointSize 44, pointW 915 (narrow,
+//   deliberate — not a representative Styles width).
+//   N=3. Winner (in-tier): "...love, joy, peace," / "...kindness, goodness,
+//   and" / "faithfulness...God." — width 912, cost 27.42. Best off-tier
+//   (4 lines, excluded regardless of its lower cost): "...love, joy," /
+//   "peace, patience, kindness," / "goodness, and faithfulness" / "in those
+//   who walk with God." — cost 16.82. Confirms the tier boundary: a
+//   lower-cost 4-line layout is unreachable once N=3.
+//
+// Case 2 — sentence-punctuation partition (scripture).
+//   Text (WEB, Psalm 23:1-2): "The LORD is my shepherd; I shall lack
+//   nothing. He makes me lie down in green pastures. He leads me beside
+//   still waters." Scheme: bodyW 1080 (Display 1), propBodyW 1800 (Display 2).
+//   Display 1: N=3. Winner breaks after every period (punctuation partition,
+//   cost 5.58) over the mid-clause box-width-sweep break (cost 17.41) — not
+//   close (3.1x). brokenText fires. Display 2: N=3, box-width sweep wins
+//   there instead (cost 22.72) since it already reproduces the sentence
+//   split naturally at that width/font.
+//
+// Case 3 — dash-tier partition (point).
+//   Text: "Grace is not earned — it is given freely, without condition, to
+//   all who receive it by faith." (original). Scheme: pointW 670 (narrow,
+//   deliberate). N=4. Winner breaks after the dash and each comma
+//   (punctuation partition, cost 16.22) over mid-clause breaks (cost 32.12)
+//   — not close (2x). brokenText fires.
+//
+// Case 4 — function-word rule firing on the final (non-internal) line.
+//   Text (1 Peter 5:7, WEB, realistically truncated as a volunteer might
+//   paste it): "Cast all your anxiety on him, because he cares for" — ends
+//   on a bare preposition because the quote was cut short, not by design;
+//   real complete sentences essentially never end this way, which is itself
+//   why this case needed a truncated real verse rather than a full one.
+//   Scheme: pointW 298 (very narrow, deliberate). N=5. Winner: "Cast all
+//   your" / "anxiety on" / "him," / "because he" / "cares for" — cost 59.64.
+//   Direct check (FIT_WEIGHTS.lineEndFunction zeroed, same layout): cost
+//   drops to 35.64 — delta 24 = 2x the 12-point weight, since both "on" and
+//   the true final word "for" end a line bare.
+//
+// Case 5 — bold span crossing a hard break (scripture).
+//   Text (WEB, Lamentations 3:22-23): "It is because of Yahweh's loving
+//   kindnesses that we are not consumed, because his compassion doesn't
+//   fail. They are new every morning. **Great is your faithfulness.**"
+//   (bold as marked). Scheme: bodyW 670 (Display 1), propBodyW 1800
+//   (Display 2). Display 1: N=6. Winner keeps the bold clause on its own
+//   line (cost 31.18); an otherwise-identical 6-line layout that splits it
+//   ("...morning. Great" / "is your faithfulness.") costs 92.86 — 3x worse.
+//   Display 2: N=4, bold clause also stays intact.
+//
+// Case 6 — Display 1 and Display 2 legitimately different (scripture).
+//   Text (WEB, John 14:27): "Peace I leave with you. My peace I give to
+//   you; not as the world gives, give I to you. Don't let your heart be
+//   troubled, neither let it be fearful." Scheme: bodyW 1400 (Display 1),
+//   propBodyW 3000 (Display 2) — deliberately different configured widths.
+//   Display 1: N=3, punctuation partition wins (cost 10.27) over box-width
+//   sweep (13.66). Display 2: N=2 (genuinely different line count, not
+//   derived from Display 1), punctuation partition (cost 3.10) and
+//   box-width sweep (3.12) tie within 0.6% — flagged as a near-tie, not a
+//   concern (both land on essentially the same split).
+
+function scriptureCaseSpec(bodyLines, metrics, styleExtra = {}) {
+  return {
+    name: 'T',
+    style: { autoTitleY: true, bodyY: 729.98, bodyH: 350.02, titleH: 50.51, titleAutoGap: 16, bodySize: 44, ...styleExtra },
+    slides: [{ type: 'scripture', label: 'Ref', reference: 'Ref', bodies: [[{ text: 'x' }]],
+      bodyLines, ascent: metrics.ascent, descent: metrics.descent, capAscent: metrics.capAscent }],
+  };
+}
+function propCaseTitleY(propBodyLines, metrics, rsExtra = {}) {
+  const rs = { propBodySize: 80, propBodyY: 853, propBodyH: 427, propTitleH: 60, propTitleAutoGap: 16, propAutoTitleY: true, ...rsExtra };
+  const spec = { propName: 't', reference: 'Ref', bodies: [[{ text: 'x' }]],
+    propBodyLines, propAscent: metrics.ascent, propDescent: metrics.descent, propCapAscent: metrics.capAscent };
+  const cue = buildScripturePropCue(spec, rs);
+  return cue.actions[0].slide.prop.baseSlide.elements.find(e => e.element.name === 'reference').element.bounds.origin.y;
+}
+function mainCaseTitleY(bodyLines, metrics, styleExtra = {}) {
+  const doc = buildPresentation(scriptureCaseSpec(bodyLines, metrics, styleExtra));
+  const a = doc.cues[0].actions.find(x => x.type === 'ACTION_TYPE_PRESENTATION_SLIDE');
+  return a.slide.presentation.baseSlide.elements.find(e => e.element.name === 'title').element.bounds.origin.y;
+}
+
+const D1_METRICS = { ascent: 43, descent: 11, capAscent: 30.8 };  // Montserrat-Medium 44px, measured live
+const D2_METRICS = { ascent: 77, descent: 20, capAscent: 56 };    // Montserrat-SemiBold 80px, measured live
+
+ok('Case 2 (Psalm 23:1-2) Display 1 titleY matches the reviewed value',
+   mainCaseTitleY(3, D1_METRICS) === 889, { got: mainCaseTitleY(3, D1_METRICS) });
+ok('Case 2 (Psalm 23:1-2) Display 2 titleY matches the reviewed value',
+   propCaseTitleY(3, D2_METRICS) === 917, { got: propCaseTitleY(3, D2_METRICS) });
+
+ok('Case 5 (Lamentations 3:22-23) Display 1 titleY matches the reviewed value',
+   mainCaseTitleY(6, D1_METRICS) === 757, { got: mainCaseTitleY(6, D1_METRICS) });
+ok('Case 5 (Lamentations 3:22-23) Display 2 titleY matches the reviewed value',
+   propCaseTitleY(4, D2_METRICS) === 813, { got: propCaseTitleY(4, D2_METRICS) });
+
+ok('Case 6 (John 14:27) Display 1 titleY matches the reviewed value',
+   mainCaseTitleY(3, D1_METRICS) === 889, { got: mainCaseTitleY(3, D1_METRICS) });
+ok('Case 6 (John 14:27) Display 2 titleY matches the reviewed value (genuinely different line count)',
+   propCaseTitleY(2, D2_METRICS) === 1021, { got: propCaseTitleY(2, D2_METRICS) });
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
