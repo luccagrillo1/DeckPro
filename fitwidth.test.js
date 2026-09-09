@@ -347,20 +347,32 @@ const D2_METRICS = { ascent: 77, descent: 20, capAscent: 56 };    // Montserrat-
 const D1_TITLE_METRICS = { ascent: 58, descent: 15 };   // size 60, measured live
 const D2_TITLE_METRICS = { ascent: 106, descent: 28 };  // size 110, measured live
 
+// PENDING RE-APPROVAL (2026-09-09): v4.28.1 fixed two real bugs in
+// estimateTitleY/estimatePropTitleY (see CHANGELOG) that change every one of
+// these six numbers. The values below are still the ORIGINAL numbers signed
+// off on 2026-09-08, on purpose — a golden number encodes a human sign-off,
+// not the code's current output, and only the person who approved it gets to
+// move it. Do not "fix" these assertions by plugging in whatever v4.28.1
+// currently computes; that would silently re-approve them on nobody's
+// authority. They are expected to FAIL right now — that failure is the flag.
+// v4.28.1's actual output for the same inputs, for reference:
+//   Case 2 D1: 889 -> 864   Case 2 D2: 917 -> 934
+//   Case 5 D1: 757 -> 702   Case 5 D2: 813 -> 837
+//   Case 6 D1: 889 -> 864   Case 6 D2: 1021 -> 1031
 ok('Case 2 (Psalm 23:1-2) Display 1 titleY matches the reviewed value',
-   mainCaseTitleY(3, D1_METRICS) === 864, { got: mainCaseTitleY(3, D1_METRICS) });
+   mainCaseTitleY(3, D1_METRICS) === 889, { got: mainCaseTitleY(3, D1_METRICS) });
 ok('Case 2 (Psalm 23:1-2) Display 2 titleY matches the reviewed value',
-   propCaseTitleY(3, D2_METRICS) === 934, { got: propCaseTitleY(3, D2_METRICS) });
+   propCaseTitleY(3, D2_METRICS) === 917, { got: propCaseTitleY(3, D2_METRICS) });
 
 ok('Case 5 (Lamentations 3:22-23) Display 1 titleY matches the reviewed value',
-   mainCaseTitleY(6, D1_METRICS) === 702, { got: mainCaseTitleY(6, D1_METRICS) });
+   mainCaseTitleY(6, D1_METRICS) === 757, { got: mainCaseTitleY(6, D1_METRICS) });
 ok('Case 5 (Lamentations 3:22-23) Display 2 titleY matches the reviewed value',
-   propCaseTitleY(4, D2_METRICS) === 837, { got: propCaseTitleY(4, D2_METRICS) });
+   propCaseTitleY(4, D2_METRICS) === 813, { got: propCaseTitleY(4, D2_METRICS) });
 
 ok('Case 6 (John 14:27) Display 1 titleY matches the reviewed value',
-   mainCaseTitleY(3, D1_METRICS) === 864, { got: mainCaseTitleY(3, D1_METRICS) });
+   mainCaseTitleY(3, D1_METRICS) === 889, { got: mainCaseTitleY(3, D1_METRICS) });
 ok('Case 6 (John 14:27) Display 2 titleY matches the reviewed value (genuinely different line count)',
-   propCaseTitleY(2, D2_METRICS) === 1031, { got: propCaseTitleY(2, D2_METRICS) });
+   propCaseTitleY(2, D2_METRICS) === 1021, { got: propCaseTitleY(2, D2_METRICS) });
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
