@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.28.0';
+const APP_VERSION = '4.28.1';
 
 const CHANGELOG = [
+  {
+    version: '4.28.1',
+    date: '2026-09-09',
+    changes: [
+      'Fixed two Auto Title Y bugs from 4.28.0, both invisible on the built-in default Styles scheme and only visible on a custom one: (1) the per-line spacing used to position the title was silently using 1x the body font size instead of its real measured line height, since the intended 1.3x fallback could never fire; (2) the title bar assumed its own text always sits flush with the bottom of its title box, which is only true if the title is bottom-aligned — the actual default is centered, so on any scheme whose title box is taller than the title font needs, the title landed noticeably higher than the configured gap. Both are now derived from the same real font-metrics measurement Fit Width already does, extended to the title\'s own font.',
+    ],
+  },
   {
     version: '4.28.0',
     date: '2026-09-08',
@@ -4098,6 +4105,27 @@ function _fitResolveContext(rs, type, display) {
   return { st, isProp, canvasW, size, maxW, baseDesc, boldDesc };
 }
 
+// Real font metrics for the title/reference bar's own font — needed because
+// the title box's verticalAlignment is usually MIDDLE, not BOTTOM: when the
+// box (titleH) is taller than the title's own single line of text, the ink
+// sits centered inside it, not flush with the box's bottom edge. estimateTitleY
+// (builder.js) needs the title's real line-box height (ascent+descent) to know
+// how far the ink actually sits from the box edges — assuming ink==box was the
+// source of the "constant offset" title-Y bug on any scheme whose titleH isn't
+// already sized close to the title font's own line height. `display` selects
+// Display 1's title font/size or Display 2's (propTitleFont/propTitleSize),
+// exactly like _fitResolveContext does for the body font.
+function _fitTitleMetrics(rs, display) {
+  const st = styleForExport(rs || activeStyleScheme()) || {};
+  const isProp = display === 'prop';
+  const font = (isProp ? st.propTitleFont : st.titleFont) || 'Arial';
+  const adv  = (isProp ? st.propTitleFontAdv : st.titleFontAdv) || null;
+  const size = (isProp ? st.propTitleSize : st.titleSize) || (isProp ? 110 : 60);
+  const desc = _fitFontDescriptor(font, adv);
+  const m = _fitFontMetrics(desc, size);
+  return { ascent: m.ascent, descent: m.descent };
+}
+
 // A deterministic fingerprint of everything that can change a Fit Width
 // result: the spans' own content/formatting, both rows' resolved typography,
 // the font size, and the box-width ceiling. Used to decide at export whether
@@ -4472,15 +4500,21 @@ function computeSlideFitWidth(slide, scheme) {
     if (!rawSpans.length || rawSpans.every(s => !s.text)) return null;
     const mainSpans = slide.stripNewlines ? stripNewlineSpans(rawSpans) : rawSpans;
     const main = computeOptimalBodyWidth(mainSpans, scheme, 'scripture', 'main');
-    if (!wantsProp) return { ...main, bodyLines: main.lines, propBodyW: null, propBodyX: null, propBodyLines: null, propBrokenText: null, propBrokenSpans: null, propAscent: null, propDescent: null, propCapAscent: null, propFitHash: null };
+    // Title font metrics (see _fitTitleMetrics) — independent of the body
+    // measurement above, but only ever needed alongside it (scripture's title
+    // bar), so it's resolved here rather than adding a separate call site.
+    const titleM = _fitTitleMetrics(scheme, 'main');
+    if (!wantsProp) return { ...main, bodyLines: main.lines, titleAscent: titleM.ascent, titleDescent: titleM.descent, propBodyW: null, propBodyX: null, propBodyLines: null, propBrokenText: null, propBrokenSpans: null, propAscent: null, propDescent: null, propCapAscent: null, propTitleAscent: null, propTitleDescent: null, propFitHash: null };
     // Display 2 gets its own independent search against rawSpans (unstripped —
     // Strip is a Display-1-only setting) — never derived from Display 1's result.
     const prop = computeOptimalBodyWidth(rawSpans, scheme, 'scripture', 'prop');
+    const propTitleM = _fitTitleMetrics(scheme, 'prop');
     return {
-      ...main, bodyLines: main.lines,
+      ...main, bodyLines: main.lines, titleAscent: titleM.ascent, titleDescent: titleM.descent,
       propBodyW: prop.bodyW, propBodyX: prop.bodyX, propBodyLines: prop.lines,
       propBrokenText: prop.brokenText || null, propBrokenSpans: prop.brokenSpans || null,
       propAscent: prop.ascent, propDescent: prop.descent, propCapAscent: prop.capAscent,
+      propTitleAscent: propTitleM.ascent, propTitleDescent: propTitleM.descent,
       propFitHash: prop.fitHash,
     };
   }
@@ -10128,6 +10162,12 @@ function attachFormHandlers(slide) {
     slide.propAscent = result.propAscent ?? null;
     slide.propDescent = result.propDescent ?? null;
     slide.propCapAscent = result.propCapAscent ?? null;
+    // Title bar's own font metrics (see _fitTitleMetrics) — needed because the
+    // title box centers its text vertically; scripture only.
+    slide.titleAscent = result.titleAscent ?? null;
+    slide.titleDescent = result.titleDescent ?? null;
+    slide.propTitleAscent = result.propTitleAscent ?? null;
+    slide.propTitleDescent = result.propTitleDescent ?? null;
     // Staleness fingerprint (see _fitHash/_fitCurrentBodyHash) — lets export
     // skip recomputing a slide whose text/typography/width hasn't actually
     // changed since this ran, instead of unconditionally re-measuring every
@@ -10165,6 +10205,10 @@ function attachFormHandlers(slide) {
         slide.propAscent = null;
         slide.propDescent = null;
         slide.propCapAscent = null;
+        slide.titleAscent = null;
+        slide.titleDescent = null;
+        slide.propTitleAscent = null;
+        slide.propTitleDescent = null;
         slide.bodyFitHash = null;
         slide.propBodyFitHash = null;
       }
@@ -10829,12 +10873,19 @@ function buildSpec() {
         ascent:        slide.fitWidth ? (slide.bodyAscent ?? null) : null,
         descent:       slide.fitWidth ? (slide.bodyDescent ?? null) : null,
         capAscent:     slide.fitWidth ? (slide.bodyCapAscent ?? null) : null,
+        // Title bar's own font metrics (see _fitTitleMetrics) — needed so
+        // estimateTitleY knows the title's real ink height, not just its box
+        // height, when the title is vertically centered in a taller box.
+        titleAscent:   slide.fitWidth ? (slide.titleAscent ?? null) : null,
+        titleDescent:  slide.fitWidth ? (slide.titleDescent ?? null) : null,
         propBodyW:     (slide.fitWidth && slide.propFitWidth) ? (slide.propBodyW || null) : null,
         propBodyX:     (slide.fitWidth && slide.propFitWidth) ? (slide.propBodyX || null) : null,
         propBodyLines: (slide.fitWidth && slide.propFitWidth) ? (slide.propBodyLines || null) : null,
         propAscent:    (slide.fitWidth && slide.propFitWidth) ? (slide.propAscent ?? null) : null,
         propDescent:   (slide.fitWidth && slide.propFitWidth) ? (slide.propDescent ?? null) : null,
         propCapAscent: (slide.fitWidth && slide.propFitWidth) ? (slide.propCapAscent ?? null) : null,
+        propTitleAscent:  (slide.fitWidth && slide.propFitWidth) ? (slide.propTitleAscent ?? null) : null,
+        propTitleDescent: (slide.fitWidth && slide.propFitWidth) ? (slide.propTitleDescent ?? null) : null,
       };
     }
 
@@ -11222,6 +11273,10 @@ async function generate() {
         slide.propAscent = r.propAscent ?? null;
         slide.propDescent = r.propDescent ?? null;
         slide.propCapAscent = r.propCapAscent ?? null;
+        slide.titleAscent = r.titleAscent ?? null;
+        slide.titleDescent = r.titleDescent ?? null;
+        slide.propTitleAscent = r.propTitleAscent ?? null;
+        slide.propTitleDescent = r.propTitleDescent ?? null;
         slide.bodyFitHash = r.fitHash ?? null;
         slide.propBodyFitHash = r.propFitHash ?? null;
       }

@@ -682,29 +682,56 @@ function makeLiveElement(rs = {}) {
  * the char-width estimate below exactly as it always has.
  */
 function estimateTitleY(displayBody, bw, rs, knownLines, metrics, strict = false) {
-  const bodySize = rs.bodySize ?? 44;
+  const bodySize = rs.bodySize ?? 44; // only the non-strict char-width fallback below still needs this
   const gap      = rs.titleAutoGap ?? 16;
   const by       = rs.bodyY ?? 0;
   const bh       = rs.bodyH ?? 100;
   const th       = rs.titleH ?? 100;
 
   const hasReal = Number.isFinite(knownLines) && knownLines > 0 && metrics
-    && Number.isFinite(metrics.ascent) && Number.isFinite(metrics.descent) && Number.isFinite(metrics.capAscent);
+    && Number.isFinite(metrics.ascent) && Number.isFinite(metrics.descent) && Number.isFinite(metrics.capAscent)
+    && Number.isFinite(metrics.titleAscent) && Number.isFinite(metrics.titleDescent);
 
   if (!hasReal && strict) {
     throw new Error(
-      `estimateTitleY: strict mode requires a real Fit Width result (knownLines + ascent/descent/capAscent) but one wasn't available ` +
-      `(knownLines=${knownLines}, metrics=${JSON.stringify(metrics)}). This means a slide with autoTitleY on reached export without a ` +
-      `valid cached fit — a bug upstream, not something to approximate here.`
+      `estimateTitleY: strict mode requires a real Fit Width result (knownLines + body ascent/descent/capAscent + title ` +
+      `ascent/descent) but one wasn't available (knownLines=${knownLines}, metrics=${JSON.stringify(metrics)}). This means a ` +
+      `slide with autoTitleY on reached export without a valid cached fit — a bug upstream, not something to approximate here.`
     );
   }
 
   if (hasReal) {
-    const lineH    = bodySize * (rs.bodyFontAdv?.lineHeight || 1.3);
+    // Body block is bottom-anchored (verticalAlignment BOTTOM — see
+    // makeBodyElement), so N lines of real line-box height sit flush with the
+    // box's bottom edge. lineH is the font's own measured ascent+descent, not
+    // a guessed multiplier: ProPresenter's line-height-multiple export field
+    // is hardcoded to 1 regardless of the scheme's "line height" UI setting
+    // (that control isn't wired into the actual export), so the font's own
+    // natural leading — what actually renders — IS the line height.
+    const lineH    = metrics.ascent + metrics.descent;
     const blockTop = (by + bh) - knownLines * lineH;
-    const halfLead = (lineH - (metrics.ascent + metrics.descent)) / 2;
-    const inkTop   = blockTop + halfLead + (metrics.ascent - metrics.capAscent);
-    const titleY   = inkTop - gap - th;
+    const inkTop   = blockTop + (metrics.ascent - metrics.capAscent);
+
+    // Title block is NOT bottom-anchored like the body — its own
+    // verticalAlignment (default MIDDLE — see makeTitleElement) decides where
+    // its one line of ink sits inside titleH. Assuming ink flush with the
+    // box's bottom edge (as if always BOTTOM-aligned) silently adds however
+    // much taller the box is than the title's own line, and that slack grows
+    // with titleH — the bug behind schemes with a much bigger titleH than the
+    // title font needs landing the title noticeably higher than intended.
+    // When the title's default SCALE_BEHAVIOR_SCALE_FONT_DOWN is active and
+    // the box is SHORTER than the font's natural line, ProPresenter shrinks
+    // the font to fit titleH instead of overflowing it — clamp to titleH in
+    // that case so the three alignments correctly converge (no slack left to
+    // disagree about) instead of assuming a taller line than actually renders.
+    const titleNaturalLineH = metrics.titleAscent + metrics.titleDescent;
+    const titleScalesDown = resolveScaleBehavior(rs.titleFontAdv, 'SCALE_BEHAVIOR_SCALE_FONT_DOWN') === 'SCALE_BEHAVIOR_SCALE_FONT_DOWN';
+    const titleLineH = titleScalesDown ? Math.min(titleNaturalLineH, th) : titleNaturalLineH;
+    const align = (rs.titleFontAdv && rs.titleFontAdv.verticalAlignment) || 'middle';
+    const inkBottomBelowBoxTop = align === 'top'    ? titleLineH
+                               : align === 'bottom' ? th
+                               : /* middle */         (th + titleLineH) / 2;
+    const titleY = inkTop - gap - inkBottomBelowBoxTop;
     // Deferred: auto-shrinking the body font when a long body leaves no room
     // is a separate, explicitly out-of-scope feature. For now, clamp instead
     // of silently changing the body font size — the gap just ends up tighter
@@ -1434,7 +1461,7 @@ function buildScriptureCues(spec, rs) {
     const liveEl  = makeLiveElement(rs);
     // Auto Title Y: estimate from line count if enabled; otherwise use scheme titleY directly
     const computedTitleY = rs.autoTitleY
-      ? estimateTitleY(displayBody, bw, rs, spec.bodyLines, { ascent: spec.ascent, descent: spec.descent, capAscent: spec.capAscent }, true)
+      ? estimateTitleY(displayBody, bw, rs, spec.bodyLines, { ascent: spec.ascent, descent: spec.descent, capAscent: spec.capAscent, titleAscent: spec.titleAscent, titleDescent: spec.titleDescent }, true)
       : (rs.titleY ?? 0);
     const titleEl = makeTitleElement({ reference: spec.reference, titleY: computedTitleY }, rs);
     const bodyEl  = makeBodyElement({ x: bx, y: by + bodyYOff, w: bw, h: bh, rtfData: bodyRtf, charCount: plainBody.length, spans: displayBody }, rs);

@@ -397,27 +397,39 @@ function resolveTextShadow(adv, defaultShadow) {
 function estimatePropTitleY(spans, bw, prs, knownLines, metrics) {
   // Real canvas pixels throughout this function (by/bh/th are all pixel
   // coordinates) — NOT RTF half-points, so bodySize must NOT be doubled here.
-  const bodySize = prs.propBodySize ?? 80;
   const gap = prs.propTitleAutoGap ?? 16;
   const by = prs.propBodyY ?? 729.98;
   const bh = prs.propBodyH ?? 350.02;
   const th = prs.propTitleH ?? 50.51;
 
   const hasReal = Number.isFinite(knownLines) && knownLines > 0 && metrics
-    && Number.isFinite(metrics.ascent) && Number.isFinite(metrics.descent) && Number.isFinite(metrics.capAscent);
+    && Number.isFinite(metrics.ascent) && Number.isFinite(metrics.descent) && Number.isFinite(metrics.capAscent)
+    && Number.isFinite(metrics.titleAscent) && Number.isFinite(metrics.titleDescent);
   if (!hasReal) {
     throw new Error(
-      `estimatePropTitleY: a real Fit Width result (knownLines + ascent/descent/capAscent, Display 2's own — never Display 1's) ` +
-      `is required but wasn't available (knownLines=${knownLines}, metrics=${JSON.stringify(metrics)}). This means a scripture slide ` +
-      `with propAutoTitleY on reached prop export without a valid cached Display-2 fit — a bug upstream, not something to approximate.`
+      `estimatePropTitleY: a real Fit Width result (knownLines + body ascent/descent/capAscent + title ascent/descent, ` +
+      `Display 2's own — never Display 1's) is required but wasn't available (knownLines=${knownLines}, metrics=${JSON.stringify(metrics)}). ` +
+      `This means a scripture slide with propAutoTitleY on reached prop export without a valid cached Display-2 fit — a bug upstream, not something to approximate.`
     );
   }
 
-  const lineH    = bodySize * (prs.propBodyFontAdv?.lineHeight || 1.3);
+  // See estimateTitleY in builder.js for the full derivation of both halves
+  // of this formula — same reasoning, Display 2's own metrics throughout.
+  const lineH    = metrics.ascent + metrics.descent;
   const blockTop = (by + bh) - knownLines * lineH;
-  const halfLead = (lineH - (metrics.ascent + metrics.descent)) / 2;
-  const inkTop   = blockTop + halfLead + (metrics.ascent - metrics.capAscent);
-  const titleY   = inkTop - gap - th;
+  const inkTop   = blockTop + (metrics.ascent - metrics.capAscent);
+
+  // See estimateTitleY's scale-down note: when titleH is shorter than the
+  // title font's natural line, ProPresenter shrinks the font to fit instead
+  // of overflowing, so clamp to titleH there too.
+  const titleNaturalLineH = metrics.titleAscent + metrics.titleDescent;
+  const titleScalesDown = resolveScaleBehavior(prs.titleFontAdv, 'SCALE_BEHAVIOR_SCALE_FONT_DOWN') === 'SCALE_BEHAVIOR_SCALE_FONT_DOWN';
+  const titleLineH = titleScalesDown ? Math.min(titleNaturalLineH, th) : titleNaturalLineH;
+  const align = (prs.titleFontAdv && prs.titleFontAdv.verticalAlignment) || 'middle';
+  const inkBottomBelowBoxTop = align === 'top'    ? titleLineH
+                             : align === 'bottom' ? th
+                             : /* middle */         (th + titleLineH) / 2;
+  const titleY = inkTop - gap - inkBottomBelowBoxTop;
   // See estimateTitleY: auto-shrinking the body font when a long body leaves
   // no room is explicitly deferred — clamp instead of silently resizing.
   return Math.round(Math.max(0, titleY));
@@ -479,7 +491,8 @@ function buildScripturePropCue(spec, rs = {}) {
     // which are Display 1's (see computeSlideFitWidth in public/app.js: main
     // and prop are two separate computeOptimalBodyWidth searches).
     titleY = estimatePropTitleY(allSpans, bw, prs, spec.propBodyLines,
-      { ascent: spec.propAscent, descent: spec.propDescent, capAscent: spec.propCapAscent });
+      { ascent: spec.propAscent, descent: spec.propDescent, capAscent: spec.propCapAscent,
+        titleAscent: spec.propTitleAscent, titleDescent: spec.propTitleDescent });
   } else {
     titleY = prs.propTitleY ?? (by + (prs.propTitleGapShort ?? 0));
   }

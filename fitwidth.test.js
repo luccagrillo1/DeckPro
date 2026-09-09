@@ -53,7 +53,7 @@ function scriptureSpec(bodyLines, styleExtra = {}) {
     },
     slides: [
       { type: 'scripture', label: 'Ref', reference: 'Ref', bodies: [[{ text: 'sample body text' }]],
-        bodyLines, ascent: 43, descent: 11, capAscent: 31 },
+        bodyLines, ascent: 43, descent: 11, capAscent: 31, titleAscent: 58, titleDescent: 15 },
     ],
   };
 }
@@ -66,6 +66,7 @@ function propTitleYOf(propBodyLines, rsExtra = {}) {
   const spec = {
     propName: 'test', reference: 'Ref', bodies: [[{ text: 'sample' }]],
     propBodyLines, propAscent: 78, propDescent: 20, propCapAscent: 56,
+    propTitleAscent: 106, propTitleDescent: 28,
   };
   const cue = buildScripturePropCue(spec, rs);
   const el = cue.actions[0].slide.prop.baseSlide.elements.find(e => e.element.name === 'reference');
@@ -87,10 +88,42 @@ function propTitleYOf(propBodyLines, rsExtra = {}) {
 })();
 
 (() => {
+  // bodyFontAdv.lineHeight is NOT wired into the actual export (builder.js's
+  // paragraphStyle.lineHeightMultiple is hardcoded to 1 regardless of it —
+  // see makeBodyElement), so ProPresenter always renders body text at its
+  // font's own natural leading no matter what this UI control says. The line
+  // height used for title-Y math must match that reality (real measured
+  // ascent+descent), not honor a setting that has zero effect on the render —
+  // titleY must be identical whether or not it's touched.
   const yDefault = titleYOf(buildPresentation(scriptureSpec(2)).cues[0]);
-  const yCustom  = titleYOf(buildPresentation(scriptureSpec(2, { bodyFontAdv: { lineHeight: 1.6 } })).cues[0]);
-  ok('a lineHeight other than 1.3 changes titleY (uses the scheme value, not a hardcoded 1.3)',
-     yDefault !== yCustom, { yDefault, yCustom });
+  const yIgnored = titleYOf(buildPresentation(scriptureSpec(2, { bodyFontAdv: { lineHeight: 1.6 } })).cues[0]);
+  ok('bodyFontAdv.lineHeight does not affect titleY (it has no effect on the real export either)',
+     yDefault === yIgnored, { yDefault, yIgnored });
+})();
+
+(() => {
+  // Title box taller than the title font's own natural line (73px at the
+  // default Montserrat-ExtraBold 60 — no scale-down triggered): MIDDLE
+  // alignment (the default) must land the title's ink a fixed `gap` above the
+  // body regardless of how much extra empty box sits below it, not silently
+  // push the title up by half that slack (the bug this fixes — treating an
+  // oversized titleH as if it were all consumed ink, as a BOTTOM-flush
+  // assumption would).
+  const yMiddle = titleYOf(buildPresentation(scriptureSpec(3, { titleH: 100 })).cues[0]);
+  const yBottom = titleYOf(buildPresentation(scriptureSpec(3, { titleH: 100, titleFontAdv: { verticalAlignment: 'bottom' } })).cues[0]);
+  ok('a title box taller than its own font line renders differently under MIDDLE vs BOTTOM alignment',
+     yMiddle !== yBottom, { yMiddle, yBottom });
+})();
+
+(() => {
+  // When the title box is SHORTER than the font's natural line (titleH 50.51
+  // vs a 73px natural line here), the default SCALE_BEHAVIOR_SCALE_FONT_DOWN
+  // shrinks the font to fit — no slack left for alignment to disagree about,
+  // so MIDDLE and BOTTOM must converge to the same titleY.
+  const yMiddleTight = titleYOf(buildPresentation(scriptureSpec(3)).cues[0]);
+  const yBottomTight = titleYOf(buildPresentation(scriptureSpec(3, { titleFontAdv: { verticalAlignment: 'bottom' } })).cues[0]);
+  ok('MIDDLE and BOTTOM converge once the title box is shorter than the font\'s natural line (scale-down leaves no slack)',
+     yMiddleTight === yBottomTight, { yMiddleTight, yBottomTight });
 })();
 
 (() => {
@@ -288,13 +321,15 @@ function scriptureCaseSpec(bodyLines, metrics, styleExtra = {}) {
     name: 'T',
     style: { autoTitleY: true, bodyY: 729.98, bodyH: 350.02, titleH: 50.51, titleAutoGap: 16, bodySize: 44, ...styleExtra },
     slides: [{ type: 'scripture', label: 'Ref', reference: 'Ref', bodies: [[{ text: 'x' }]],
-      bodyLines, ascent: metrics.ascent, descent: metrics.descent, capAscent: metrics.capAscent }],
+      bodyLines, ascent: metrics.ascent, descent: metrics.descent, capAscent: metrics.capAscent,
+      titleAscent: D1_TITLE_METRICS.ascent, titleDescent: D1_TITLE_METRICS.descent }],
   };
 }
 function propCaseTitleY(propBodyLines, metrics, rsExtra = {}) {
   const rs = { propBodySize: 80, propBodyY: 853, propBodyH: 427, propTitleH: 60, propTitleAutoGap: 16, propAutoTitleY: true, ...rsExtra };
   const spec = { propName: 't', reference: 'Ref', bodies: [[{ text: 'x' }]],
-    propBodyLines, propAscent: metrics.ascent, propDescent: metrics.descent, propCapAscent: metrics.capAscent };
+    propBodyLines, propAscent: metrics.ascent, propDescent: metrics.descent, propCapAscent: metrics.capAscent,
+    propTitleAscent: D2_TITLE_METRICS.ascent, propTitleDescent: D2_TITLE_METRICS.descent };
   const cue = buildScripturePropCue(spec, rs);
   return cue.actions[0].slide.prop.baseSlide.elements.find(e => e.element.name === 'reference').element.bounds.origin.y;
 }
@@ -306,21 +341,26 @@ function mainCaseTitleY(bodyLines, metrics, styleExtra = {}) {
 
 const D1_METRICS = { ascent: 43, descent: 11, capAscent: 30.8 };  // Montserrat-Medium 44px, measured live
 const D2_METRICS = { ascent: 77, descent: 20, capAscent: 56 };    // Montserrat-SemiBold 80px, measured live
+// Title bar's own font (Montserrat-ExtraBold, the scheme default for both
+// displays) — needed since the title box is vertically centered, not
+// bottom-anchored like the body (see estimateTitleY's derivation).
+const D1_TITLE_METRICS = { ascent: 58, descent: 15 };   // size 60, measured live
+const D2_TITLE_METRICS = { ascent: 106, descent: 28 };  // size 110, measured live
 
 ok('Case 2 (Psalm 23:1-2) Display 1 titleY matches the reviewed value',
-   mainCaseTitleY(3, D1_METRICS) === 889, { got: mainCaseTitleY(3, D1_METRICS) });
+   mainCaseTitleY(3, D1_METRICS) === 864, { got: mainCaseTitleY(3, D1_METRICS) });
 ok('Case 2 (Psalm 23:1-2) Display 2 titleY matches the reviewed value',
-   propCaseTitleY(3, D2_METRICS) === 917, { got: propCaseTitleY(3, D2_METRICS) });
+   propCaseTitleY(3, D2_METRICS) === 934, { got: propCaseTitleY(3, D2_METRICS) });
 
 ok('Case 5 (Lamentations 3:22-23) Display 1 titleY matches the reviewed value',
-   mainCaseTitleY(6, D1_METRICS) === 757, { got: mainCaseTitleY(6, D1_METRICS) });
+   mainCaseTitleY(6, D1_METRICS) === 702, { got: mainCaseTitleY(6, D1_METRICS) });
 ok('Case 5 (Lamentations 3:22-23) Display 2 titleY matches the reviewed value',
-   propCaseTitleY(4, D2_METRICS) === 813, { got: propCaseTitleY(4, D2_METRICS) });
+   propCaseTitleY(4, D2_METRICS) === 837, { got: propCaseTitleY(4, D2_METRICS) });
 
 ok('Case 6 (John 14:27) Display 1 titleY matches the reviewed value',
-   mainCaseTitleY(3, D1_METRICS) === 889, { got: mainCaseTitleY(3, D1_METRICS) });
+   mainCaseTitleY(3, D1_METRICS) === 864, { got: mainCaseTitleY(3, D1_METRICS) });
 ok('Case 6 (John 14:27) Display 2 titleY matches the reviewed value (genuinely different line count)',
-   propCaseTitleY(2, D2_METRICS) === 1021, { got: propCaseTitleY(2, D2_METRICS) });
+   propCaseTitleY(2, D2_METRICS) === 1031, { got: propCaseTitleY(2, D2_METRICS) });
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
