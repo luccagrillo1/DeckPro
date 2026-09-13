@@ -51,6 +51,22 @@ function rtfOf(el) {
   ok('scripture: reference RTF contains reference text', rtfOf(ref).includes('John 3:16'));
 })();
 
+// ── 1b. Scripture prop — Display 2's own box, not Display 1's ────────────────
+(() => {
+  const cues = cuesOf([{
+    type: 'scripture',
+    propName: 'John 3:16',
+    reference: 'John 3:16',
+    bodies: [[{ text: 'For God so loved the world.', bold: false }]],
+    propBodyX: 111,
+    propBodyW: 222,
+    bodyX: 999,   // Display 1's own box — must NOT be used for Display 2
+    bodyW: 888,
+  }]);
+  const body = elByName(cues[0], 'body');
+  ok('scripture: body box uses propBodyX/propBodyW, not Display 1\'s bodyX/bodyW', body.bounds.origin.x === 111 && body.bounds.size.width === 222);
+})();
+
 // ── 2. Point-single prop ──────────────────────────────────────────────────────
 (() => {
   const cues = cuesOf([{
@@ -121,6 +137,13 @@ function rtfOf(el) {
   // scaleBehavior default
   const body  = elByName(cues0[0], 'body');
   ok('revealing: body scaleBehavior=SCALE_FONT_DOWN', scaleBehaviorOf(body) === 'SCALE_BEHAVIOR_SCALE_FONT_DOWN');
+
+  // Display 2's own box, not Display 1's
+  const cuesBox = cuesOf([{ type: 'point-revealing', propName: 'Rev', bullets, activeIdx: 0,
+    propBodyX: 111, propBodyW: 222, bodyX: 999, bodyW: 888 }]);
+  const boxBody = elByName(cuesBox[0], 'body');
+  ok('revealing: body box uses propBodyX/propBodyW, not Display 1\'s bodyX/bodyW',
+    boxBody.bounds.origin.x === 111 && boxBody.bounds.size.width === 222);
 })();
 
 // ── 4. Response-card prop ─────────────────────────────────────────────────────

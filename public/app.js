@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.29.2';
+const APP_VERSION = '4.29.3';
 
 const CHANGELOG = [
+  {
+    version: '4.29.3',
+    date: '2026-09-13',
+    changes: [
+      'Fixed the same LED-wall box bug just fixed for Point (Single/Split) in two more places: scripture and revealing-point props were also silently sized from the main screen\'s Fit Width box instead of their own. Every scripture and revealing-point slide with Fit Width and "+ Display 2" on now gets a correctly independent LED-wall box.',
+    ],
+  },
   {
     version: '4.29.2',
     date: '2026-09-13',
