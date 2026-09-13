@@ -521,17 +521,23 @@ function buildScripturePropCue(spec, rs = {}) {
 function buildPointSinglePropCue(spec, rs = {}) {
   const { propName, bodyText } = spec;
   const prs = makePropStyle(rs);
+  // Split mode: Display 2 shows its own independent text (propBodyText)
+  // instead of mirroring Display 1's bodyText — see buildSpec in
+  // public/app.js. Falls back to bodyText for normal (mirrored) single mode.
+  const propRawText = spec.mode === 'split' ? (spec.propBodyText || '') : bodyText;
   // Display 2's own hard-break override (spans, bold preserved), independent
-  // of Display 1's spec.bodyDisplaySpans — see buildSpec in public/app.js.
-  const bodyDisplay = spec.propBodyDisplaySpans || spec.propBodyDisplayText || bodyText;
+  // of Display 1's spec.bodyDisplaySpans.
+  const bodyDisplay = spec.propBodyDisplaySpans || spec.propBodyDisplayText || propRawText;
   const bodyRtf = rtf.rtfPointBody(bodyDisplay, prs);
   const adv     = prs.pointFontAdv || prs.boldFontAdv || {};
 
   // Fit Width override (per-slide, computed against Display 2's own metrics)
-  // takes precedence over the palette's static prop width.
-  const bx = spec.bodyX ?? prs.propPointX ?? prs.propBodyX ?? 0;
+  // takes precedence over the palette's static prop width. Uses Display 2's
+  // OWN propBodyX/propBodyW — not Display 1's bodyX/bodyW, which is a
+  // different box fitted to (possibly) different text on a different canvas.
+  const bx = spec.propBodyX ?? prs.propPointX ?? prs.propBodyX ?? 0;
   const by = prs.propPointY ?? prs.propBodyY ?? 729.98;
-  const bw = spec.bodyW ?? prs.propPointW ?? prs.propBodyW ?? prs.propCanvasW ?? 1920;
+  const bw = spec.propBodyW ?? prs.propPointW ?? prs.propBodyW ?? prs.propCanvasW ?? 1920;
   const bh = prs.propPointH ?? prs.propBodyH ?? 350.02;
   const boldYOff = adv.yOffset ?? 0;
 
@@ -542,7 +548,7 @@ function buildPointSinglePropCue(spec, rs = {}) {
     font: prs.pointFont || 'Montserrat-ExtraBold',
     fontSize: prs.pointSize || prs.bodySize || 80,
     center: true,
-    charCount: bodyText.length,
+    charCount: propRawText.length,
     vertAlign: resolveVertAlign(adv, 'VERTICAL_ALIGNMENT_BOTTOM'),
     scaleBehavior: 'SCALE_BEHAVIOR_SCALE_FONT_DOWN',
     margins: resolveMargins(adv, {}),

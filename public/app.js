@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.29.0';
+const APP_VERSION = '4.29.1';
 
 const CHANGELOG = [
+  {
+    version: '4.29.1',
+    date: '2026-09-13',
+    changes: [
+      'Point slides have a new Split mode alongside Single and Revealing: Main Screen and LED Wall get their own independent text boxes instead of showing the same words. Fit Width works on each independently, same as it already does for scripture. Fixed a related bug found along the way: a point-single slide\'s LED wall box was silently sized from the main screen\'s Fit Width result instead of its own — every point-single slide with Fit Width and "+ Display 2" on gets a correctly-fitted LED wall box now, not just new Split-mode ones.',
+    ],
+  },
   {
     version: '4.29.0',
     date: '2026-09-13',
@@ -2609,6 +2616,7 @@ const TOOLTIPS = {
   'split':                    'Split\nBreaks this scripture into a second slide so a long passage is shown across two slides instead of one crowded one.',
   // Point
   'point-single':             'Point — Single\nOne static prop that stays up while you talk. Use for a single point or statement.',
+  'point-split':              'Point — Split\nLike Single, but Main Screen and LED Wall show their own independent text instead of the same words — use when the two screens need to say different things.',
   'point-revealing':          'Point — Revealing\nOne prop per bullet, revealed one at a time. Use for a list that builds as you go.',
   // QR
   'qr-marker':                'QR Stop\nDrag into the deck to mark where auto QR-fill stops. Blanks before it default to QR on (when the deck-wide QR toggle is on); blanks at or after it default to off. Doesn\'t export as a slide.',
@@ -4209,7 +4217,11 @@ function _fitCurrentBodyHash(slide, scheme, display) {
     return _fitHash(spans, _fitResolveContext(scheme, 'scripture', display));
   }
   if (slide.type === 'point' && slide.mode !== 'revealing') {
-    const spans = [{ text: slide.bodyText || '', bold: true }];
+    // Split mode: Display 2 (prop) has its own independent text, so its
+    // staleness hash must depend on propBodyText, not bodyText — otherwise
+    // editing one field wouldn't correctly invalidate/preserve the other's cache.
+    const text = (isProp && slide.mode === 'split') ? (slide.propBodyText || '') : (slide.bodyText || '');
+    const spans = [{ text, bold: true }];
     return _fitHash(spans, _fitResolveContext(scheme, 'point', display));
   }
   return null;
@@ -4591,7 +4603,11 @@ function computeSlideFitWidth(slide, scheme) {
     const spans = [{ text, bold: true }];
     const main = computeOptimalBodyWidth(spans, scheme, 'point', 'main');
     if (!wantsProp) return { ...main, propBodyW: null, propBodyX: null, propBrokenText: null, propBrokenSpans: null, propFitHash: null };
-    const prop = computeOptimalBodyWidth(spans, scheme, 'point', 'prop');
+    // Split mode: Display 2 gets its own independent search against its own
+    // text (propBodyText) — never derived from Display 1's spans, same as
+    // scripture's main/prop split.
+    const propSpans = slide.mode === 'split' ? [{ text: slide.propBodyText || '', bold: true }] : spans;
+    const prop = computeOptimalBodyWidth(propSpans, scheme, 'point', 'prop');
     return { ...main, propBodyW: prop.bodyW, propBodyX: prop.bodyX, propBrokenText: prop.brokenText || null, propBrokenSpans: prop.brokenSpans || null, propFitHash: prop.fitHash };
   }
   return null;
@@ -9379,10 +9395,10 @@ function pointForm(slide) {
   const on   = !!slide.blankBefore;
   const F    = state.config.features || DEFAULT_FEATURES();
 
-  const singleFields = mode === 'single' ? `
+  const singleFields = (mode === 'single' || mode === 'split') ? `
     <div class="field" id="field-bodyText">
       <div class="body-field-hdr">
-        <label>Point Text</label>
+        <label>${mode === 'split' ? `${dn('mainScreen')} Text` : 'Point Text'}</label>
         <div class="body-field-tools">
           ${F.bodyTools ? `
           <button class="btn-sm body-tool-btn ${slide.fitWidth ? 'active' : ''}" id="btn-fit-width" type="button" data-tip-key="fit-width">Fit Width</button>
@@ -9394,6 +9410,12 @@ function pointForm(slide) {
       </div>
       ${plainEditor('f-bodyText', slide.bodyText, 'Point text…')}
     </div>
+    ${mode === 'split' ? `
+    <div class="field" id="field-propBodyText">
+      <label>${dn('ledWall')} Text</label>
+      ${plainEditor('f-propBodyText', slide.propBodyText, `${dn('ledWall')} text…`)}
+    </div>
+    ` : ''}
   ` : '';
 
   const followReveal = slide.followReveal || 'single';
@@ -9445,7 +9467,7 @@ function pointForm(slide) {
 
   // Prop section differs by mode
   const propPart = (() => {
-    if (mode === 'single') {
+    if (mode === 'single' || mode === 'split') {
       return propSection(slide, F, { showCustomProp: true });
     }
     // Revealing: prop base name + two separate transition overrides
@@ -9501,6 +9523,7 @@ function pointForm(slide) {
         <label>Mode</label>
         <div class="segmented-control">
           <button id="mode-single" class="${mode === 'single' ? 'active' : ''}" data-tip-key="point-single">Single</button>
+          <button id="mode-split" class="${mode === 'split' ? 'active' : ''}" data-tip-key="point-split">Split</button>
           <button id="mode-revealing" class="${mode === 'revealing' ? 'active' : ''}" data-tip-key="point-revealing">Revealing</button>
         </div>
       </div>
@@ -9989,10 +10012,14 @@ function attachFormHandlers(slide) {
   }
 
   // ── Point mode toggle ──
-  const modeS = get('mode-single');
-  const modeR = get('mode-revealing');
+  const modeS  = get('mode-single');
+  const modeSp = get('mode-split');
+  const modeR  = get('mode-revealing');
   if (modeS) {
     modeS.addEventListener('click', () => { slide.mode = 'single'; renderMain(); });
+  }
+  if (modeSp) {
+    modeSp.addEventListener('click', () => { slide.mode = 'split'; renderMain(); });
   }
   if (modeR) {
     modeR.addEventListener('click', () => { slide.mode = 'revealing'; renderMain(); });
@@ -10023,6 +10050,12 @@ function attachFormHandlers(slide) {
       const pn = get('f-propName');
       if (pn) pn.value = slide.propName;
     }
+    saveState();
+  });
+
+  // ── Point split fields (Display 2's own independent text) ──
+  attachPlainEditor('f-propBodyText', text => {
+    slide.propBodyText = text;
     saveState();
   });
 
@@ -10279,7 +10312,7 @@ function addSlide(type) {
   const endIdx = state.slides.findIndex(s => s.type === 'end');
   const defaults = {
     scripture: { label: 'New Scripture', reference: '', bodies: [[]], propName: '', blankBefore: true, blankSpans: [], blankShowProp: false, transition: null, propTransition: null, stripNewlines: false, fitWidth: true, bodyW: null, bodyX: null, propFitWidth: true, propBodyW: null, propBodyX: null, followReveal: 'single', qrOverride: null },
-    point:     { label: 'New Point', mode: 'single', bodyText: '', propName: '', propBaseName: '', title: '', bullets: [[]], blankBefore: true, blankSpans: [], blankShowProp: false, transition: null, propTransition: null, propInitialTransition: null, propRevealTransition: null, fitWidth: true, bodyW: null, bodyX: null, propFitWidth: true, propBodyW: null, propBodyX: null, qrOverride: null },
+    point:     { label: 'New Point', mode: 'single', bodyText: '', propBodyText: '', propName: '', propBaseName: '', title: '', bullets: [[]], blankBefore: true, blankSpans: [], blankShowProp: false, transition: null, propTransition: null, propInitialTransition: null, propRevealTransition: null, fitWidth: true, bodyW: null, bodyX: null, propFitWidth: true, propBodyW: null, propBodyX: null, qrOverride: null },
     blank:     { label: 'Blank', spans: [], transition: null, qrOverride: null },
     image:     { label: 'Image', blankBefore: true, blankSpans: [], transition: null, propTransition: null, qrOverride: null },
     custom:    { label: 'Custom' },
@@ -10924,9 +10957,13 @@ function buildSpec() {
       }
       return {
         type:          'point',
-        mode:          'single',
+        mode:          slide.mode === 'split' ? 'split' : 'single',
         label:         normalizeDeckQuotes(slide.label || slide.bodyText || 'Point'),
         bodyText:      normalizeBodyText(slide.bodyText || ''),
+        // Split mode: Display 2 gets its own independent raw text instead of
+        // mirroring bodyText — null in normal (single/mirrored) mode, where
+        // Display 2 falls back to bodyText downstream (see buildProp.js).
+        propBodyText:  slide.mode === 'split' ? normalizeBodyText(slide.propBodyText || '') : null,
         // Main-screen body only: same text with Fit Width's chosen hard breaks.
         // Prop name, notes and queue keep the unbroken bodyText. Guarded against
         // a stale cache: only used if collapsing the breaks reproduces the text.
@@ -10943,12 +10980,14 @@ function buildSpec() {
           _fitTextsMatch((slide._fitBrokenText || '').replace(/\n/g, ' ').trim(), (slide.bodyText || '').trim()))
           ? normalizeExportSpans(slide._fitBrokenSpans) : null,
         // Same idea for Display 2 (LED wall) — its own hard breaks, independent
-        // of Display 1's, since it wraps at its own box width.
+        // of Display 1's, since it wraps at its own box width. In Split mode
+        // these are checked against propBodyText (Display 2's own text), not
+        // bodyText — a stale cache from before a text edit must not survive.
         propBodyDisplayText: (slide.fitWidth && slide.propFitWidth && slide._fitPropBrokenText &&
-          _fitTextsMatch(slide._fitPropBrokenText.replace(/\n/g, ' ').trim(), (slide.bodyText || '').trim()))
+          _fitTextsMatch(slide._fitPropBrokenText.replace(/\n/g, ' ').trim(), (slide.mode === 'split' ? (slide.propBodyText || '') : (slide.bodyText || '')).trim()))
           ? normalizeBodyText(slide._fitPropBrokenText) : null,
         propBodyDisplaySpans: (slide.fitWidth && slide.propFitWidth && slide._fitPropBrokenSpans &&
-          _fitTextsMatch((slide._fitPropBrokenText || '').replace(/\n/g, ' ').trim(), (slide.bodyText || '').trim()))
+          _fitTextsMatch((slide._fitPropBrokenText || '').replace(/\n/g, ' ').trim(), (slide.mode === 'split' ? (slide.propBodyText || '') : (slide.bodyText || '')).trim()))
           ? normalizeExportSpans(slide._fitPropBrokenSpans) : null,
         propName:      normalizeDeckQuotes(slide.propName || slide.bodyText || 'point'),
         customProp:    !!slide.customProp,

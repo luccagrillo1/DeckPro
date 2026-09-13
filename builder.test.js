@@ -274,5 +274,17 @@ const bodyRtf = c => {
     queueRtf(scriptureCues[0]).includes('\\\'97') && queueRtf(scriptureCues[0]).includes('John 3:16'));
 })();
 
+// ---- Point Split mode: Display 1's cue only ever shows bodyText ----
+(() => {
+  const cues = cuesOf({ name: 'T', slides: [
+    { type: 'point', mode: 'split', label: 'Main Line', bodyText: 'Main Line', propBodyText: 'LED Wall Only Text', propName: 'Main Line' },
+  ] });
+  const a = slideAction(cues[0]);
+  const bodyEl = (a.slide.presentation.baseSlide.elements || []).find(e => e.element.name === 'body');
+  const rtfText = Buffer.from(bodyEl.element.text.rtfData, 'base64').toString('utf8');
+  ok('split mode: Display 1 body shows bodyText', rtfText.includes('Main Line'));
+  ok('split mode: Display 1 body does NOT show propBodyText', !rtfText.includes('LED Wall Only Text'));
+})();
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

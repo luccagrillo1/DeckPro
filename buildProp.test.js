@@ -65,6 +65,40 @@ function rtfOf(el) {
   ok('point-single: body RTF contains point text', rtfOf(body).includes('Create Opportunities'));
 })();
 
+// ── 2b. Point-split prop — Display 2's own independent text and box ──────────
+(() => {
+  const cues = cuesOf([{
+    type: 'point-single',
+    mode: 'split',
+    propName: 'Main Line',
+    bodyText: 'Main Line',
+    propBodyText: 'LED Wall Only Text',
+    propBodyX: 111,
+    propBodyW: 222,
+    bodyX: 999,   // Display 1's own box — must NOT leak into Display 2
+    bodyW: 888,
+  }]);
+  const body = elByName(cues[0], 'body');
+  ok('point-split: body RTF contains propBodyText, not bodyText', rtfOf(body).includes('LED Wall Only Text') && !rtfOf(body).includes('Main Line'));
+  ok('point-split: box uses propBodyX/propBodyW, not Display 1\'s bodyX/bodyW', body.bounds.origin.x === 111 && body.bounds.size.width === 222);
+})();
+
+// ── 2c. Point-single (mirrored, not split) still uses bodyText for the box ───
+(() => {
+  const cues = cuesOf([{
+    type: 'point-single',
+    propName: 'Mirrored',
+    bodyText: 'Mirrored',
+    propBodyX: 111,
+    propBodyW: 222,
+    bodyX: 999,   // Display 1's own box — must NOT be used for Display 2 either
+    bodyW: 888,
+  }]);
+  const body = elByName(cues[0], 'body');
+  ok('point-single (no split): still mirrors bodyText when propBodyText is absent', rtfOf(body).includes('Mirrored'));
+  ok('point-single (no split): still uses its own propBodyX/propBodyW, not Display 1\'s bodyX/bodyW', body.bounds.origin.x === 111 && body.bounds.size.width === 222);
+})();
+
 // ── 3. Point-revealing prop ───────────────────────────────────────────────────
 (() => {
   const bullets = ['First bullet', 'Second bullet', 'Third bullet'];
