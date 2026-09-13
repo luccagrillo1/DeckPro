@@ -88,17 +88,15 @@ function propTitleYOf(propBodyLines, rsExtra = {}) {
 })();
 
 (() => {
-  // bodyFontAdv.lineHeight is NOT wired into the actual export (builder.js's
-  // paragraphStyle.lineHeightMultiple is hardcoded to 1 regardless of it —
-  // see makeBodyElement), so ProPresenter always renders body text at its
-  // font's own natural leading no matter what this UI control says. The line
-  // height used for title-Y math must match that reality (real measured
-  // ascent+descent), not honor a setting that has zero effect on the render —
-  // titleY must be identical whether or not it's touched.
+  // bodyFontAdv.lineHeight is now wired into the real export (makeBodyElement
+  // writes it into paragraphStyle.lineHeightMultiple, previously hardcoded to
+  // 1 regardless of the scheme's "LINE" setting), so a non-default lineHeight
+  // must change titleY — the line height used for title-Y math is the same
+  // real measured ascent+descent scaled by this exact setting.
   const yDefault = titleYOf(buildPresentation(scriptureSpec(2)).cues[0]);
-  const yIgnored = titleYOf(buildPresentation(scriptureSpec(2, { bodyFontAdv: { lineHeight: 1.6 } })).cues[0]);
-  ok('bodyFontAdv.lineHeight does not affect titleY (it has no effect on the real export either)',
-     yDefault === yIgnored, { yDefault, yIgnored });
+  const yScaled  = titleYOf(buildPresentation(scriptureSpec(2, { bodyFontAdv: { lineHeight: 1.6 } })).cues[0]);
+  ok('bodyFontAdv.lineHeight now affects titleY (wired into the real export)',
+     yDefault !== yScaled, { yDefault, yScaled });
 })();
 
 (() => {

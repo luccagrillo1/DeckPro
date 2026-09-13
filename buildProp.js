@@ -192,7 +192,7 @@ function makeTextElement({ name, x, y, w, h, rtfData, font, fontSize, center, ch
     ? spanCapitalizationRanges(spans, adv, altAdv)
     : capitalizationCustomAttributes(adv, charCount);
   const paraStyle = {
-    lineHeightMultiple: 1,
+    lineHeightMultiple: adv?.lineHeight ?? 1,
     defaultTabInterval: 84,
     textList: {},
   };
@@ -415,14 +415,18 @@ function estimatePropTitleY(spans, bw, prs, knownLines, metrics) {
 
   // See estimateTitleY in builder.js for the full derivation of both halves
   // of this formula — same reasoning, Display 2's own metrics throughout.
-  const lineH    = metrics.ascent + metrics.descent;
+  // lineHeight sources match exactly what buildScripturePropCue's real
+  // elements render with: body uses prs.propBodyFontAdv (raw, not the
+  // Display-1-inheriting prs.bodyFontAdv), title uses prs.titleFontAdv
+  // (already resolved/inheriting by makePropStyle).
+  const lineH    = (metrics.ascent + metrics.descent) * (prs.propBodyFontAdv?.lineHeight ?? 1);
   const blockTop = (by + bh) - knownLines * lineH;
   const inkTop   = blockTop + (metrics.ascent - metrics.capAscent);
 
   // See estimateTitleY's scale-down note: when titleH is shorter than the
   // title font's natural line, ProPresenter shrinks the font to fit instead
   // of overflowing, so clamp to titleH there too.
-  const titleNaturalLineH = metrics.titleAscent + metrics.titleDescent;
+  const titleNaturalLineH = (metrics.titleAscent + metrics.titleDescent) * (prs.titleFontAdv?.lineHeight ?? 1);
   const titleScalesDown = resolveScaleBehavior(prs.titleFontAdv, 'SCALE_BEHAVIOR_SCALE_FONT_DOWN') === 'SCALE_BEHAVIOR_SCALE_FONT_DOWN';
   const titleLineH = titleScalesDown ? Math.min(titleNaturalLineH, th) : titleNaturalLineH;
   const align = (prs.titleFontAdv && prs.titleFontAdv.verticalAlignment) || 'middle';

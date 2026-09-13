@@ -462,7 +462,7 @@ function makeBodyElement({ name = 'body', x, y, w, h, rtfData, charCount, spans 
         ...capitalizationAttr(rs.bodyFontAdv),
         textSolidFill: textColorFromAdv(rs.bodyFontAdv),
         underlineStyle: {},
-        paragraphStyle: { lineHeightMultiple: 1, defaultTabInterval: 84, textList: {} },
+        paragraphStyle: { lineHeightMultiple: rs.bodyFontAdv?.lineHeight ?? 1, defaultTabInterval: 84, textList: {} },
         strikethroughStyle: {},
         ...resolveTextStroke(rs.bodyFontAdv),
         customAttributes: customAttrs,
@@ -508,7 +508,7 @@ function makePointBodyElement({ x, y, w, h, rtfData, text }, rs = {}) {
         underlineStyle: {},
         // Alignment follows Advanced → Alignment (default centered for points).
         // 'left' omits the field (proto default / natural-left), matching the RTF.
-        paragraphStyle: { ...(adv.alignment === 'left' ? {} : { alignment: adv.alignment === 'right' ? 'ALIGNMENT_RIGHT' : 'ALIGNMENT_CENTER' }), lineHeightMultiple: 1, defaultTabInterval: 84, textList: {} },
+        paragraphStyle: { ...(adv.alignment === 'left' ? {} : { alignment: adv.alignment === 'right' ? 'ALIGNMENT_RIGHT' : 'ALIGNMENT_CENTER' }), lineHeightMultiple: adv.lineHeight ?? 1, defaultTabInterval: 84, textList: {} },
         strikethroughStyle: {},
         ...resolveTextStroke(rs.pointFontAdv || rs.boldFontAdv),
         customAttributes: capitalizationCustomAttributes(adv, charCount),
@@ -554,7 +554,7 @@ function makeStartEndElement({ text }, rs = {}) {
         ...capitalizationAttr(rs.startEndFontAdv),
         textSolidFill: textColorFromAdv(rs.startEndFontAdv),
         underlineStyle: {},
-        paragraphStyle: { lineHeightMultiple: 1, defaultTabInterval: 84, textList: {} },
+        paragraphStyle: { lineHeightMultiple: rs.startEndFontAdv?.lineHeight ?? 1, defaultTabInterval: 84, textList: {} },
         strikethroughStyle: {},
         ...resolveTextStroke(rs.startEndFontAdv),
         customAttributes: capitalizationCustomAttributes(rs.startEndFontAdv, charCount),
@@ -595,7 +595,7 @@ function makeStartEndTitleEl({ text }, rs = {}) {
         font: { name: rs.liveFont || 'HelveticaNeue', size: rs.liveSize || 42, family: rs.liveFont || 'Helvetica Neue' },
         textSolidFill: textColorFromAdv(rs.liveFontAdv),
         underlineStyle: {},
-        paragraphStyle: { alignment: 'ALIGNMENT_CENTER', lineHeightMultiple: 1, defaultTabInterval: 84, textList: {} },
+        paragraphStyle: { alignment: 'ALIGNMENT_CENTER', lineHeightMultiple: rs.liveFontAdv?.lineHeight ?? 1, defaultTabInterval: 84, textList: {} },
         strikethroughStyle: {},
         strokeWidth: 0,
         customAttributes: [{ range: { end: label.length } }],
@@ -629,7 +629,7 @@ function makeLiveElement(rs = {}) {
         font: { name: rs.liveFont || 'HelveticaNeue', size: rs.liveSize || 42, family: rs.liveFont || 'Helvetica Neue' },
         textSolidFill: textColorFromAdv(rs.liveFontAdv),
         underlineStyle: {},
-        paragraphStyle: { alignment: 'ALIGNMENT_CENTER', lineHeightMultiple: 1, defaultTabInterval: 84, textList: {} },
+        paragraphStyle: { alignment: 'ALIGNMENT_CENTER', lineHeightMultiple: rs.liveFontAdv?.lineHeight ?? 1, defaultTabInterval: 84, textList: {} },
         strikethroughStyle: {},
         strokeWidth: 0,
         customAttributes: [{ range: { end: 4 } }],
@@ -703,12 +703,12 @@ function estimateTitleY(displayBody, bw, rs, knownLines, metrics, strict = false
   if (hasReal) {
     // Body block is bottom-anchored (verticalAlignment BOTTOM — see
     // makeBodyElement), so N lines of real line-box height sit flush with the
-    // box's bottom edge. lineH is the font's own measured ascent+descent, not
-    // a guessed multiplier: ProPresenter's line-height-multiple export field
-    // is hardcoded to 1 regardless of the scheme's "line height" UI setting
-    // (that control isn't wired into the actual export), so the font's own
-    // natural leading — what actually renders — IS the line height.
-    const lineH    = metrics.ascent + metrics.descent;
+    // box's bottom edge. lineH is the font's own measured ascent+descent
+    // scaled by the scheme's "line height" (LINE) setting — makeBodyElement
+    // now writes that value into the real export's lineHeightMultiple field
+    // (previously hardcoded to 1 regardless of the setting), so this must
+    // match what actually renders.
+    const lineH    = (metrics.ascent + metrics.descent) * (rs.bodyFontAdv?.lineHeight ?? 1);
     const blockTop = (by + bh) - knownLines * lineH;
     const inkTop   = blockTop + (metrics.ascent - metrics.capAscent);
 
@@ -724,7 +724,7 @@ function estimateTitleY(displayBody, bw, rs, knownLines, metrics, strict = false
     // the font to fit titleH instead of overflowing it — clamp to titleH in
     // that case so the three alignments correctly converge (no slack left to
     // disagree about) instead of assuming a taller line than actually renders.
-    const titleNaturalLineH = metrics.titleAscent + metrics.titleDescent;
+    const titleNaturalLineH = (metrics.titleAscent + metrics.titleDescent) * (rs.titleFontAdv?.lineHeight ?? 1);
     const titleScalesDown = resolveScaleBehavior(rs.titleFontAdv, 'SCALE_BEHAVIOR_SCALE_FONT_DOWN') === 'SCALE_BEHAVIOR_SCALE_FONT_DOWN';
     const titleLineH = titleScalesDown ? Math.min(titleNaturalLineH, th) : titleNaturalLineH;
     const align = (rs.titleFontAdv && rs.titleFontAdv.verticalAlignment) || 'middle';
@@ -805,7 +805,7 @@ function makeTitleElement({ reference, titleY }, rs = {}) {
         ...capitalizationAttr(adv),
         textSolidFill: (rs.titleFontAdv && rs.titleFontAdv.color) ? hexToColor(rs.titleFontAdv.color) : C_WHITE,
         underlineStyle: {},
-        paragraphStyle: { alignment: 'ALIGNMENT_CENTER', lineHeightMultiple: 1, paragraphSpacing: 20, defaultTabInterval: 84, textList: {} },
+        paragraphStyle: { alignment: 'ALIGNMENT_CENTER', lineHeightMultiple: adv.lineHeight ?? 1, paragraphSpacing: 20, defaultTabInterval: 84, textList: {} },
         strikethroughStyle: {},
         ...resolveTextStroke(rs.titleFontAdv),
         customAttributes: capitalizationCustomAttributes(adv, charCount),
@@ -939,7 +939,7 @@ function makeQueueElement(labels, rs = {}) {
         font: { name: 'HelveticaNeue', size: 16, family: 'Helvetica Neue' },
         textSolidFill: C_WHITE,
         underlineStyle: {},
-        paragraphStyle: { lineHeightMultiple: 1, defaultTabInterval: 84, textList: {} },
+        paragraphStyle: { lineHeightMultiple: rs.queueFontAdv?.lineHeight ?? 1, defaultTabInterval: 84, textList: {} },
         strikethroughStyle: {},
         strokeWidth: 0,
         customAttributes: [],

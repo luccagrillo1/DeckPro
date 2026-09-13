@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.29.1';
+const APP_VERSION = '4.29.2';
 
 const CHANGELOG = [
+  {
+    version: '4.29.2',
+    date: '2026-09-13',
+    changes: [
+      'The Styles LINE (line height) setting is now wired into every text element\'s real export field (paragraphStyle.lineHeightMultiple), for every row that has a LINE control — Body, Bold, Title, Point, RC Body/Title, both Displays, Slide Notes, and Utility. Previously that field was hardcoded to 1 regardless of the setting, so the LINE slider had no effect on the exported file. Auto Title Y\'s line-height math is updated to match — it now multiplies the font\'s real measured line height by this same setting instead of assuming it\'s always 1, so title position stays correct for schemes using a non-default LINE value.',
+    ],
+  },
   {
     version: '4.29.1',
     date: '2026-09-13',
