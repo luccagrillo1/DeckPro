@@ -830,212 +830,8 @@ function makeGradientElement() {
 
 // ─── Response card element builders ──────────────────────────────────────────
 
-const RC_LAYOUT = {
-  title: { x: 325, y: 856, w: 2550, h: 400 },
-  mark:  { x: 310, w: 70, h: 150 },
-  row:   { x: 400, w: 2600, h: 150 },
-  rowYs: [150, 330, 510, 690],
-};
-const RC_MARK_LABELS = ['•', '1', '2', '3'];
-
-function rcResponses(responses = {}) {
-  return [responses.decisionText || '', responses.r1 || '', responses.r2 || '', responses.r3 || ''];
-}
-
 function textColorFromAdv(adv, fallback = C_WHITE) {
   return adv?.color ? hexToColor(adv.color) : fallback;
-}
-
-/** Legacy decorative "response N" label — kept for backwards-compatible tests/tools. */
-function makeResponseLabelElement(n) {
-  const id = uuid();
-  return {
-    uuid: id,
-    name: 'title',
-    bounds: bounds(77, 847.8, 1759.8, 211.2),
-    opacity: 1,
-    path: RECT_PATH,
-    fill: { color: hexToColor('#2196f2') },
-    stroke: { width: 3, color: C_WHITE },
-    shadow: EL_SHADOW_STD,
-    feather: { radius: 0.05 },
-    text: {
-      attributes: {
-        font: { name: 'Desire-Pro', size: 60, family: 'Desire-Pro' },
-        textSolidFill: C_TAN,
-        underlineStyle: {},
-        paragraphStyle: { alignment: 'ALIGNMENT_CENTER', lineHeightMultiple: 1, defaultTabInterval: 84, textList: {} },
-        strikethroughStyle: {},
-        strokeWidth: -1,
-        strokeColor: C_BLACK_A,
-        customAttributes: [],
-      },
-      shadow: TXT_SHADOW_LO,
-      rtfData: rtf.rtfResponseLabel(n),
-      scaleBehavior: 'SCALE_BEHAVIOR_SCALE_FONT_DOWN',
-      verticalAlignment: 'VERTICAL_ALIGNMENT_MIDDLE',
-      margins: {},
-      isSuperscriptStandardized: true,
-      transformDelimiter: '  •  ',
-      chordPro: { color: C_CHORD },
-    },
-    textLineMask: {},
-  };
-}
-
-/** Legacy single response body element — kept for backwards-compatible tests/tools. */
-function makeResponseBodyElement(text) {
-  const id = uuid();
-  const charCount = (text || '').length;
-  return {
-    uuid: id,
-    name: 'body',
-    bounds: bounds(82.8, 730, 1754.4, 350),
-    opacity: 1,
-    path: RECT_PATH,
-    fill: { color: hexToColor('#2196f2') },
-    stroke: { width: 3, color: C_WHITE },
-    shadow: EL_SHADOW_STD,
-    feather: { radius: 0.05 },
-    text: {
-      attributes: {
-        font: { name: rs.bodyFont || 'Montserrat-Medium', size: rs.bodySize || 45, family: rs.bodyFont || 'Montserrat' },
-        textSolidFill: C_WHITE,
-        underlineStyle: {},
-        paragraphStyle: { alignment: 'ALIGNMENT_CENTER', lineHeightMultiple: 1, defaultTabInterval: 84, textList: {} },
-        strikethroughStyle: {},
-        strokeWidth: -1,
-        strokeColor: C_BLACK_A,
-        customAttributes: charCount ? [{ range: { end: charCount } }] : [],
-      },
-      shadow: TXT_SHADOW_LO,
-      rtfData: rtf.rtfResponseBody(text, rs),
-      scaleBehavior: 'SCALE_BEHAVIOR_SCALE_FONT_DOWN',
-      verticalAlignment: 'VERTICAL_ALIGNMENT_BOTTOM',
-      margins: { bottom: 60 },
-      isSuperscriptStandardized: true,
-      transformDelimiter: '  •  ',
-      chordPro: { color: C_CHORD },
-    },
-    textLineMask: {},
-  };
-}
-
-function makeResponseCardTitleElement(rs = {}) {
-  const id = uuid();
-  const text = 'Response Card';
-  const adv = rs.titleFontAdv || {};
-  return {
-    uuid: id,
-    name: 'response card',
-    bounds: bounds(RC_LAYOUT.title.x, RC_LAYOUT.title.y + (adv.yOffset ?? 0), RC_LAYOUT.title.w, RC_LAYOUT.title.h),
-    opacity: 1,
-    path: RECT_PATH,
-    fill: { color: { alpha: 0 } },
-    stroke: resolveStroke(adv, { width: 3, color: C_WHITE }),
-    shadow: resolveShadow(adv, EL_SHADOW_STD),
-    feather: { radius: 0.05 },
-    text: {
-      attributes: {
-        font: { name: rs.titleFont || 'Montserrat-ExtraBold', size: rs.titleSize || 60, bold: !!adv.bold, family: rs.titleFont || 'Montserrat' },
-        ...capitalizationAttr(adv),
-        textSolidFill: textColorFromAdv(adv),
-        underlineStyle: {},
-        paragraphStyle: { alignment: 'ALIGNMENT_CENTER', lineHeightMultiple: 1, defaultTabInterval: 84, textList: {} },
-        strikethroughStyle: {},
-        strokeWidth: -1,
-        strokeColor: C_BLACK_A,
-        customAttributes: capitalizationCustomAttributes(adv, text.length),
-      },
-      shadow: TXT_SHADOW_LO,
-      rtfData: rtf.rtfTitle(text, rs),
-      ...(resolveScaleBehavior(adv, undefined) !== undefined ? { scaleBehavior: resolveScaleBehavior(adv, undefined) } : {}),
-      verticalAlignment: resolveVertAlign(adv, 'VERTICAL_ALIGNMENT_MIDDLE'),
-      margins: resolveMargins(adv, {}),
-      isSuperscriptStandardized: true,
-      transformDelimiter: '  •  ',
-      chordPro: { color: C_CHORD },
-    },
-    textLineMask: {},
-  };
-}
-
-function makeResponseCardRowElement(n, text, rs = {}) {
-  const id = uuid();
-  const adv = rs.bodyFontAdv || {};
-  const charCount = (text || '').length;
-  const y = RC_LAYOUT.rowYs[n - 1] ?? RC_LAYOUT.rowYs[0];
-  return {
-    uuid: id,
-    name: `response ${n}`,
-    bounds: bounds(RC_LAYOUT.row.x, y + (adv.yOffset ?? 0), RC_LAYOUT.row.w, RC_LAYOUT.row.h),
-    opacity: 1,
-    path: RECT_PATH,
-    fill: { color: { alpha: 0 } },
-    stroke: resolveStroke(adv, { width: 3, color: C_WHITE }),
-    shadow: resolveShadow(adv, EL_SHADOW_STD),
-    feather: { radius: 0.05 },
-    text: {
-      attributes: {
-        font: { name: rs.bodyFont || 'Montserrat-Medium', size: rs.bodySize || 44, family: rs.bodyFont || 'Montserrat' },
-        textSolidFill: textColorFromAdv(adv),
-        underlineStyle: {},
-        paragraphStyle: { alignment: 'ALIGNMENT_CENTER', lineHeightMultiple: 1, defaultTabInterval: 84, textList: {} },
-        strikethroughStyle: {},
-        strokeWidth: -1,
-        strokeColor: C_BLACK_A,
-        customAttributes: charCount ? [{ range: { end: charCount } }] : [],
-      },
-      shadow: TXT_SHADOW_LO,
-      rtfData: rtf.rtfResponseBody(text, rs),
-      ...(resolveScaleBehavior(adv, undefined) !== undefined ? { scaleBehavior: resolveScaleBehavior(adv, undefined) } : {}),
-      verticalAlignment: resolveVertAlign(adv, 'VERTICAL_ALIGNMENT_MIDDLE'),
-      margins: resolveMargins(adv, {}),
-      isSuperscriptStandardized: true,
-      transformDelimiter: '  •  ',
-      chordPro: { color: C_CHORD },
-    },
-    textLineMask: {},
-  };
-}
-
-function makeResponseCardMarkElement(n, rs = {}) {
-  const id = uuid();
-  const text = RC_MARK_LABELS[n - 1] || String(n);
-  const adv = rs.bodyFontAdv || {};
-  const y = RC_LAYOUT.rowYs[n - 1] ?? RC_LAYOUT.rowYs[0];
-  return {
-    uuid: id,
-    name: `mark ${n}`,
-    bounds: bounds(RC_LAYOUT.mark.x, y + (adv.yOffset ?? 0), RC_LAYOUT.mark.w, RC_LAYOUT.mark.h),
-    opacity: 1,
-    path: RECT_PATH,
-    fill: { color: { alpha: 0 } },
-    stroke: resolveStroke(adv, { width: 3, color: C_WHITE }),
-    shadow: resolveShadow(adv, EL_SHADOW_STD),
-    feather: { radius: 0.05 },
-    text: {
-      attributes: {
-        font: { name: rs.bodyFont || 'Montserrat-Medium', size: rs.bodySize || 44, family: rs.bodyFont || 'Montserrat' },
-        textSolidFill: textColorFromAdv(adv),
-        underlineStyle: {},
-        paragraphStyle: { alignment: 'ALIGNMENT_RIGHT', lineHeightMultiple: 1, defaultTabInterval: 84, textList: {} },
-        strikethroughStyle: {},
-        strokeWidth: -1,
-        strokeColor: C_BLACK_A,
-        customAttributes: [{ range: { end: text.length } }],
-      },
-      shadow: TXT_SHADOW_LO,
-      rtfData: rtf.rtfResponseMark(text, rs),
-      ...(resolveScaleBehavior(adv, undefined) !== undefined ? { scaleBehavior: resolveScaleBehavior(adv, undefined) } : {}),
-      verticalAlignment: resolveVertAlign(adv, 'VERTICAL_ALIGNMENT_MIDDLE'),
-      margins: resolveMargins(adv, {}),
-      isSuperscriptStandardized: true,
-      transformDelimiter: '  •  ',
-      chordPro: { color: C_CHORD },
-    },
-    textLineMask: {},
-  };
 }
 
 /** Display 1 RC slide: scheme body + title, just like a scripture slide. */
@@ -1081,44 +877,6 @@ function makeRCSlide1(label, bodyText, rs = {}) {
     makeSlot(makeTitleElement({ reference: label, titleY }, titleStyle)),
     makeSlot(makeBodyElement({ x: bx, y: by + bodyYOff, w: bw, h: bh, rtfData: bodyRtf, charCount: (bodyText || '').length }, bodyStyle)),
   ];
-}
-
-/** Confidence monitor element for response slides — off-screen y=1135, full list */
-function makeResponseConfMonitorElement(decisionText, r1, r2, r3, rs = {}) {
-  const id = uuid();
-  const plain = [decisionText || '', `1 — ${r1 || ''}`, `2 — ${r2 || ''}`, `3 — ${r3 || ''}`].join('\n');
-  const adv = rs.notesFontAdv || {};
-  return {
-    uuid: id,
-    name: 'this slide',
-    bounds: bounds(76.8, 1135.1, 1832.3, 351.6),
-    opacity: 1,
-    path: RECT_PATH,
-    fill: { color: hexToColor('#2196f2') },
-    stroke: resolveStroke(adv, { width: 3, color: C_WHITE }),
-    shadow: resolveShadow(adv, EL_SHADOW_STD),
-    feather: { radius: 0.05 },
-    text: {
-      attributes: {
-        font: { name: rs.notesFont || 'Montserrat-Medium', size: rs.notesSize || 40, family: rs.notesFont || 'Montserrat' },
-        textSolidFill: textColorFromAdv(adv),
-        underlineStyle: {},
-        paragraphStyle: { lineHeightMultiple: 1, defaultTabInterval: 84, textList: {} },
-        strikethroughStyle: {},
-        ...resolveTextStroke(adv),
-        customAttributes: plain.length ? [{ range: { end: plain.length } }] : [],
-      },
-      shadow: resolveTextShadow(adv, TXT_SHADOW_LO),
-      rtfData: rtf.rtfResponseConfMonitor(decisionText, r1, r2, r3),
-      scaleBehavior: resolveScaleBehavior(adv, 'SCALE_BEHAVIOR_SCALE_FONT_DOWN'),
-      verticalAlignment: resolveVertAlign(adv, 'VERTICAL_ALIGNMENT_TOP'),
-      margins: resolveMargins(adv, { top: 10 }),
-      isSuperscriptStandardized: true,
-      transformDelimiter: '  •  ',
-      chordPro: { color: C_CHORD },
-    },
-    textLineMask: {},
-  };
 }
 
 /** Response Card Hold title — Montserrat-BlackItalic, static */
@@ -1617,20 +1375,20 @@ function buildImageCue(spec, rs) {
 }
 
 /**
- * 6 response card cues (order: Blank → RC → R1 → R2 → R3 → Hold).
- * Content cues share the full response-card layout from the Pro7 reference:
- * title + four response rows + four number marks.
+ * 6 response card cues (order: Blank → R1 → R2 → R3 → R4 → Hold).
+ * Four equal numbered responses — no separate intro/decision cue (v4.29.0;
+ * previously Blank → Response Card (decision text) → R1 → R2 → R3 → Hold).
  * Stage layout actions are injected by the trigger-based step in buildPresentation.
  */
 function buildResponseCardCues(responses = {}, rs = {}) {
-  const { decisionText = '', r1 = '', r2 = '', r3 = '' } = responses;
+  const { r1 = '', r2 = '', r3 = '', r4 = '' } = responses;
 
-  const DEFAULT_RC_NOTES = '{decision}\n1 — {r1}\n2 — {r2}\n3 — {r3}';
+  const DEFAULT_RC_NOTES = '1 — {r1}\n2 — {r2}\n3 — {r3}\n4 — {r4}';
   const notesText = (responses.notesTemplate || DEFAULT_RC_NOTES)
-    .replace(/\{decision(?:Text)?\}/g, decisionText || '')
     .replace(/\{r1\}/g, r1 || '')
     .replace(/\{r2\}/g, r2 || '')
-    .replace(/\{r3\}/g, r3 || '');
+    .replace(/\{r3\}/g, r3 || '')
+    .replace(/\{r4\}/g, r4 || '');
   const rcNotesRtf = notesText.trim()
     ? (rtf.rtfNotes([{ text: notesText }], rs) || emptyNotesRtf())
     : emptyNotesRtf();
@@ -1646,20 +1404,8 @@ function buildResponseCardCues(responses = {}, rs = {}) {
     ],
   };
 
-  // ── 2. Response Card (main full card layout) ────────────────────────────────
-  const rcMainCue = {
-    uuid: uuid(),
-    completionActionType: 'COMPLETION_ACTION_TYPE_LAST',
-    hotKey: {},
-    isEnabled: true,
-    actions: [
-      makeSlideAction('Response Card', makeRCSlide1('Response Card', decisionText, rs), null, rcNotesRtf),
-      propAction('Response Card'),
-    ],
-  };
-
-  // ── 3–5. Response 1, 2, 3 ──────────────────────────────────────────────────
-  const responseCues = [r1, r2, r3].map((text, idx) => {
+  // ── 2–5. Response 1, 2, 3, 4 ──────────────────────────────────────────────
+  const responseCues = [r1, r2, r3, r4].map((text, idx) => {
     const n = idx + 1;
     return {
       uuid: uuid(),
@@ -1688,11 +1434,10 @@ function buildResponseCardCues(responses = {}, rs = {}) {
   };
 
   blankCue._isRcBlank = true;
-  rcMainCue._isRcContent = true;
   for (const c of responseCues) c._isRcContent = true;
   holdCue._isRcHold = true;
-  for (const c of [blankCue, rcMainCue, ...responseCues, holdCue]) c._type = 'rc';
-  return [blankCue, rcMainCue, ...responseCues, holdCue];
+  for (const c of [blankCue, ...responseCues, holdCue]) c._type = 'rc';
+  return [blankCue, ...responseCues, holdCue];
 }
 
 // ─── Helper: inject stage layout action into a cue ────────────────────────

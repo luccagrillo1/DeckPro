@@ -593,41 +593,28 @@ function buildRevealingPointPropCue(spec, rs = {}) {
 
 // ─── Response Card prop cue ───────────────────────────────────────────────
 
-const RC_LAYOUT = {
-  title: { x: 325, y: 856, w: 2550, h: 400 },
-  mark:  { x: 310, w: 70, h: 150 },
-  row:   { x: 400, w: 2600, h: 150 },
-  rowYs: [150, 330, 510, 690],
-};
-const RC_MARK_LABELS = ['•', '1', '2', '3'];
-
 // Default Response Card elements for the LED wall prop (display 2). The base 5
-// (title + decision + 3 responses) plus any custom elements live per-scheme as
+// (title + 4 responses) plus any custom elements live per-scheme as
 // rs.rcElements; users edit name/text/position/style and add more via the UI.
 // font/size/color/align empty ('' or 0) = inherit the scheme's prop title/body.
 function DEFAULT_RC_ELEMENTS() {
   return [
-    { id: 'rc-title',    role: 'title',    name: 'Response Card', text: 'Response Card', x: 325, y: 856, w: 2550, h: 400, font: '', size: 0, color: '', align: 'center' },
-    { id: 'rc-decision', role: 'decision', name: 'Decision',      text: '',              x: 400, y: 150, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
-    { id: 'rc-r1',       role: 'r1',       name: 'Response 1',     text: '',              x: 400, y: 330, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
-    { id: 'rc-r2',       role: 'r2',       name: 'Response 2',     text: '',              x: 400, y: 510, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
-    { id: 'rc-r3',       role: 'r3',       name: 'Response 3',     text: '',              x: 400, y: 690, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
+    { id: 'rc-title', role: 'title', name: 'Response Card', text: 'Response Card', x: 325, y: 856, w: 2550, h: 400, font: '', size: 0, color: '', align: 'center' },
+    { id: 'rc-r1',    role: 'r1',    name: 'Response 1',    text: '',              x: 400, y: 150, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
+    { id: 'rc-r2',    role: 'r2',    name: 'Response 2',    text: '',              x: 400, y: 330, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
+    { id: 'rc-r3',    role: 'r3',    name: 'Response 3',    text: '',              x: 400, y: 510, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
+    { id: 'rc-r4',    role: 'r4',    name: 'Response 4',    text: '',              x: 400, y: 690, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
   ];
-}
-
-function responseRows(responses = {}) {
-  return [responses.decisionText || '', responses.r1 || '', responses.r2 || '', responses.r3 || ''];
 }
 
 function buildResponseCardPropCue(spec, rs = {}) {
   const prs = makePropStyle(rs);
   const responses = spec.responses || {};
-  // Per-scheme, fully-editable element list (display 2). Decision/R1–R3 text
+  // Per-scheme, fully-editable element list (display 2). Response 1-4 text
   // comes from the Response Card deck item; title/custom text from the element.
   const defs = (Array.isArray(rs.rcElements) && rs.rcElements.length) ? rs.rcElements : DEFAULT_RC_ELEMENTS();
   const roleText = {
-    decision: responses.decisionText || '',
-    r1: responses.r1 || '', r2: responses.r2 || '', r3: responses.r3 || '',
+    r1: responses.r1 || '', r2: responses.r2 || '', r3: responses.r3 || '', r4: responses.r4 || '',
   };
   const elements = defs.map(el => {
     const isTitle = el.role === 'title';

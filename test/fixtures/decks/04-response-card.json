@@ -2,10 +2,10 @@
   "name": "04 Response Card",
   "includeResponseCard": true,
   "responses": {
-    "decisionText": "I have decided to follow Jesus today!",
     "r1": "I am committing my life to Christ.",
     "r2": "I am recommitting my life to Christ.",
-    "r3": "I want to learn more about following Jesus."
+    "r3": "I want to learn more about following Jesus.",
+    "r4": "I want to be baptized."
   },
   "slides": [
     { "type": "start", "label": "START", "text": "START" },

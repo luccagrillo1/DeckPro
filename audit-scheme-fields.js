@@ -44,7 +44,7 @@ function sinkDeck() {
   return {
     name: 'AUDIT',
     includeResponseCard: true,
-    responses: { decision: 'D', r1: 'A', r2: 'B', r3: 'C' },
+    responses: { r1: 'A', r2: 'B', r3: 'C', r4: 'D' },
     slides: [
       { type: 'start', label: 'START', text: 'START' },
       // bodyLines/ascent/descent/capAscent/titleAscent/titleDescent stand in
@@ -70,7 +70,7 @@ function sinkProps() {
       bodies: [[{ text: 'plain verse ' }, { text: 'emphasis', alt: true }]] },
     { type: 'point-single', propName: 'Pt', bodyText: 'A point' },
     { type: 'point-revealing', propName: 'Rev', bullets: ['One', 'Two'], activeIdx: 1 },
-    { type: 'response-card', propName: 'RC', decision: 'D', r1: 'A', r2: 'B', r3: 'C' },
+    { type: 'response-card', propName: 'RC', responses: { r1: 'A', r2: 'B', r3: 'C', r4: 'D' } },
   ];
 }
 

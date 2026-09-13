@@ -708,24 +708,6 @@ function rtfEmpty() {
 
 // ─── Response Card RTF ────────────────────────────────────────────────────────
 
-const COLORTBL_TAN_STROKE = [
-  '{\\colortbl;\\red255\\green255\\blue255;\\red222\\green168\\blue125;\\red0\\green0\\blue0;}',
-  '{\\*\\expandedcolortbl;;\\cssrgb\\c89804\\c71765\\c56078;\\cssrgb\\c0\\c0\\c0;}',
-].join('\n');
-
-const PARD_RESPONSE_TITLE = '\\pard\\pardeftab1680\\sl24\\slmult1\\sa400\\pardirnatural\\qc\\partightenfactor0';
-
-/**
- * Decorative "response N" label — Desire-Pro font, tan color, centered.
- * n: 1 | 2 | 3
- */
-function rtfResponseLabel(n) {
-  const fonttbl = '{\\fonttbl\\f0\\fswiss\\fcharset0 Desire-Pro;}';
-  const pard    = PARD_RESPONSE_TITLE;
-  const body    = `\\f0\\fs120 \\cf2 \\kerning1\\expnd12\\expndtw60\n\\CocoaLigature0 \\outl0\\strokewidth-20 \\strokec3 response ${n}`;
-  return toBase64(rtfDoc({ fonttbl, colortbl: COLORTBL_TAN_STROKE, pard, body }));
-}
-
 /**
  * Response-card row text — scheme body font, centered.
  */
@@ -739,26 +721,6 @@ function rtfResponseBody(text, style = {}) {
   const pard    = makePard({ ...adv, alignment: adv.alignment || 'center' }, false);
   const body    = `\\f0\\fs${fs} \\cf2 ${cf}\\CocoaLigature0 \\outl0\\strokewidth-20 \\strokec3 ${escapeRtf(text || '')}`;
   return toBase64(rtfDoc({ fonttbl, colortbl: makeColortbl(['#ffffff', color, '#000000']), pard, body }));
-}
-
-function rtfResponseMark(n, style = {}) {
-  return rtfResponseBody(String(n), style);
-}
-
-/**
- * Confidence monitor list for response slides.
- */
-function rtfResponseConfMonitor(decisionText, r1, r2, r3) {
-  const fonttbl = '{\\fonttbl\\f0\\fnil\\fcharset0 Montserrat-Medium;}';
-  const pard    = PARD_NORMAL;
-  const lines   = [
-    decisionText || '',
-    `1 — ${r1 || ''}`,
-    `2 — ${r2 || ''}`,
-    `3 — ${r3 || ''}`,
-  ].map(l => escapeRtf(l)).join('\\\n');
-  const body = `\\f0\\fs80 \\cf2 \\CocoaLigature0 \\outl0\\strokewidth-20 \\strokec3 ${lines}`;
-  return toBase64(rtfDoc({ fonttbl, colortbl: COLORTBL_WHITE_STROKE, pard, body }));
 }
 
 /**
@@ -818,6 +780,6 @@ function rtfNotes(spans, style = {}) {
 module.exports = {
   rtfBody, rtfTitle, rtfLive, rtfLiveLabel, rtfStartEnd, rtfPointList, rtfPointBody,
   rtfRevealingPoints, rtfQueue, rtfEmpty, rtfNotes, escapeRtf,
-  rtfResponseLabel, rtfResponseBody, rtfResponseMark, rtfResponseConfMonitor, rtfResponseHoldTitle,
+  rtfResponseBody, rtfResponseHoldTitle,
   bulletToText, bulletToSpans, parseRtfSpans, parsePointBodySpans,
 };

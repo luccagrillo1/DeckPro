@@ -37,9 +37,7 @@ Classification is by action types + element names present:
 Note: **Message - Blank** macro is now on the **Response Card Hold** cue only (not END).
 
 ### Response Card cues (auto-appended before END if `includeResponseCard`)
-1. `Response Card Hold` — SLIDE + MACRO(Message-Blank) + PROP("Response Card")
-2. `Response 1/2/3` — SLIDE + PROP("Response Card")
-3. `Response Card` — SLIDE + MACRO(LOGO) + CLEAR
+6 cues, in order: `Response Card Blank` → `Response 1` → `Response 2` → `Response 3` → `Response 4` → `Response Card Hold`. Four equal numbered responses (v4.29.0+) — no separate intro/decision cue; `state.config.responses = {r1, r2, r3, r4, notesTemplate}`. All four "Response N" cues (plus the Blank/Hold cues) reference the single "Response Card" prop, which shows all 4 responses at once on the LED wall (Display 2) — see `buildResponseCardCues` in `builder.js`.
 
 ## Macro UUIDs (confirmed from output.json)
 - `Message - Start`: `7C586E48-986E-4932-9219-7D6A64BE5B6C`

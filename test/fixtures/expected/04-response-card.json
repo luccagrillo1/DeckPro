@@ -108,47 +108,11 @@
           "transitionDuration": 0.6,
           "bodies": [
             {
-              "text": "Response Card",
-              "super": false,
-              "bold": false
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": null,
-      "actions": [
-        {
-          "type": "PRESENTATION_SLIDE",
-          "label": "Response Card",
-          "transitionDuration": 0.6,
-          "bodies": [
-            {
-              "text": "live",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Response Card",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "I have decided to follow Jesus today!",
-              "super": false,
-              "bold": false
-            },
-            {
               "text": "Response 1",
               "super": false,
               "bold": false
             }
           ]
-        },
-        {
-          "type": "PROP",
-          "prop": "Response Card"
         }
       ]
     },
@@ -244,6 +208,42 @@
             },
             {
               "text": "I want to learn more about following Jesus.",
+              "super": false,
+              "bold": false
+            },
+            {
+              "text": "Response 4",
+              "super": false,
+              "bold": false
+            }
+          ]
+        },
+        {
+          "type": "PROP",
+          "prop": "Response Card"
+        }
+      ]
+    },
+    {
+      "name": null,
+      "actions": [
+        {
+          "type": "PRESENTATION_SLIDE",
+          "label": "Response 4",
+          "transitionDuration": 0.6,
+          "bodies": [
+            {
+              "text": "live",
+              "super": false,
+              "bold": false
+            },
+            {
+              "text": "Response 4",
+              "super": false,
+              "bold": false
+            },
+            {
+              "text": "I want to be baptized.",
               "super": false,
               "bold": false
             },

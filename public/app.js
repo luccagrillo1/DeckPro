@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.28.1';
+const APP_VERSION = '4.29.0';
 
 const CHANGELOG = [
+  {
+    version: '4.29.0',
+    date: '2026-09-13',
+    changes: [
+      'Response Card is now 4 equal numbered responses (Response 1-4) instead of a decision statement plus 3 responses — matches the format churches actually run today. The separate "Response Card" intro slide is gone; Response 1 is now first. Existing decks are migrated automatically: your old decision text becomes the new Response 1, and old Response 1/2/3 shift down to 2/3/4 — nothing is lost. The LED-wall (Display 2) layout and any custom styling on those rows carries over the same way. The locked default decision phrase ("I have decided to follow Jesus today!") is gone; all 4 fields are now plain, equal text boxes.',
+      'Smart Notes: the special-cased detection that tried to spot a decision-style intro line in pasted notes and drop it before filling Response Card options is removed along with the decision concept — an unmapped block is only recognized as response-card content via the explicit "Response" Style Map role now. Suggestions fill all 4 response slots (previously capped at 3).',
+    ],
+  },
   {
     version: '4.28.1',
     date: '2026-09-09',
@@ -2578,8 +2586,6 @@ const TOOLTIPS = {
   'scheme-dupe':              'Duplicate\nCopy this style into a new editable one — the usual way to make your own look.',
   'scheme-import':            'Import Style\nLoad a style JSON file (from Export, or shared by someone else) as a new style.',
   'scheme-export':            'Export Style\nSave this style as a JSON file — share it, or back it up.',
-  // Response Card
-  'decision-text':            'Decision Text\nThe main commitment statement shown on the Response Card slide.',
   // Rich-text toolbar
   'bold':                     'Bold\nBold weight of the body font for the selected words. Shortcut: ⌘B.',
   'italic':                   'Italic\nItalicizes the selected words. Shortcut: ⌘I.',
@@ -2636,18 +2642,43 @@ const FONT_ADV_DEFAULTS = () => ({
 });
 
 // Response Card elements for the LED wall prop (display 2). Base 5 (title +
-// decision + 3 responses) plus any user-added custom elements. Each is fully
-// editable: name (= Pro7 object name), text, position (x/y/w/h) and style
-// (font/size/color/align). Empty font/size/color inherit the scheme prop fonts.
-// Decision/R1–R3 text comes from the Response Card deck item, not here.
+// 4 responses) plus any user-added custom elements. Each is fully editable:
+// name (= Pro7 object name), text, position (x/y/w/h) and style (font/size/
+// color/align). Empty font/size/color inherit the scheme prop fonts.
+// Response 1–4 text comes from the Response Card deck item, not here.
 function DEFAULT_RC_ELEMENTS() {
   return [
-    { id: 'rc-title',    role: 'title',    name: 'Response Card', text: 'Response Card', x: 325, y: 856, w: 2550, h: 400, font: '', size: 0, color: '', align: 'center' },
-    { id: 'rc-decision', role: 'decision', name: 'Decision',      text: '',              x: 400, y: 150, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
-    { id: 'rc-r1',       role: 'r1',       name: 'Response 1',     text: '',              x: 400, y: 330, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
-    { id: 'rc-r2',       role: 'r2',       name: 'Response 2',     text: '',              x: 400, y: 510, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
-    { id: 'rc-r3',       role: 'r3',       name: 'Response 3',     text: '',              x: 400, y: 690, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
+    { id: 'rc-title', role: 'title', name: 'Response Card', text: 'Response Card', x: 325, y: 856, w: 2550, h: 400, font: '', size: 0, color: '', align: 'center' },
+    { id: 'rc-r1',    role: 'r1',    name: 'Response 1',    text: '',              x: 400, y: 150, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
+    { id: 'rc-r2',    role: 'r2',    name: 'Response 2',    text: '',              x: 400, y: 330, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
+    { id: 'rc-r3',    role: 'r3',    name: 'Response 3',    text: '',              x: 400, y: 510, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
+    { id: 'rc-r4',    role: 'r4',    name: 'Response 4',    text: '',              x: 400, y: 690, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
   ];
+}
+
+// Migration (pre-v4.29.0 → v4.29.0): the Response Card used to be a "decision"
+// line plus 3 responses; it's now 4 equal numbered responses, with the old
+// decision line becoming the new Response 1 and the old r1/r2/r3 shifting
+// down to r2/r3/r4. Gated on the presence of a 'decision'-role element (the
+// unambiguous signature of un-migrated data) rather than just relabeling
+// unconditionally — this runs on every app load (applySavedState), and
+// without that gate, relabeling 'r1'->'r2'->'r3' etc. is NOT idempotent: a
+// second pass over already-migrated data would shift every role again.
+// Only relabels role + a still-default name (a user's own custom name on
+// that row is left alone); position/font/size/color/align are untouched, so
+// a customized LED-wall layout keeps its look, just attached to the new role.
+const RC_ROLE_MIGRATION_V2  = { decision: 'r1', r1: 'r2', r2: 'r3', r3: 'r4' };
+const RC_DEFAULT_NAME_BY_OLD_ROLE = { decision: 'Decision', r1: 'Response 1', r2: 'Response 2', r3: 'Response 3' };
+const RC_DEFAULT_NAME_BY_NEW_ROLE = { r1: 'Response 1', r2: 'Response 2', r3: 'Response 3', r4: 'Response 4' };
+function migrateRcElementsV2(elements) {
+  if (!Array.isArray(elements)) return elements;
+  if (!elements.some(el => el.role === 'decision')) return elements; // already migrated / never had one
+  return elements.map(elObj => {
+    const newRole = RC_ROLE_MIGRATION_V2[elObj.role];
+    if (!newRole) return elObj; // title/custom — untouched
+    const wasDefaultName = elObj.name === RC_DEFAULT_NAME_BY_OLD_ROLE[elObj.role];
+    return { ...elObj, role: newRole, name: wasDefaultName ? RC_DEFAULT_NAME_BY_NEW_ROLE[newRole] : elObj.name };
+  });
 }
 
 const DEFAULT_GLOBAL_TYPOGRAPHY = () => ({
@@ -2921,11 +2952,11 @@ const DEFAULT_STATE = () => ({
     speakers:            [],  // permanent/recurring speakers offered in the New Deck dropdown
     displayNames:        { mainScreen: 'Main Screen', ledWall: 'LED Wall', monitor: 'Confidence Monitor' },
     responses: {
-      decisionText: 'I have decided to follow Jesus today!',
       r1: '',
       r2: '',
       r3: '',
-      notesTemplate: '{decision}\n1 — {r1}\n2 — {r2}\n3 — {r3}',
+      r4: '',
+      notesTemplate: '1 — {r1}\n2 — {r2}\n3 — {r3}\n4 — {r4}',
     },
   },
   globalTypography: DEFAULT_GLOBAL_TYPOGRAPHY(),
@@ -3258,6 +3289,23 @@ function applySavedState(saved) {
     state.config = Object.assign(defaultCfg, saved.config || {});
     // Ensure nested responses object gets defaults
     state.config.responses = Object.assign(defaultCfg.responses, (saved.config || {}).responses || {});
+    // Migration (pre-v4.29.0 → v4.29.0): decision + r1/r2/r3 -> r1/r2/r3/r4
+    // (old decision becomes the new r1; old r1/r2/r3 shift down one). Detected
+    // by the presence of the old decisionText key, so this only ever runs once.
+    if (Object.prototype.hasOwnProperty.call(state.config.responses, 'decisionText')) {
+      const old = state.config.responses;
+      const DEFAULT_RC_NOTES_V1 = '{decision}\n1 — {r1}\n2 — {r2}\n3 — {r3}';
+      const DEFAULT_RC_NOTES_V2 = '1 — {r1}\n2 — {r2}\n3 — {r3}\n4 — {r4}';
+      const tmpl = old.notesTemplate;
+      const migratedTmpl = (tmpl == null || tmpl === DEFAULT_RC_NOTES_V1)
+        ? DEFAULT_RC_NOTES_V2
+        : tmpl.replace(/\{(decision|r1|r2|r3)\}/g, (_, tag) => ({ decision: '{r1}', r1: '{r2}', r2: '{r3}', r3: '{r4}' }[tag]));
+      state.config.responses = {
+        r1: old.decisionText || '', r2: old.r1 || '', r3: old.r2 || '', r4: old.r3 || '',
+        notesTemplate: migratedTmpl,
+      };
+      delete state.config.rcDecisionTextLocked;
+    }
     // Feature flags
     state.config.features = Object.assign(DEFAULT_FEATURES(), (saved.config || {}).features || {});
     // Stage screen config
@@ -3356,6 +3404,10 @@ function applySavedState(saved) {
             }
           }
         }
+        // Migration (pre-v4.29.0 → v4.29.0): a scheme with its own forked
+        // rcElements (not inheriting Global) needs the same role relabel as
+        // globalRcElements — see migrateRcElementsV2.
+        if (Array.isArray(merged.rcElements)) merged.rcElements = migrateRcElementsV2(merged.rcElements);
         return deepClone(merged);
       });
     }
@@ -3402,7 +3454,7 @@ function applySavedState(saved) {
       : DEFAULT_GLOBAL_MOTION();
     state.globalMacros        = Array.isArray(saved.globalMacros)        ? saved.globalMacros        : [];
     state.globalStageDisplays = Array.isArray(saved.globalStageDisplays) ? saved.globalStageDisplays : [];
-    state.globalRcElements    = Array.isArray(saved.globalRcElements)    ? saved.globalRcElements    : DEFAULT_RC_ELEMENTS();
+    state.globalRcElements    = migrateRcElementsV2(Array.isArray(saved.globalRcElements) ? saved.globalRcElements : DEFAULT_RC_ELEMENTS());
     // Support old 'activeStyleId' key for migration
     state.activeSchemeId = saved.activeSchemeId || saved.activeStyleId
       || (state.styleSchemes[0]?.id ?? 'default');
@@ -5792,15 +5844,15 @@ function attachSchemesStageTab(containerId) {
 }
 
 // Response Card element editor (display-2 / LED wall prop). Lists the base
-// elements (title, decision, R1–R3) plus custom ones, each fully editable:
+// elements (title, R1–R4) plus custom ones, each fully editable:
 // name (= Pro7 object name), text, position (X/Y/W/H) and style (font/size/
-// color/align). Decision/R1–R3 text is filled from the Response Card deck item.
+// color/align). Response 1–4 text is filled from the Response Card deck item.
 function attachSchemesResponseCardTab(containerId) {
   const el = document.getElementById(containerId);
   if (!el) return;
   const getScheme = () => state.styleSchemes.find(s => s.id === state.activeSchemeId) || state.styleSchemes[0];
-  const FROM_DECK = ['decision', 'r1', 'r2', 'r3'];
-  const ROLE_LABEL = { title: 'Title', decision: 'Decision', r1: 'Response 1', r2: 'Response 2', r3: 'Response 3', custom: 'Custom' };
+  const FROM_DECK = ['r1', 'r2', 'r3', 'r4'];
+  const ROLE_LABEL = { title: 'Title', r1: 'Response 1', r2: 'Response 2', r3: 'Response 3', r4: 'Response 4', custom: 'Custom' };
   const families = (typeof _fontFamilyMap === 'object' && _fontFamilyMap) ? Object.keys(_fontFamilyMap).sort((a, b) => a.localeCompare(b)) : [];
 
   // Read-only: what to DISPLAY. Does not mutate — s.rcElements stays null
@@ -5876,7 +5928,7 @@ function attachSchemesResponseCardTab(containerId) {
 
   el.innerHTML = `
     <p style="color:var(--muted);font-size:12px;margin:0 0 10px">
-      Elements on the LED wall (display 2) response card. Decision and Response 1–3 text come from the Response Card item in your deck; everything else is set here. Empty font/size/colour inherit your scheme's prop fonts.
+      Elements on the LED wall (display 2) response card. Response 1–4 text comes from the Response Card item in your deck; everything else is set here. Empty font/size/colour inherit your scheme's prop fonts.
     </p>
     <div class="rc-badge-wrap"></div>
     <div class="rc-list"></div>
@@ -8919,8 +8971,9 @@ function renderStylePanel(panel) {
 
 function renderResponseCardPanel(panel) {
   const cfg = state.config;
-  if (!cfg.responses) cfg.responses = { decisionText: '', r1: '', r2: '', r3: '' };
+  if (!cfg.responses) cfg.responses = { r1: '', r2: '', r3: '', r4: '' };
   const rc = cfg.responses;
+  const DEFAULT_RC_NOTES = '1 — {r1}\n2 — {r2}\n3 — {r3}\n4 — {r4}';
 
   panel.innerHTML = `
     <div class="slide-form">
@@ -8937,41 +8990,20 @@ function renderResponseCardPanel(panel) {
 
       <div class="settings-section">
         <h3>Text</h3>
-        <div class="field" style="margin-bottom:10px">
-          <label data-tip-key="decision-text">Decision Text</label>
-          ${(cfg.rcDecisionTextLocked !== false) ? `
-            <div class="rc-locked-field" id="rc-decisionText-locked" title="Click to customize">
-              <span class="rc-locked-val">${esc(rc.decisionText || 'I have decided to follow Jesus today!')}</span>
-              <span class="rc-locked-hint">locked</span>
-            </div>
-          ` : `
-            <div style="display:flex;align-items:center;gap:6px;flex:1">
-              <input type="text" id="rc-decisionText" spellcheck="true" value="${esc(rc.decisionText)}" placeholder="Decision text" style="flex:1">
-              <button class="btn-sm rc-lock-btn" id="rc-decision-relock" title="Reset and lock">Lock</button>
-            </div>
-          `}
-        </div>
-        <div class="field" style="margin-bottom:10px">
-          <label>Response 1</label>
-          <input type="text" id="rc-r1" spellcheck="true" value="${esc(rc.r1)}" placeholder="Response option">
-        </div>
-        <div class="field" style="margin-bottom:10px">
-          <label>Response 2</label>
-          <input type="text" id="rc-r2" spellcheck="true" value="${esc(rc.r2)}" placeholder="Response option">
-        </div>
-        <div class="field" style="margin-bottom:0">
-          <label>Response 3</label>
-          <input type="text" id="rc-r3" spellcheck="true" value="${esc(rc.r3)}" placeholder="Response option">
-        </div>
+        ${['r1', 'r2', 'r3', 'r4'].map((key, i) => `
+        <div class="field" style="margin-bottom:${i < 3 ? 10 : 0}px">
+          <label>Response ${i + 1}</label>
+          <input type="text" id="rc-${key}" spellcheck="true" value="${esc(rc[key])}" placeholder="Response option">
+        </div>`).join('')}
       </div>
 
       <div class="settings-section">
         <h3 data-tip="The confidence-monitor notes shown on every Response Card slide. Write your own text and drop in tags that auto-fill.">${dn('monitor')} Notes</h3>
         <div class="field" style="margin-bottom:6px">
-          <textarea id="rc-notes-template" class="rc-notes-template" rows="5" spellcheck="true" placeholder="{decision}&#10;1 — {r1}&#10;2 — {r2}&#10;3 — {r3}">${esc(rc.notesTemplate ?? '{decision}\n1 — {r1}\n2 — {r2}\n3 — {r3}')}</textarea>
+          <textarea id="rc-notes-template" class="rc-notes-template" rows="5" spellcheck="true" placeholder="1 — {r1}&#10;2 — {r2}&#10;3 — {r3}&#10;4 — {r4}">${esc(rc.notesTemplate ?? DEFAULT_RC_NOTES)}</textarea>
         </div>
         <div class="rc-notes-tags">
-          Tags: <code>{decision}</code> <code>{r1}</code> <code>{r2}</code> <code>{r3}</code> — they auto-fill from the fields above.
+          Tags: <code>{r1}</code> <code>{r2}</code> <code>{r3}</code> <code>{r4}</code> — they auto-fill from the fields above.
           <button class="btn-sm" id="rc-notes-reset" type="button" style="margin-left:6px">Reset to default</button>
         </div>
       </div>
@@ -8984,38 +9016,15 @@ function renderResponseCardPanel(panel) {
     saveState();
   });
 
-  // Decision text lock/unlock
-  const lockedEl  = document.getElementById('rc-decisionText-locked');
-  const relockBtn = document.getElementById('rc-decision-relock');
-  if (lockedEl) {
-    lockedEl.addEventListener('click', () => {
-      showConfirmModal(
-        'Customize decision text?',
-        'This text appears on the Response Card slide. Unlocking lets you edit it for this deck.',
-        'Unlock',
-        () => { cfg.rcDecisionTextLocked = false; saveState(); render(); }
-      );
-    });
-  }
-  if (relockBtn) {
-    relockBtn.addEventListener('click', () => {
-      cfg.rcDecisionTextLocked = true;
-      saveState();
-      render();
-    });
-  }
-
-  ['r1', 'r2', 'r3'].forEach(key => {
+  ['r1', 'r2', 'r3', 'r4'].forEach(key => {
     const el = document.getElementById('rc-' + key);
     if (el) el.addEventListener('input', e => { cfg.responses[key] = e.target.value; saveState(); });
   });
-  const dtEl = document.getElementById('rc-decisionText');
-  if (dtEl) dtEl.addEventListener('input', e => { cfg.responses.decisionText = e.target.value; saveState(); });
 
   const tmplEl = document.getElementById('rc-notes-template');
   if (tmplEl) tmplEl.addEventListener('input', e => { cfg.responses.notesTemplate = e.target.value; saveState(); });
   document.getElementById('rc-notes-reset')?.addEventListener('click', () => {
-    cfg.responses.notesTemplate = '{decision}\n1 — {r1}\n2 — {r2}\n3 — {r3}';
+    cfg.responses.notesTemplate = DEFAULT_RC_NOTES;
     saveState();
     render();
   });
@@ -11007,7 +11016,7 @@ function buildSpec() {
     gradientMacroQr:     state.config.gradientMacroQr || null,
     includeResponseCard: includeResponseCard,
     outputFolder:        outputFolder || '',
-    responses:           Object.fromEntries(Object.entries(responses || { decisionText: '', r1: '', r2: '', r3: '' }).map(([k, v]) => [k, normalizeDeckQuotes(v)])),
+    responses:           Object.fromEntries(Object.entries(responses || { r1: '', r2: '', r3: '', r4: '' }).map(([k, v]) => [k, normalizeDeckQuotes(v)])),
     style,
     stageScreen:         schemeStageScreen(),
     stageDisplays:       (activeStyleScheme().stageDisplays ?? ensureGlobalStageDisplays()).filter(d => d.name && d.uuid && (d.triggers || []).length),
@@ -11170,8 +11179,8 @@ function preflightWarnings() {
 
   if (cfg.includeResponseCard) {
     const r = cfg.responses || {};
-    if (!r.r1?.trim() && !r.r2?.trim() && !r.r3?.trim())
-      warn('Response card is enabled but all three response lines are empty', 'rc');
+    if (!r.r1?.trim() && !r.r2?.trim() && !r.r3?.trim() && !r.r4?.trim())
+      warn('Response card is enabled but all four response lines are empty', 'rc');
   }
 
   // ── Macros / Stage Displays with no triggers ──────────────────────────────
@@ -12147,7 +12156,7 @@ function pointExists(text) {
 }
 function responseCardHasContent() {
   const r = state.config.responses || {};
-  return !!(r.r1?.trim() || r.r2?.trim() || r.r3?.trim());
+  return !!(r.r1?.trim() || r.r2?.trim() || r.r3?.trim() || r.r4?.trim());
 }
 
 function _isHighlight(c) {
@@ -12204,7 +12213,7 @@ function showNotesDoc({ id, styleText, bodyHtml }, title) {
   refreshNotesMode();
 }
 
-// Common filler words excluded from bold/decision-line word-matching. These
+// Common filler words excluded from bold word-matching. These
 // are near-guaranteed to appear MANY times throughout any notes doc and any
 // fetched Bible verse — matching bold status by flat per-word set membership
 // (see applyNotesBoldToSpans below) means a stop-word bolded ANYWHERE in the
@@ -12416,66 +12425,14 @@ function buildNotesSuggestions() {
     return grp.consumed;
   };
 
-  // "I have decided to follow Jesus today!" (or whatever this deck's decisionText
-  // is) is boilerplate, not a weekly response option — score how closely a line
-  // PARAPHRASES it and drop the closest match, so a decision line mixed in with
-  // real options doesn't crowd one out. Common short words ("i", "to", "a") are
-  // excluded from the comparison and don't count as a match on their own —
-  // otherwise an unrelated option like "I want to start a relationship with
-  // Jesus" shares just enough filler words with "I have decided to follow
-  // Jesus today" to look like a paraphrase and gets wrongly dropped. The score
-  // is the fraction of the CANDIDATE's own significant words found in the
-  // phrase, so a true close paraphrase (which reuses most of the phrase's
-  // wording) scores high while a merely-related option scores low.
-  const decisionWordOverlap = (text, phrase) => {
-    const words = s => (s || '').toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/)
-      .filter(w => w && !NOTES_STOP_WORDS.has(w));
-    const phraseWords = new Set(words(phrase));
-    const textWords = words(text);
-    if (!textWords.length) return 0;
-    const matched = textWords.filter(w => phraseWords.has(w)).length;
-    return matched / textWords.length;
-  };
-  const DECISION_PARAPHRASE_THRESHOLD = 0.6; // fraction of significant words that must match
-
   const makeResponse = (b, conf) => {
     const grp = collectBullets(blocks, b._i);
     const raw = grp.bullets.length ? grp.bullets : [b.text];
-    const decisionPhrase = state.config.responses?.decisionText || 'I have decided to follow Jesus today!';
-    // Whichever single line matches the decision text the most closely is the
-    // decision text — pastors often write their own close paraphrase of it
-    // rather than the exact string. Drop just that one line and keep the rest
-    // in their original order.
-    // Only ever drop the decision line when there's more than one candidate —
-    // otherwise a single fallback line (e.g. no real bullets were found, so
-    // the trigger block's own text stood in) could share one incidental word
-    // with the decision phrase and get filtered down to nothing, silently
-    // turning "Add" into a no-op instead of filling anything in.
-    let pool = raw;
-    if (raw.length > 1) {
-      const scored = raw.map((t, i) => ({ t, i, overlap: decisionWordOverlap(t, decisionPhrase) }));
-      const top = scored.reduce((a, c) => (c.overlap > a.overlap ? c : a), scored[0]);
-      if (top && top.overlap >= DECISION_PARAPHRASE_THRESHOLD) pool = raw.filter((_, i) => i !== top.i);
-    }
-    const bullets = pool.slice(0, 3);
+    const bullets = raw.slice(0, 4);
     push({ type: 'response', bullets, preview: bullets.join(' • '), blockIdx: b.idx,
            confidence: conf, key: 'rc:' + _normLabel(bullets.join('|')),
            dupe: responseCardHasContent() });
     return grp.consumed;
-  };
-
-  // True if this trigger block (or one of its following bullets) closely
-  // paraphrases the response-card decision line — the strongest available
-  // signal that a block with no explicit 'response' color mapping ('content'
-  // or 'auto') is actually response-card intro text, not an ordinary point,
-  // so it should route to makeResponse() (one suggestion filling all the
-  // options) instead of makePoint() (which would use just the intro line's
-  // own text as a single point, discarding the actual options).
-  const looksLikeResponseTrigger = (b) => {
-    const decisionPhrase = state.config.responses?.decisionText || 'I have decided to follow Jesus today!';
-    const grp = collectBullets(blocks, b._i);
-    const candidates = [b.text, ...grp.bullets];
-    return candidates.some(t => decisionWordOverlap(t, decisionPhrase) >= DECISION_PARAPHRASE_THRESHOLD);
   };
 
   const pushScripturesFromBlock = (b, conf) => {
@@ -12573,7 +12530,11 @@ function buildNotesSuggestions() {
         } else {
           scriptureContinuation = null;
           finalizeScriptureChain();
-          i += looksLikeResponseTrigger(b) ? makeResponse(b, 'Content') : makePoint(b, 'Content');
+          // Response Card no longer has a distinct boilerplate line to
+          // pattern-match against (see makeResponse) — an unmapped block only
+          // becomes a response suggestion via the explicit 'response' Style
+          // Map role above; here it's always treated as a point.
+          i += makePoint(b, 'Content');
         }
       }
       continue;
@@ -12594,9 +12555,7 @@ function buildNotesSuggestions() {
     } else {
       scriptureContinuation = null;
       finalizeScriptureChain();
-      if (looksLikeResponseTrigger(b)) {
-        i += makeResponse(b, 'Medium');
-      } else if (b.bg) {
+      if (b.bg) {
         // Highlighted but not mapped to a specific role — the highlight
         // itself is a strong enough signal to treat it as a likely point,
         // regardless of heading tag or length (unlike the plain-text
@@ -12745,19 +12704,19 @@ function notesAddConfidence(text) {
   toast('success', 'Confidence note added', '');
 }
 
-// Response Card suggestion → fills the weekly r1/r2/r3 options.
-// decisionText is deliberately left alone — it's boilerplate, not weekly content.
+// Response Card suggestion → fills the weekly r1-r4 options.
 function notesAddResponseCard(s) {
   const cfg = state.config;
-  if (!cfg.responses) cfg.responses = { decisionText: '', r1: '', r2: '', r3: '' };
-  const [r1, r2, r3] = s.bullets || [];
+  if (!cfg.responses) cfg.responses = { r1: '', r2: '', r3: '', r4: '' };
+  const [r1, r2, r3, r4] = s.bullets || [];
   if (r1) cfg.responses.r1 = r1;
   if (r2) cfg.responses.r2 = r2;
   if (r3) cfg.responses.r3 = r3;
+  if (r4) cfg.responses.r4 = r4;
   cfg.includeResponseCard = true; // filling it implies this week uses it
   saveState();
   render();
-  toast('success', 'Response Card filled', [r1, r2, r3].filter(Boolean).join(' · '));
+  toast('success', 'Response Card filled', [r1, r2, r3, r4].filter(Boolean).join(' · '));
 }
 
 // Shared by the tray's Add button and dragging a notes block straight onto
@@ -14940,10 +14899,10 @@ function helpSections() {
     label: 'Response Card',
     html: `
       <h3>Response Card</h3>
-      <p>Enable <strong>Response Card</strong> for a deck and DeckPro appends the full response-card package before the End slide — the hold slide, the decision prompt, and Response 1 / 2 / 3, each linked to the <strong>Response Card</strong> prop on the ${D2}.</p>
+      <p>Enable <strong>Response Card</strong> for a deck and DeckPro appends the full response-card package before the End slide — the hold slide and Response 1 / 2 / 3 / 4, each linked to the <strong>Response Card</strong> prop on the ${D2}.</p>
       <ul>
-        <li>The hold and card slides automatically trigger the <strong>Response Card stage layout</strong> and the Message-Blank macro, so your stage display and lighting switch on cue.</li>
-        <li>The three response lines come from the deck's Response Card fields; everything else (positions, fonts) is defined in the style's <strong>Response Card</strong> tab — see <em>LED Wall &amp; Inheritance</em>.</li>
+        <li>The hold slide automatically triggers the <strong>Response Card stage layout</strong> and the Message-Blank macro, so your stage display and lighting switch on cue.</li>
+        <li>The four response lines come from the deck's Response Card fields; everything else (positions, fonts) is defined in the style's <strong>Response Card</strong> tab — see <em>LED Wall &amp; Inheritance</em>.</li>
       </ul>
     `,
   },
@@ -15055,7 +15014,7 @@ function helpSections() {
       </ul>
 
       <h3>Response Card tab</h3>
-      <p>Defines the elements on the ${D2} response card (Display&nbsp;2): a Title, the Decision prompt, and Response 1–3, plus any custom elements. Each has an editable name (its Pro7 object name), text, position (X/Y/W/H) and style. The Decision and Response 1–3 <em>text</em> comes from the deck's Response Card item; everything else is set here.</p>
+      <p>Defines the elements on the ${D2} response card (Display&nbsp;2): a Title and Response 1–4, plus any custom elements. Each has an editable name (its Pro7 object name), text, position (X/Y/W/H) and style. The Response 1–4 <em>text</em> comes from the deck's Response Card item; everything else is set here.</p>
       <p class="help-muted">Existing styles keep their current ${D2} look untouched — only new styles start out inheriting. Point Stacked (the dimmed revealed bullets) has no main-screen twin, so it stays independent.</p>
     `,
   },

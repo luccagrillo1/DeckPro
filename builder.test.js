@@ -82,7 +82,8 @@ const bodyRtf = c => {
 (() => {
   const cues = cuesOf({ name: 'T', includeResponseCard: true, slides: [{ type: 'start' }, { type: 'end' }] });
   const labels = cues.map(labelOf);
-  ok('RC adds Response 1/2/3', labels.includes('Response 1') && labels.includes('Response 2') && labels.includes('Response 3'));
+  ok('RC adds Response 1/2/3/4', ['Response 1', 'Response 2', 'Response 3', 'Response 4'].every(l => labels.includes(l)));
+  ok('RC has no separate intro cue (4 equal responses, no "Response Card" cue)', !labels.includes('Response Card'));
   ok('RC inserted before END', labels.indexOf('Response 1') < labels.indexOf('End of Notes'));
 })();
 

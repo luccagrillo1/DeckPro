@@ -2,7 +2,7 @@
   "name": "05 Full Chaos Deck",
   "includeResponseCard": true,
   "qrEnabled": true,
-  "responses": { "decisionText": "I said yes to Jesus — emoji 🙏 & \"quotes\"", "r1": "Option / one", "r2": "Option — two", "r3": "Option… three" },
+  "responses": { "r1": "I said yes to Jesus — emoji 🙏 & \"quotes\"", "r2": "Option / one", "r3": "Option — two", "r4": "Option… three" },
   "stageScreen": { "screenName": "Stage", "screenUuid": "S" },
   "stageDisplays": [
     { "id": "sd1", "name": "RC", "uuid": "RCL", "triggers": ["rcBlank", "rcContent", "rcHold"] },

@@ -207,13 +207,13 @@ function buildSpec() {
     rcElements: [
       { id: 'rc-title', role: 'title', name: 'Response Card', text: 'Response Card',
         x: 325, y: 856, w: 2550, h: 400, font: '', size: 0, color: S.rcTitleColor, align: 'center' },
-      { id: 'rc-decision', role: 'decision', name: 'Decision', text: '',
-        x: 400, y: 150, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
       { id: 'rc-r1', role: 'r1', name: 'Response 1', text: '',
-        x: 400, y: 330, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
+        x: 400, y: 150, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
       { id: 'rc-r2', role: 'r2', name: 'Response 2', text: '',
-        x: 400, y: 510, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
+        x: 400, y: 330, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
       { id: 'rc-r3', role: 'r3', name: 'Response 3', text: '',
+        x: 400, y: 510, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
+      { id: 'rc-r4', role: 'r4', name: 'Response 4', text: '',
         x: 400, y: 690, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' },
     ],
   };
@@ -226,7 +226,7 @@ function buildSpec() {
     downloadMode: true,          // return buffers, no disk writes
     includeResponseCard: true,
     qrMacro: { name: S.qrMacroName, uuid: S.qrMacroUuid }, // fires on blank-before cues with qrOn
-    responses: { r1: S.rcResponse1, r2: 'RC two', r3: 'RC three' },
+    responses: { r1: S.rcResponse1, r2: 'RC two', r3: 'RC three', r4: 'RC four' },
     style,
     // palette-level macros + stage displays, triggered on scripture slides
     customMacros: [{ name: S.macroName, uuid: S.macroUuid, triggers: ['scripture'] }],

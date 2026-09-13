@@ -95,18 +95,18 @@ function rtfOf(el) {
     type: 'response-card',
     propName: 'Response Card',
     responses: {
-      decisionText: 'Following Jesus',
       r1: 'First time',
       r2: 'Recommit',
       r3: 'Baptism interest',
+      r4: 'Following Jesus',
     },
   }]);
   ok('response-card: cue name matches propName', cues[0].name === 'Response Card');
   const els = elementsOf(cues[0]);
   ok('response-card: has elements', els.length > 0);
-  // decision text should appear somewhere in the RTF payload
+  // response text should appear somewhere in the RTF payload
   const allRtf = els.map(rtfOf).join('\n');
-  ok('response-card: decision text present', allRtf.includes('Following Jesus'));
+  ok('response-card: r4 text present', allRtf.includes('Following Jesus'));
   ok('response-card: r1 text present', allRtf.includes('First time'));
 })();
 
