@@ -1580,6 +1580,7 @@ function buildPresentation(spec, propUuidMap = {}) {
         c._slidePos        = _slidePos;
         c._queueRef    = scRef;
         c._queuePhrase = firstPhrase((slide.bodies || [])[bi] || (slide.bodies || [])[0]);
+        c._queueFullText = firstPhrase((slide.bodies || [])[bi] || (slide.bodies || [])[0], Infinity);
         injectStageLayout(c, slide.stageLayout);
       });
       rawCues.push(...sc);
@@ -1618,6 +1619,9 @@ function buildPresentation(spec, propUuidMap = {}) {
         c._queuePhrase = slide.mode === 'revealing'
           ? firstPhrase(rtf.bulletToText((slide.bullets || [])[bi] || (slide.bullets || [])[0] || ''))
           : firstPhrase(slide.bodyText || '');
+        c._queueFullText = slide.mode === 'revealing'
+          ? firstPhrase(rtf.bulletToText((slide.bullets || [])[bi] || (slide.bullets || [])[0] || ''), Infinity)
+          : firstPhrase(slide.bodyText || '', Infinity);
         injectStageLayout(c, slide.stageLayout);
       });
       rawCues.push(...pc);
@@ -1725,7 +1729,7 @@ function buildPresentation(spec, propUuidMap = {}) {
     return sa?.label?.text || '';
   };
 
-  const queueMode = spec.queueMode || 'ref'; // 'list' (full upcoming queue) | 'ref' | 'refPhrase' (next slide only)
+  const queueMode = spec.queueMode || 'ref'; // 'list' (full upcoming queue) | 'ref' | 'refPhrase' | 'fullNext' (next slide only)
   for (let i = 0; i < rawCues.length; i++) {
     // 'ref'/'refPhrase' show only the single next slide \u2014 'list' is the only mode
     // that shows the full upcoming queue.
@@ -1752,6 +1756,13 @@ function buildPresentation(spec, propUuidMap = {}) {
         if (queueMode === 'refPhrase' && c._queuePhrase && !phraseRedundant) {
           const s = `${ref} \u2014 ${c._queuePhrase}`;
           return s.length > 42 ? s.slice(0, 41) + '\u2026' : s;
+        }
+        // 'fullNext': reference on its own line, the untruncated body text
+        // below it \u2014 same reference truncation as 'ref' when there's no full
+        // text to show (e.g. a blank/image/custom cue with no queue content).
+        if (queueMode === 'fullNext') {
+          const refLine = ref.length > 20 ? ref.slice(0, 19) + '\u2026' : ref;
+          return c._queueFullText ? `${refLine}\n${c._queueFullText}` : refLine;
         }
         return ref.length > 20 ? ref.slice(0, 19) + '\u2026' : ref; // 'ref'
       })

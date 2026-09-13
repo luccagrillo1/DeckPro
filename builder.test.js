@@ -274,6 +274,30 @@ const bodyRtf = c => {
     queueRtf(scriptureCues[0]).includes('\\\'97') && queueRtf(scriptureCues[0]).includes('John 3:16'));
 })();
 
+// ---- 16. fullNext queue mode: reference on top, full untruncated body below ----
+(() => {
+  const queueRtf = c => {
+    const a = slideAction(c);
+    const els = (a?.slide?.presentation?.baseSlide?.elements || []).map(s => s.element);
+    const el = els.find(e => e.name === 'queue');
+    try { return Buffer.from(el.text.rtfData, 'base64').toString('utf8'); } catch { return ''; }
+  };
+  const longBody = 'The earth was formless and empty, and darkness covered the deep waters, and the Spirit of God hovered over the surface.';
+  const cues = cuesOf({ name: 'T', queueMode: 'fullNext', slides: [
+    { type: 'point', mode: 'single', label: 'First', bodyText: 'filler', propName: 'P0' },
+    { type: 'scripture', label: 'Genesis 1:2', reference: 'Genesis 1:2', bodies: [[{ text: longBody }]] },
+  ] });
+  const rtf0 = queueRtf(cues[0]);
+  ok('fullNext: shows the next slide\'s reference', rtf0.includes('Genesis 1:2'));
+  ok('fullNext: shows the FULL body text, not truncated', rtf0.includes('hovered over the surface'));
+  ok('fullNext: reference sits on its own line above the body (RTF line break between them)',
+    /Genesis 1:2\\\n/.test(rtf0));
+
+  // Last cue has nothing upcoming — queue must not throw or show stale content.
+  const lastRtf = queueRtf(cues[cues.length - 1]);
+  ok('fullNext: last cue\'s queue is empty (nothing upcoming)', !lastRtf.includes('formless'));
+})();
+
 // ---- Point Split mode: Display 1's cue only ever shows bodyText ----
 (() => {
   const cues = cuesOf({ name: 'T', slides: [

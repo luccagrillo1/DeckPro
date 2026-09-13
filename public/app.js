@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.29.3';
+const APP_VERSION = '4.29.4';
 
 const CHANGELOG = [
+  {
+    version: '4.29.4',
+    date: '2026-09-13',
+    changes: [
+      'New Queue format: "Next Slide — Full Text, Reference on Top". Instead of a truncated one-liner, the confidence-monitor queue shows the upcoming slide\'s reference on its own line followed by its complete, untruncated body text (the whole verse, or the whole point). Works for scripture and both point modes (Single/Split use the Main Screen text; Revealing uses the upcoming bullet). Preferences → Queue → Upcoming-slide format.',
+    ],
+  },
   {
     version: '4.29.3',
     date: '2026-09-13',
@@ -2600,7 +2607,7 @@ const TOOLTIPS = {
   'add-custom':               'Custom\nAn empty slot exported as a blank slide with your label — build it out by hand in ProPresenter.',
   // Preferences — Queue
   'queue':                    'Queue\nThe strip on the confidence monitor that lists what\'s coming up next.',
-  'queue-format':             'Queue format\nNext Reference / Reference + Phrase show only the single next slide. Full List shows every upcoming slide.',
+  'queue-format':             'Queue format\nNext Reference / Reference + Phrase / Next Slide Full Text show only the single next slide. Full List shows every upcoming slide.',
   // Preferences — Schemes panel
   'feature-visibility':       'Feature Visibility\nHide advanced fields so the slide editor is simpler when handing off to other users. Turning one off just hides it — it doesn\'t change exports.',
   'scheme-new':               'New Style\nCreate a blank style from defaults.',
@@ -2962,7 +2969,7 @@ const DEFAULT_STATE = () => ({
     bibleList:           [],  // cached [{id, name, abbreviation}]
     verseNumbers:        false, // prefix each verse with its number on lookup
     verseSuper:          true,  // render verse numbers as superscript
-    queueMode:           'ref', // queue strip: 'list' | 'ref' | 'refPhrase'
+    queueMode:           'ref', // queue strip: 'list' | 'ref' | 'refPhrase' | 'fullNext'
     gdriveUrl:           '',  // last-loaded Google Drive notes doc (persists across redeploys)
     notesMode:           'manual', // Smart Notes: 'manual' (you pick) | 'auto' (scan & suggest)
     notesIgnored:        [],   // suggestion keys the user dismissed (don't re-suggest)
@@ -6176,6 +6183,7 @@ function renderConfigPanel(panel) {
           <select id="cfg-queue-mode" style="flex:1">
             <option value="ref"${(cfg.queueMode || 'ref') === 'ref' ? ' selected' : ''}>Next Reference Only — e.g. "Ephesians 5:18"</option>
             <option value="refPhrase"${cfg.queueMode === 'refPhrase' ? ' selected' : ''}>Next Reference + First Phrase</option>
+            <option value="fullNext"${cfg.queueMode === 'fullNext' ? ' selected' : ''}>Next Slide — Full Text, Reference on Top</option>
             <option value="list"${cfg.queueMode === 'list' ? ' selected' : ''}>Full List</option>
           </select>
         </div>
@@ -15238,7 +15246,7 @@ function helpSections() {
         <li><strong>iCloud Sync</strong> — keep styles and portable preferences in step across your Macs.</li>
         <li><strong>Display Names</strong> — rename Display 1 / 2 / 3 (e.g. “${D1}”, “${D2}”, “${D3}”). Your names appear everywhere in the app.</li>
         <li><strong>Speakers</strong> — recurring names for the New Deck dropdown.</li>
-        <li><strong>Queue</strong> — the upcoming-slide format on the queue sidebar: Next Reference Only · Next Reference + First Phrase · Full List.</li>
+        <li><strong>Queue</strong> — the upcoming-slide format on the queue sidebar: Next Reference Only · Next Reference + First Phrase · Next Slide Full Text (reference on top, untruncated body below) · Full List.</li>
         <li><strong>Pro7 Connection</strong> — port, password, folder, library, auto-manage.</li>
         <li><strong>Feature Visibility</strong> — hide advanced fields (Blank Before, ${D3} text, Prop Name, Overrides, Fit Width/Strip, Verses) for simpler handoffs. Hiding never changes what's exported.</li>
         <li><strong>Bible Lookup</strong> — API key &amp; default translation.</li>
