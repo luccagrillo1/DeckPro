@@ -141,6 +141,24 @@ function propTitleYOf(propBodyLines, rsExtra = {}) {
   ok('a well-formed Fit Width result does not throw', !threw);
 })();
 
+(() => {
+  // A genuinely empty scripture slide (no reference typed, no body text —
+  // e.g. a freshly-added, not-yet-filled-in slide) has nothing for Fit Width
+  // to have measured, so this must NOT throw even with autoTitleY on and no
+  // bodyLines/metrics — it's not a bug, just an unfinished slide sitting
+  // elsewhere in an otherwise-exportable deck. Confirmed against a real
+  // production crash: one empty scripture slide was taking down the entire
+  // 18-slide export.
+  let threw = false, msg = '';
+  try {
+    buildPresentation({ name: 'T', style: { autoTitleY: true }, slides: [
+      { type: 'scripture', label: 'New Scripture', reference: '', bodies: [[]] },
+    ] });
+  } catch (e) { threw = true; msg = e.message; }
+  ok('a genuinely empty scripture slide does not throw (only real text with missing Fit Width data should)',
+     !threw, { threw, msg });
+})();
+
 // ── Display 2 independence (invariant: never derives from Display 1) ──────
 
 (() => {
@@ -155,6 +173,15 @@ function propTitleYOf(propBodyLines, rsExtra = {}) {
   try { buildScripturePropCue({ propName: 't', reference: 'R', bodies: [[{ text: 'x' }]] }, { propAutoTitleY: true }); }
   catch (_) { threw = true; }
   ok('missing propBodyLines/metrics throws for Display 2 too (Task 4)', threw);
+})();
+
+(() => {
+  // Same empty-body exemption on the Display 2 (prop) path.
+  let threw = false, msg = '';
+  try { buildScripturePropCue({ propName: 't', reference: '', bodies: [[]] }, { propAutoTitleY: true }); }
+  catch (e) { threw = true; msg = e.message; }
+  ok('a genuinely empty scripture slide does not throw on the Display 2 prop path either',
+     !threw, { threw, msg });
 })();
 
 (() => {

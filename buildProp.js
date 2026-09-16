@@ -491,8 +491,14 @@ function buildScripturePropCue(spec, rs = {}) {
   const tx = prs.propTitleX ?? -0.18;
   const tw = prs.propTitleW ?? (prs.propCanvasW ?? 1920) + 0.18;
   const titleYOff = prs.titleFontAdv?.yOffset ?? 0;
+  // A genuinely empty body (no text at all — an unfinished placeholder slide,
+  // not a Fit Width bug) has nothing for Fit Width to have measured, so
+  // estimatePropTitleY would be throwing over a non-bug. Use the same static
+  // fallback as propAutoTitleY-off instead of hard-failing the whole export
+  // over one unfinished slide elsewhere in the deck.
+  const hasBodyText = allSpans.some(s => (s.text || '').trim());
   let titleY;
-  if (prs.propAutoTitleY) {
+  if (prs.propAutoTitleY && hasBodyText) {
     // Display 2's own independent result — never spec.bodyLines/ascent/etc,
     // which are Display 1's (see computeSlideFitWidth in public/app.js: main
     // and prop are two separate computeOptimalBodyWidth searches).

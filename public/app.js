@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.29.4';
+const APP_VERSION = '4.29.5';
 
 const CHANGELOG = [
+  {
+    version: '4.29.5',
+    date: '2026-09-16',
+    changes: [
+      'Fixed a real export crash: a single unfinished/empty Scripture slide anywhere in the deck (no body text typed yet) could throw "strict mode requires a real Fit Width result" and block the entire export, even though every other slide was fine. An empty slide has nothing for Fit Width to measure in the first place — that\'s not a bug, so it no longer throws; it just falls back to the standard reference-bar position. The existing pre-export warning that flags empty scripture/point slides by name still shows first, so you can fix it before exporting if you want to.',
+    ],
+  },
   {
     version: '4.29.4',
     date: '2026-09-13',

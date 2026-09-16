@@ -1217,9 +1217,15 @@ function buildScriptureCues(spec, rs) {
     const plainBody = displayBody.map(s => s.text).join('');
 
     const liveEl  = makeLiveElement(rs);
-    // Auto Title Y: estimate from line count if enabled; otherwise use scheme titleY directly
+    // Auto Title Y: estimate from line count if enabled; otherwise use scheme titleY directly.
+    // A genuinely empty body (no text at all — an unfinished placeholder slide,
+    // not a Fit Width bug) has nothing for Fit Width to have measured in the
+    // first place, so strict mode would be throwing over a non-bug: fall back
+    // to the non-strict char-width estimate instead of hard-failing the whole
+    // export over one unfinished slide elsewhere in the deck.
+    const hasBodyText = displayBody.some(s => (s.text || '').trim());
     const computedTitleY = rs.autoTitleY
-      ? estimateTitleY(displayBody, bw, rs, spec.bodyLines, { ascent: spec.ascent, descent: spec.descent, capAscent: spec.capAscent, titleAscent: spec.titleAscent, titleDescent: spec.titleDescent }, true)
+      ? estimateTitleY(displayBody, bw, rs, spec.bodyLines, { ascent: spec.ascent, descent: spec.descent, capAscent: spec.capAscent, titleAscent: spec.titleAscent, titleDescent: spec.titleDescent }, hasBodyText)
       : (rs.titleY ?? 0);
     const titleEl = makeTitleElement({ reference: spec.reference, titleY: computedTitleY }, rs);
     const bodyEl  = makeBodyElement({ x: bx, y: by + bodyYOff, w: bw, h: bh, rtfData: bodyRtf, charCount: plainBody.length, spans: displayBody }, rs);
