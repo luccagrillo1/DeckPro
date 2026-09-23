@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.29.5';
+const APP_VERSION = '4.30.0';
 
 const CHANGELOG = [
+  {
+    version: '4.30.0',
+    date: '2026-09-22',
+    changes: [
+      'New: a second prop collection. The new "Props 1 / Props 2" button next to QR in the sidebar\'s Deck row picks which ProPresenter prop collection this deck exports into — "DeckPro" or the new, fully independent "DeckPro 2" (its own 50 slots). Put two decks on different collections — say an event and a gathering — and both stay built and ready in ProPresenter at once; exporting one never overwrites the other\'s props. Saved per deck; existing decks stay on Props 1. Two decks on the same collection still overwrite each other, same as before.',
+    ],
+  },
   {
     version: '4.29.5',
     date: '2026-09-16',
@@ -2649,6 +2656,7 @@ const TOOLTIPS = {
   // QR
   'qr-marker':                'QR Stop\nDrag into the deck to mark where auto QR-fill stops. Blanks before it default to QR on (when the deck-wide QR toggle is on); blanks at or after it default to off. Doesn\'t export as a slide.',
   'qr-toggle':                'QR\nToggles the QR macro for this blank specifically — overrides whatever the QR Stop marker would otherwise set, and stays put even if you move the marker later.',
+  'deck-props-toggle':        'Prop Collection\nWhich ProPresenter prop collection this deck exports into — "DeckPro" (Props 1) or "DeckPro 2" (Props 2). Put two decks on different collections (e.g. an event and a gathering) and both stay built and ready at once; exporting one never overwrites the other\'s props. Two decks on the SAME collection still overwrite each other.',
   'qr-deck-toggle':           'QR\nThis deck\'s default QR state for blanks — turns the QR macro on for blanks before the QR Stop marker (or all blanks, if there\'s no marker). Any blank with its own QR override ignores this.',
 };
 
@@ -2952,6 +2960,10 @@ const DEFAULT_STATE = () => ({
     // When true AND qrCode is on, Export delivers TWO presentations (no-QR +
     // QR) sharing one prop collection, instead of just the QR-configured deck.
     qrExportPair:        false,
+    // Which DeckPro prop collection this deck exports into: 1 = "DeckPro",
+    // 2 = "DeckPro 2". Two decks on different collections can both be
+    // delivered and ready in ProPresenter without overwriting each other.
+    propCollection:      1,
     // Dedicated gradient macros: gradientMacro fires on Scripture/Point/RC
     // Content cues normally; gradientMacroQr fires there instead whenever
     // this export's qrCode is on (e.g. the QR half of a paired export) — a
@@ -4847,6 +4859,12 @@ function renderSidebar() {
   // Update deck-wide QR toggle button state
   const qrToggleBtn = document.getElementById('btn-deck-qr');
   if (qrToggleBtn) qrToggleBtn.classList.toggle('active', !!state.config.qrCode);
+  const propsBtn = document.getElementById('btn-deck-props');
+  if (propsBtn) {
+    const coll2 = state.config.propCollection === 2;
+    propsBtn.classList.toggle('active', coll2);
+    propsBtn.querySelector('.deck-props-label').textContent = coll2 ? 'Props 2' : 'Props 1';
+  }
 
   for (let _si = 0; _si < state.slides.length; _si++) {
     const slide = state.slides[_si];
@@ -10439,6 +10457,11 @@ function attachHeaderHandlers() {
     saveState();
     renderSidebar();
   });
+  document.getElementById('btn-deck-props')?.addEventListener('click', () => {
+    state.config.propCollection = state.config.propCollection === 2 ? 1 : 2;
+    saveState();
+    renderSidebar();
+  });
 
   document.getElementById('btn-undo')?.addEventListener('click', applyUndo);
   document.getElementById('btn-redo')?.addEventListener('click', applyRedo);
@@ -11090,6 +11113,7 @@ function buildSpec() {
     stageDisplays:       (activeStyleScheme().stageDisplays ?? ensureGlobalStageDisplays()).filter(d => d.name && d.uuid && (d.triggers || []).length),
     customMacros:        (activeStyleScheme().macros ?? ensureGlobalMacros()).filter(m => m.name && m.uuid && (m.triggers || []).length),
     queueMode:           state.config.queueMode || 'ref',
+    propCollection:      state.config.propCollection === 2 ? 2 : 1,
     pro7RootFolder:      state.config.pro7RootFolder || '',
     pro7LibraryFolder:   state.config.pro7LibraryFolder || '',
     slides,
@@ -13269,9 +13293,14 @@ function showGenerateModal(data, spec) {
     : (isPair
         ? `<div class="gen-modal-filename" style="margin-top:0">
             <div style="font-weight:600;color:var(--text);font-size:12px;margin-bottom:4px">Shared prop collection</div>
-            <div>Both presentations reference the same DeckPro prop slots — no duplicate props were written.</div>
+            <div>Both presentations reference the same "${esc(data.propCollectionName || 'DeckPro')}" prop slots — no duplicate props were written.</div>
           </div>`
-        : '');
+        : (data.delivered && data.propCollectionName
+            ? `<div class="gen-modal-filename" style="margin-top:0">
+                <div style="font-weight:600;color:var(--text);font-size:12px;margin-bottom:4px">Prop collection</div>
+                <div>Props written to the "${esc(data.propCollectionName)}" collection in ProPresenter.</div>
+              </div>`
+            : ''));
 
   const filenameSection = isPair
     ? data.presentations.map(p => `<div class="gen-modal-filename">${esc(p.path)}</div>`).join('')
@@ -15191,6 +15220,7 @@ function helpSections() {
         <li>A <code>Message_YY.MM.DD_Series_Title.pro</code> presentation in your chosen Pro7 library.</li>
         <li>All prop slots in Pro7's Configuration/Props — active slides get real content, unused slots get empty placeholders.</li>
         <li>A <strong>DeckPro</strong> collection folder in the Props panel, kept in sync. Your other prop collections are preserved byte-for-byte.</li>
+        <li>A second, independent <strong>DeckPro 2</strong> collection for decks set to <strong>Props 2</strong> (the button next to QR in the sidebar's Deck row). Put two decks — say an event and a gathering — on different collections and both stay built and ready in ProPresenter at once; exporting one never touches the other's props.</li>
       </ul>
 
       <h4>Merge or Override — when Pro7 has hand-edits</h4>

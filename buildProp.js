@@ -687,7 +687,7 @@ function resolveSpecTransition(specTrans, rs) {
   return rs._propTransition;
 }
 
-function buildAllPropCues(propSpecs, style = {}) {
+function buildAllPropCues(propSpecs, style = {}, collectionName = 'DeckPro') {
   const rs = resolveStyle(style);
   rs._transition     = makeTransition(rs.transitionType     || 'fade', rs.transitionDuration);
   rs._propTransition = makeTransition(rs.propTransitionType || 'fade', rs.propTransitionDuration);
@@ -729,7 +729,7 @@ function buildAllPropCues(propSpecs, style = {}) {
     transition: rs._propTransition,
     propCollections: [{
       uuid: uuid(),
-      name: 'DeckPro',
+      name: collectionName,
       singlePropEnabled: true,
       items: cues.map(c => ({ propCueUuid: c.uuid })),
       cues,

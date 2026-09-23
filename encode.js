@@ -223,6 +223,72 @@ const DECKPRO_PROP_SLOTS = [
   { slot: 'prop_50', uuid: 'D0E1F2A3-B4C5-6780-3456-890123456750' },
 ];
 
+// Second, fully independent slot bank + collection ("DeckPro 2"), so two decks
+// (e.g. an event and a gathering) can both be delivered and ready at once
+// without the second export overwriting the first one's props.
+const DECKPRO_PROP_SLOTS_2 = [
+  { slot: 'prop2_1',  uuid: '626D3F05-73EC-438C-8029-1EFB1B3B26CD' },
+  { slot: 'prop2_2',  uuid: '564D1E9E-0F5D-4CD8-8E7B-C5B1D4165B55' },
+  { slot: 'prop2_3',  uuid: '5565863C-D35E-4E65-BA9E-DD5A9A80662F' },
+  { slot: 'prop2_4',  uuid: 'C527BF32-411E-49AA-A0D6-91605B1EFFCE' },
+  { slot: 'prop2_5',  uuid: '146B4D7F-C44A-4BCC-85F7-EC4A347145E6' },
+  { slot: 'prop2_6',  uuid: '60D7B1B7-E4DB-4285-A595-5513DF7B5FD8' },
+  { slot: 'prop2_7',  uuid: 'D226A533-4326-45EF-93F8-AB052B63ECEC' },
+  { slot: 'prop2_8',  uuid: '147564BE-F1FD-41BB-9754-2A37F1D4969F' },
+  { slot: 'prop2_9',  uuid: '9FA9D0D9-467C-4A72-BDF7-76FDE3E9464B' },
+  { slot: 'prop2_10', uuid: '2D63277E-44AC-4CEA-836C-01132F1EA7F6' },
+  { slot: 'prop2_11', uuid: '01F6153B-CDE0-4392-AFFE-9CB578341FE8' },
+  { slot: 'prop2_12', uuid: '3FB7D547-90CF-4C16-8F2E-2ABEA1BF3290' },
+  { slot: 'prop2_13', uuid: '2D784EAE-FE0A-4702-A1FB-84DC5337B904' },
+  { slot: 'prop2_14', uuid: '6917E8E6-1A72-438A-9FBC-5259E6157D9A' },
+  { slot: 'prop2_15', uuid: 'C386E64C-8E13-4F0D-BB84-DF3302ADB84D' },
+  { slot: 'prop2_16', uuid: '27E5E96C-99DC-42E6-86F4-1D90D19516DC' },
+  { slot: 'prop2_17', uuid: 'DEBE91A8-71F8-4201-A195-B502981819CA' },
+  { slot: 'prop2_18', uuid: 'B8264B71-2FD0-4D5D-94DB-E5567583DAA0' },
+  { slot: 'prop2_19', uuid: '6025088A-5579-479B-8732-1E70093FFBA2' },
+  { slot: 'prop2_20', uuid: 'CB4040E1-5991-43B4-8C5F-5333E7488151' },
+  { slot: 'prop2_21', uuid: '6AFD9430-4966-4CD5-B8DE-9D69AE5B3CBD' },
+  { slot: 'prop2_22', uuid: 'FB2C0719-E202-4541-95EA-F036E704136F' },
+  { slot: 'prop2_23', uuid: '75A124EA-AFE1-4B3D-AF2A-C7D5779F2DBF' },
+  { slot: 'prop2_24', uuid: 'E09DF8ED-6F78-49A7-9EC9-96B4EE9C6A6D' },
+  { slot: 'prop2_25', uuid: '50270298-C5A8-40AB-BB8D-3BD1565E9AF2' },
+  { slot: 'prop2_26', uuid: '6886EF9D-F771-48F6-8B42-3559C9AFAD32' },
+  { slot: 'prop2_27', uuid: 'FAF8BC4B-B613-4B32-9FFE-715C6A15F668' },
+  { slot: 'prop2_28', uuid: '159D3B60-11D1-4E7C-9C0A-D56FF1A8D4DF' },
+  { slot: 'prop2_29', uuid: '45EF578C-D6A6-4E1B-B6B0-555A28D4DBB5' },
+  { slot: 'prop2_30', uuid: '80CD70BC-D02C-4BDC-A072-EABC6A0D10D5' },
+  { slot: 'prop2_31', uuid: '73502A84-E14E-4F74-B045-51149B7F85A1' },
+  { slot: 'prop2_32', uuid: '2139C6DD-354E-4EFF-84D6-B5DCDBCB603B' },
+  { slot: 'prop2_33', uuid: '434219BB-7CF1-453E-8BFB-D82CF04C49B0' },
+  { slot: 'prop2_34', uuid: 'BBBDF815-5DC3-4AD6-8A8E-AC355B3C0083' },
+  { slot: 'prop2_35', uuid: '2AC08DB7-A9C4-4483-A00F-0AA28999F66F' },
+  { slot: 'prop2_36', uuid: 'F1AC6EF4-5599-4004-9464-C1272C9BADAD' },
+  { slot: 'prop2_37', uuid: 'C6B3C1FA-DA66-4AAA-B830-3EA9C5E29A83' },
+  { slot: 'prop2_38', uuid: 'CE1A5224-009A-4F48-8EC6-CDA955A25B95' },
+  { slot: 'prop2_39', uuid: 'B99F29BD-43ED-4FC4-B14C-193DB6F9B8D2' },
+  { slot: 'prop2_40', uuid: 'ABD0E669-40D8-47AE-A7A3-54D4D7767C78' },
+  { slot: 'prop2_41', uuid: '0FCA1ACA-3587-4944-A984-DEE7E009ED22' },
+  { slot: 'prop2_42', uuid: 'D75578BF-7A76-459C-8BA5-DDD35B31BB72' },
+  { slot: 'prop2_43', uuid: '66EF14EB-73FC-4250-90B9-3EEAC2392151' },
+  { slot: 'prop2_44', uuid: 'B0A27E7D-C68C-4589-91E1-851A4601E529' },
+  { slot: 'prop2_45', uuid: 'B4939CF3-BFF4-4A9F-BB9E-187821293E20' },
+  { slot: 'prop2_46', uuid: 'A73A7925-F4FE-4817-ABB2-C6C8CCE06F3A' },
+  { slot: 'prop2_47', uuid: '254154B8-C111-41D5-B816-D2EA6E52DD07' },
+  { slot: 'prop2_48', uuid: '30727814-D5D6-4318-B4DA-25BC57179122' },
+  { slot: 'prop2_49', uuid: '9D62F91A-B0E4-4B8B-85BA-7F15CA0D11BF' },
+  { slot: 'prop2_50', uuid: '25B6576C-F1C6-439A-B9B3-7766F86AD289' },
+];
+
+const PROP_BANKS = {
+  1: { name: 'DeckPro',   collectionUuid: 'DECADE00-CAFE-4000-8000-BABE00000001', slots: DECKPRO_PROP_SLOTS },
+  2: { name: 'DeckPro 2', collectionUuid: 'DECADE00-CAFE-4000-8000-BABE00000002', slots: DECKPRO_PROP_SLOTS_2 },
+};
+for (const b of Object.values(PROP_BANKS)) b.uuidSet = new Set(b.slots.map(s => s.uuid));
+
+function propBank(n) {
+  return PROP_BANKS[Number(n) === 2 ? 2 : 1];
+}
+
 const PROTO_PATH = path.join(__dirname, 'ProPresenter7-Proto/proto/propresenter.proto');
 
 let _root = null;
@@ -400,9 +466,6 @@ function extractStringFromUuidBytes(buf, start, end) {
   return null;
 }
 
-// Fixed UUID for the DeckPro collection folder — same on every machine
-const DECKPRO_COLLECTION_UUID = 'DECADE00-CAFE-4000-8000-BABE00000001';
-
 /**
  * Encode a UUID string as a full UUID message (2-level nested: outer msg → inner string msg).
  * Returns 40 bytes: 0a 26 0a 24 <36-char UUID>
@@ -530,17 +593,16 @@ async function encodeCueField(cueObj) {
   return Buffer.concat([Buffer.from([0x12]), encodeVarint(cueBytes.length), cueBytes]);
 }
 
-// Set of all DeckPro slot UUIDs (for collection membership management)
-const DECKPRO_SLOT_UUID_SET = new Set(DECKPRO_PROP_SLOTS.map(s => s.uuid));
-
 /**
  * Patch Configuration/Props in-place at the binary level.
  * - DeckPro prop cues are replaced/appended (never re-encodes foreign cues).
- * - A "DeckPro" collection folder is created/updated to contain all active DeckPro slots.
- * - DeckPro UUIDs are removed from all other collections (keeps the folder clean).
+ * - The bank's collection folder ("DeckPro" / "DeckPro 2") is created/updated to contain all its active slots.
+ * - That bank's UUIDs are removed from all other collections (keeps the folder clean).
+ *   The other bank's collection is left alone — it only ever holds its own UUIDs.
  * - All other data — unknown fields, collections, Pro7 internals — is preserved byte-for-byte.
  */
-async function updateConfigProps(newCues, pro7RootFolder = '') {
+async function updateConfigProps(newCues, pro7RootFolder = '', bankNum = 1) {
+  const bank = propBank(bankNum);
   const confPath = getPropsConfigPath(pro7RootFolder);
   let backupPath = null;
   try {
@@ -574,19 +636,19 @@ async function updateConfigProps(newCues, pro7RootFolder = '') {
       }
       if (f.fn === 4 && f.dataStart !== undefined) {
         const name = getCollectionName(raw, f.dataStart, f.dataEnd);
-        if (name === 'DeckPro') {
+        if (name === bank.name) {
           deckproCollectionUuid = extractUuidFromCueBytes(raw, f.dataStart, f.dataEnd);
         }
       }
     }
 
-    // Use existing DeckPro collection UUID if found, otherwise use our fixed one
-    const collectionUuid = deckproCollectionUuid || DECKPRO_COLLECTION_UUID;
+    // Use existing collection UUID if found, otherwise use the bank's fixed one
+    const collectionUuid = deckproCollectionUuid || bank.collectionUuid;
 
-    // DeckPro collection members = all DeckPro slot UUIDs already in the file
+    // Collection members = all of this bank's slot UUIDs already in the file
     // PLUS any new ones being appended this generation (not yet in existingCueUuids)
     const deckproCollectionMembers = [
-      ...[...existingCueUuids].filter(u => DECKPRO_SLOT_UUID_SET.has(u)),
+      ...[...existingCueUuids].filter(u => bank.uuidSet.has(u)),
       ...[...incomingUuids].filter(u => !existingCueUuids.has(u)),
     ];
 
@@ -615,17 +677,17 @@ async function updateConfigProps(newCues, pro7RootFolder = '') {
         const collUuid = extractUuidFromCueBytes(raw, f.dataStart, f.dataEnd);
         const collName = getCollectionName(raw, f.dataStart, f.dataEnd);
 
-        if (collUuid === collectionUuid || collName === 'DeckPro') {
-          // This IS the DeckPro collection — replace with updated member list.
-          // Single Prop Mode is always forced on for the DeckPro collection —
+        if (collUuid === collectionUuid || collName === bank.name) {
+          // This IS the bank's collection — replace with updated member list.
+          // Single Prop Mode is always forced on for DeckPro collections —
           // otherwise every export would silently revert a user's manual toggle
           // back off, since this rebuild replaces the whole field-4 entry.
-          chunks.push(buildCollectionField4(collectionUuid, 'DeckPro', deckproCollectionMembers, true));
+          chunks.push(buildCollectionField4(collectionUuid, bank.name, deckproCollectionMembers, true));
           deckproCollectionWritten = true;
         } else {
-          // Another collection — remove any DeckPro slot UUIDs from its member list
+          // Another collection — remove any of this bank's slot UUIDs from its member list
           const members = getCollectionMembers(raw, f.dataStart, f.dataEnd);
-          const filteredMembers = members.filter(u => !DECKPRO_SLOT_UUID_SET.has(u));
+          const filteredMembers = members.filter(u => !bank.uuidSet.has(u));
           if (filteredMembers.length !== members.length) {
             // Rebuild this collection without the DeckPro UUIDs — preserve its
             // own Single Prop Mode setting rather than silently dropping it.
@@ -651,15 +713,15 @@ async function updateConfigProps(newCues, pro7RootFolder = '') {
       if (!existingCueUuids.has(id)) { chunks.push(fieldBytes); added++; }
     }
 
-    // Append DeckPro collection if it wasn't in the file at all
+    // Append the bank's collection if it wasn't in the file at all
     if (!deckproCollectionWritten) {
-      chunks.push(buildCollectionField4(collectionUuid, 'DeckPro', deckproCollectionMembers, true));
+      chunks.push(buildCollectionField4(collectionUuid, bank.name, deckproCollectionMembers, true));
     }
 
     const patched = Buffer.concat(chunks);
     fs.writeFileSync(confPath, patched);
     const replaced = [...incomingUuids].filter(u => existingCueUuids.has(u)).length;
-    console.log(`updateConfigProps: patched ${replaced} cues, added ${added} new, DeckPro collection ${deckproCollectionWritten ? 'updated' : 'created'} (file: ${raw.length}b → ${patched.length}b)`);
+    console.log(`updateConfigProps: patched ${replaced} cues, added ${added} new, "${bank.name}" collection ${deckproCollectionWritten ? 'updated' : 'created'} (file: ${raw.length}b → ${patched.length}b)`);
     return { backupPath };
   } catch (err) {
     console.error('updateConfigProps failed (non-fatal):', err.message);
@@ -672,14 +734,15 @@ async function updateConfigProps(newCues, pro7RootFolder = '') {
  * Each content prop gets the next slot (prop_1, prop_2, …).
  * Returns { propSpecs, propUuidMap } where propUuidMap maps propName → permanent UUID.
  */
-function collectPropSpecs(slides, responses = {}, includeResponseCard = false) {
+function collectPropSpecs(slides, responses = {}, includeResponseCard = false, bankNum = 1) {
   const propSpecs  = [];
   const propUuidMap = {};  // propName → permanent UUID (for builder.js PROP actions)
+  const slots = propBank(bankNum).slots;
   let slotIdx = 0;
 
   function nextSlot() {
-    if (slotIdx >= DECKPRO_PROP_SLOTS.length) throw new Error(`Exceeded ${DECKPRO_PROP_SLOTS.length} permanent prop slots`);
-    return DECKPRO_PROP_SLOTS[slotIdx++];
+    if (slotIdx >= slots.length) throw new Error(`Exceeded ${slots.length} permanent prop slots`);
+    return slots[slotIdx++];
   }
 
   for (const slide of slides) {
@@ -768,6 +831,24 @@ function collectPropSpecs(slides, responses = {}, includeResponseCard = false) {
   return { propSpecs, propUuidMap };
 }
 
+// Always fill all 50 slots — unused ones get empty placeholders so the
+// collection in Pro7 is always consistent from the first export.
+function fillUnusedSlots(propSpecs, bank) {
+  const usedSlotUuids = new Set(propSpecs.map(p => p.slotUuid).filter(Boolean));
+  for (const slot of bank.slots) {
+    if (!usedSlotUuids.has(slot.uuid)) {
+      propSpecs.push({
+        type:          'point-single',
+        propName:      slot.slot,
+        slotName:      slot.slot,
+        slotUuid:      slot.uuid,
+        bodyText:      '',
+        propTransition: null,
+      });
+    }
+  }
+}
+
 /**
  * Encode presentation + write all output files.
  *
@@ -785,29 +866,15 @@ async function encode(spec, outputPath, opts = {}) {
   const safeName = (spec.name || 'Untitled').replace(/[^a-zA-Z0-9_\-. ]/g, '_');
 
   // ── 1. Assign permanent prop slots and build prop cues ───────────────────
-  const { propSpecs, propUuidMap } = collectPropSpecs(spec.slides || [], spec.responses || {}, !!spec.includeResponseCard);
-
-  // Always fill all 50 slots — unused ones get empty placeholders so the
-  // DeckPro collection in Pro7 is always consistent from the first export.
-  const usedSlotUuids = new Set(propSpecs.map(p => p.slotUuid).filter(Boolean));
-  for (const slot of DECKPRO_PROP_SLOTS) {
-    if (!usedSlotUuids.has(slot.uuid)) {
-      propSpecs.push({
-        type:          'point-single',
-        propName:      slot.slot,
-        slotName:      slot.slot,
-        slotUuid:      slot.uuid,
-        bodyText:      '',
-        propTransition: null,
-      });
-    }
-  }
+  const bank = propBank(spec.propCollection);
+  const { propSpecs, propUuidMap } = collectPropSpecs(spec.slides || [], spec.responses || {}, !!spec.includeResponseCard, spec.propCollection);
+  fillUnusedSlots(propSpecs, bank);
 
   let propBuf    = null;
   let propDocObj = null;
 
   if (propSpecs.length > 0) {
-    propDocObj = buildAllPropCues(propSpecs, spec.style || {});
+    propDocObj = buildAllPropCues(propSpecs, spec.style || {}, bank.name);
     propBuf    = await encodePropDocument(propDocObj);
   }
 
@@ -868,14 +935,14 @@ async function encode(spec, outputPath, opts = {}) {
     if (propBuf && propDocObj) {
       // Props go directly into Configuration/Props — no _Props.pro needed in the library
       // Update visual content of permanent prop slots in Configuration/Props
-      const r = await updateConfigProps(propDocObj.cues || [], spec.pro7RootFolder || '');
+      const r = await updateConfigProps(propDocObj.cues || [], spec.pro7RootFolder || '', spec.propCollection);
       propsBackup = r && r.backupPath ? path.basename(r.backupPath) : null;
       if (r && r.skipped) {
         propsInstalled = false;
         propsError = r.reason || 'Configuration/Props not found';
       }
     }
-    return { presentationBytes: presentationBuf.length, props: writtenProps, presentationPath: presPath, delivered: true, propsBackup, propsInstalled, propsError, presentationSnapshot };
+    return { presentationBytes: presentationBuf.length, props: writtenProps, presentationPath: presPath, delivered: true, propsBackup, propsInstalled, propsError, propCollectionName: bank.name, presentationSnapshot };
   }
 
   // Local file mode — write to disk
@@ -918,23 +985,12 @@ async function encodeDeliverPair(specA, specB, opts = {}) {
   const safeB = (specB.name || 'Untitled').replace(/[^a-zA-Z0-9_\-. ]/g, '_');
 
   // ── Build props ONCE — specA and specB have identical prop-relevant content ──
-  const { propSpecs, propUuidMap } = collectPropSpecs(specA.slides || [], specA.responses || {}, !!specA.includeResponseCard);
-  const usedSlotUuids = new Set(propSpecs.map(p => p.slotUuid).filter(Boolean));
-  for (const slot of DECKPRO_PROP_SLOTS) {
-    if (!usedSlotUuids.has(slot.uuid)) {
-      propSpecs.push({
-        type:          'point-single',
-        propName:      slot.slot,
-        slotName:      slot.slot,
-        slotUuid:      slot.uuid,
-        bodyText:      '',
-        propTransition: null,
-      });
-    }
-  }
+  const bank = propBank(specA.propCollection);
+  const { propSpecs, propUuidMap } = collectPropSpecs(specA.slides || [], specA.responses || {}, !!specA.includeResponseCard, specA.propCollection);
+  fillUnusedSlots(propSpecs, bank);
   let propBuf = null, propDocObj = null;
   if (propSpecs.length > 0) {
-    propDocObj = buildAllPropCues(propSpecs, specA.style || {});
+    propDocObj = buildAllPropCues(propSpecs, specA.style || {}, bank.name);
     propBuf    = await encodePropDocument(propDocObj);
   }
 
@@ -968,7 +1024,7 @@ async function encodeDeliverPair(specA, specB, opts = {}) {
 
   let propsBackup = null, propsInstalled = true, propsError = null;
   if (propBuf && propDocObj) {
-    const r = await updateConfigProps(propDocObj.cues || [], specA.pro7RootFolder || '');
+    const r = await updateConfigProps(propDocObj.cues || [], specA.pro7RootFolder || '', specA.propCollection);
     propsBackup = r && r.backupPath ? path.basename(r.backupPath) : null;
     if (r && r.skipped) {
       propsInstalled = false;
@@ -978,6 +1034,7 @@ async function encodeDeliverPair(specA, specB, opts = {}) {
 
   return {
     delivered: true,
+    propCollectionName: bank.name,
     presentations: [
       { fileName: `${safeA}.pro`, path: pathA, bytes: bufA.length, snapshot: snapshotA },
       { fileName: `${safeB}.pro`, path: pathB, bytes: bufB.length, snapshot: snapshotB },

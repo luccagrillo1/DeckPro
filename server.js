@@ -1318,6 +1318,7 @@ app.post('/api/generate', async (req, res) => {
         propsBackup: result.propsBackup || null,
         propsInstalled: result.propsInstalled !== false,
         propsError: result.propsError || null,
+        propCollectionName: result.propCollectionName || null,
         pro7Relaunched,
       });
     }
@@ -1385,6 +1386,7 @@ app.post('/api/generate', async (req, res) => {
       propsBackup: result.propsBackup || null,
       propsInstalled: result.propsInstalled !== false,
       propsError: result.propsError || null,
+      propCollectionName: result.propCollectionName || null,
       pro7Relaunched,
     });
   } catch (err) {

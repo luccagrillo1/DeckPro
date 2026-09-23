@@ -2628,6 +2628,11 @@ body.dark .si-tag-stage {
   letter-spacing: .6px;
   color: var(--muted);
 }
+.deck-header-btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .btn-deck-qr {
   display: flex;
   align-items: center;
