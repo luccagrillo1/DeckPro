@@ -99,6 +99,32 @@ function deck(name, sentinel, propCollection) {
     // Omitted propCollection (every deck saved before this feature) = collection 1.
     const rLegacy = await encode({ ...deck('Legacy', 'LEGACY_SENTINEL'), propCollection: undefined });
     ok('a deck with no propCollection set defaults to "DeckPro Slot 1"', rLegacy.propCollectionName === 'DeckPro Slot 1');
+
+    // ── Alias slides: repeat another slide, triggering the SAME prop slot ──
+    const scripture = { type: 'scripture', label: 'John 3:16', reference: 'John 3:16', propName: 'John 3:16',
+      bodies: [[{ text: 'ALIAS_SENTINEL' }]] };
+    const point = { type: 'point', mode: 'single', label: 'Go', bodyText: 'Go', propName: 'Go' };
+    const rAlias = await encode({ ...deck('AliasDeck', 'unused', 1), slides: [
+      scripture,
+      point,
+      { ...scripture, label: 'John 3:16 again', propAlias: true },
+    ] });
+    const aliasPres = Presentation.toObject(Presentation.decode(fs.readFileSync(rAlias.presentationPath)), { defaults: true });
+    // Cues in deck order: scripture, point, alias (cue names are empty in the output)
+    const propActionsByCue = (aliasPres.cues || [])
+      .map(c => (c.actions || []).map(a => a.prop?.identification?.parameterUuid?.string).filter(Boolean))
+      .filter(u => u.length);
+    ok('scripture, point and alias each get a prop-triggering cue', propActionsByCue.length === 3, JSON.stringify(propActionsByCue));
+    ok('the alias triggers the exact same prop as the original',
+      propActionsByCue[0]?.[0] && propActionsByCue[0][0] === propActionsByCue[2]?.[0], JSON.stringify(propActionsByCue));
+    ok('the point in between still triggers its own prop', propActionsByCue[1]?.[0] !== propActionsByCue[0]?.[0]);
+    conf = readConf();
+    const slot1 = memberSet(collection(conf, 'DeckPro Slot 1'));
+    const scriptureProps = (conf.cues || []).filter(c => slot1.has(c.uuid?.string) && c.name === 'John 3:16');
+    ok('the alias does not use a prop slot of its own (one "John 3:16" prop, not two)',
+      scriptureProps.length === 1, `${scriptureProps.length} "John 3:16" props`);
+    const distinct = new Set(propActionsByCue.flat());
+    ok('a deck of scripture + point + alias uses exactly 2 prop slots', distinct.size === 2, [...distinct].join(','));
   } catch (e) {
     ok('prop collection tests ran without throwing', false, e.stack);
   } finally {

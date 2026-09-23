@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.30.3';
+const APP_VERSION = '4.31.0';
 
 const CHANGELOG = [
+  {
+    version: '4.31.0',
+    date: '2026-09-23',
+    changes: [
+      "New: Alias slides. Right-click a Scripture, Point or Image slide and choose Create Alias (alongside Duplicate and Delete) to repeat it later in the deck — e.g. the same scripture read twice. The alias shows the same content and triggers the exact same prop as the original, so it doesn't use another prop slot, and editing the original updates both. It keeps its own label and Blank Before / QR setting, and can be re-pointed at a different slide from its 'Alias of' dropdown.",
+    ],
+  },
   {
     version: '4.30.3',
     date: '2026-09-23',
@@ -4709,7 +4716,39 @@ const ICON = {
   point:     { cls: 'si-point',     text: 'P' },
   image:     { cls: 'si-image',     text: 'I' },
   custom:    { cls: 'si-custom',    text: 'C' },
+  alias:     { cls: 'si-alias-orphan', text: '!' },
 };
+
+// ─── Alias slides ────────────────────────────────────────────────────────────
+// An alias repeats another slide at a second spot in the deck: same content,
+// same prop (no extra prop slot), its own label + blank-before/QR. It stores
+// only the source's id — editing the original updates every alias of it.
+const ALIAS_SOURCE_TYPES = ['scripture', 'point', 'image'];
+const ALIAS_TYPE_NAMES = { scripture: 'Scripture', point: 'Point', image: 'Image' };
+
+function aliasSource(slide) {
+  if (slide?.type !== 'alias') return null;
+  const src = state.slides.find(s => s.id === slide.aliasOf);
+  return src && ALIAS_SOURCE_TYPES.includes(src.type) ? src : null;
+}
+
+function aliasDisplayLabel(slide) {
+  const src = aliasSource(slide);
+  return slide.label?.trim() || (src ? (src.label || ALIAS_TYPE_NAMES[src.type]) : 'Alias (original deleted)');
+}
+
+function createAlias(sourceId) {
+  const idx = state.slides.findIndex(s => s.id === sourceId);
+  const src = state.slides[idx];
+  if (!src || !ALIAS_SOURCE_TYPES.includes(src.type)) return;
+  const alias = {
+    id: uid(), type: 'alias', fixed: false, label: '', aliasOf: src.id,
+    blankBefore: !!src.blankBefore, blankSpans: [], qrOverride: null,
+  };
+  state.slides.splice(idx + 1, 0, alias);
+  state.activeId = alias.id;
+  saveState(); render();
+}
 
 // Stage display entries matching any of the given trigger keys (type + pos) — mirrors getSlideMacroBadges.
 function getSlideStageDisplays(...triggerKeys) {
@@ -4821,6 +4860,7 @@ function getSlideCtxMenu() {
   _slideCtxMenu.id = 'slide-ctx-menu';
   _slideCtxMenu.innerHTML = `
     <button id="ctx-dupe-slide">Duplicate</button>
+    <button id="ctx-alias-slide">Create Alias</button>
     <button id="ctx-delete-slide" class="ctx-delete">Delete</button>
   `;
   document.body.appendChild(_slideCtxMenu);
@@ -4830,14 +4870,17 @@ function getSlideCtxMenu() {
   return _slideCtxMenu;
 }
 
-function showSlideCtxMenu(x, y, { onDuplicate, onDelete }) {
+function showSlideCtxMenu(x, y, { onDuplicate, onDelete, onAlias }) {
   const menu = getSlideCtxMenu();
-  const dupeBtn = menu.querySelector('#ctx-dupe-slide');
-  const delBtn  = menu.querySelector('#ctx-delete-slide');
-  dupeBtn.style.display = onDuplicate ? '' : 'none';
-  delBtn.style.display  = onDelete    ? '' : 'none';
-  dupeBtn.onclick = onDuplicate ? () => { onDuplicate(); hideSlideCtxMenu(); } : null;
-  delBtn.onclick  = onDelete    ? () => { onDelete();    hideSlideCtxMenu(); } : null;
+  const dupeBtn  = menu.querySelector('#ctx-dupe-slide');
+  const aliasBtn = menu.querySelector('#ctx-alias-slide');
+  const delBtn   = menu.querySelector('#ctx-delete-slide');
+  dupeBtn.style.display  = onDuplicate ? '' : 'none';
+  aliasBtn.style.display = onAlias     ? '' : 'none';
+  delBtn.style.display   = onDelete    ? '' : 'none';
+  dupeBtn.onclick  = onDuplicate ? () => { onDuplicate(); hideSlideCtxMenu(); } : null;
+  aliasBtn.onclick = onAlias     ? () => { onAlias();     hideSlideCtxMenu(); } : null;
+  delBtn.onclick   = onDelete    ? () => { onDelete();    hideSlideCtxMenu(); } : null;
   menu.style.left = x + 'px';
   menu.style.top  = y + 'px';
   menu.classList.add('open');
@@ -4850,7 +4893,7 @@ function hideSlideCtxMenu() {
   _slideCtxMenu?.classList.remove('open');
 }
 
-function makeSidebarItem({ id, cls, iconCls, iconText, label, fixed, draggable, onClick, onDelete, onDuplicate, macroBadges, stageBadges, transBadge, propTransBadge }) {
+function makeSidebarItem({ id, cls, iconCls, iconText, label, fixed, draggable, onClick, onDelete, onDuplicate, onAlias, macroBadges, stageBadges, transBadge, propTransBadge }) {
   const item = document.createElement('div');
   item.className = `slide-item${cls ? ' ' + cls : ''}${fixed ? ' fixed' : ''}`;
   item.dataset.id = id;
@@ -4865,10 +4908,10 @@ function makeSidebarItem({ id, cls, iconCls, iconText, label, fixed, draggable, 
     ${badges ? `<div class="slide-badges">${badges}</div>` : ''}
   `;
   item.addEventListener('click', () => onClick());
-  if (onDuplicate || onDelete) {
+  if (onDuplicate || onDelete || onAlias) {
     item.addEventListener('contextmenu', e => {
       e.preventDefault();
-      showSlideCtxMenu(e.clientX, e.clientY, { onDuplicate, onDelete });
+      showSlideCtxMenu(e.clientX, e.clientY, { onDuplicate, onDelete, onAlias });
     });
   }
   return item;
@@ -4919,11 +4962,15 @@ function renderSidebar() {
       continue;
     }
 
-    const ic             = ICON[slide.type] || { cls: '', text: '?' };
+    const isAlias        = slide.type === 'alias';
+    const aliasSrc       = isAlias ? aliasSource(slide) : null;
+    // An alias exports as its source's type, so it gets that type's icon + macros
+    const effType        = isAlias ? (aliasSrc?.type || 'alias') : slide.type;
+    const ic             = ICON[effType] || { cls: '', text: '?' };
     const posKey         = `pos:${_si + 1}`;
-    const hasBB          = slide.blankBefore && ['scripture', 'point', 'image'].includes(slide.type);
+    const hasBB          = slide.blankBefore && ['scripture', 'point', 'image', 'alias'].includes(slide.type);
     // pos:N badge goes on the blank-before row (it is the Nth output cue); exclude it from the content slide
-    const macroBadges    = getSlideMacroBadges(slide.type, ...(hasBB ? [] : [posKey]));
+    const macroBadges    = getSlideMacroBadges(effType, ...(hasBB ? [] : [posKey]));
     if (slide.macroOverride) {
       macroBadges.push({ cls: 'macro-override', icon: 'ring', color: macroDisplayColor(slide.macroOverride), title: `Override: ${slide.macroOverride.name}` });
     }
@@ -4943,17 +4990,19 @@ function renderSidebar() {
 
     const item = makeSidebarItem({
       id:          slide.id,
-      cls:         slide.id === state.activeId ? 'active' : '',
+      cls:         [slide.id === state.activeId ? 'active' : '', isAlias ? 'alias-item' : ''].filter(Boolean).join(' '),
       iconCls:     ic.cls,
       iconText:    ic.text,
-      label:       slide.label,
+      label:       isAlias ? aliasDisplayLabel(slide) : slide.label,
       fixed:       slide.fixed,
       draggable:   !slide.fixed,
       onClick:     () => selectSlide(slide.id),
       onDelete:    slide.fixed ? null : () => deleteSlide(slide.id),
       onDuplicate: slide.fixed ? null : () => duplicateSlide(slide.id),
+      onAlias:     ALIAS_SOURCE_TYPES.includes(slide.type) ? () => createAlias(slide.id) : null,
       macroBadges,
-      stageBadges: stageDisplayBadgesHTML(slide.type, ...(hasBB ? [] : [posKey]))
+      stageBadges: (isAlias ? '<span class="si-badge si-tag si-tag-alias" title="Repeats another slide and triggers its prop">Alias</span>' : '')
+                 + stageDisplayBadgesHTML(effType, ...(hasBB ? [] : [posKey]))
                  + (slide.type === 'blank' ? qrBadgeHTML(effectiveQR(slide)) : ''),
       transBadge,
       propTransBadge,
@@ -5165,6 +5214,7 @@ function renderMain() {
     case 'scripture': panel.innerHTML = scriptureForm(slide); break;
     case 'point':     panel.innerHTML = pointForm(slide);     break;
     case 'image':     panel.innerHTML = imageForm(slide);     break;
+    case 'alias':     panel.innerHTML = aliasForm(slide);     break;
     case 'custom':    panel.innerHTML = customForm(slide);    break;
     case 'qrmarker':  panel.innerHTML = qrMarkerForm(slide);  return; // no form fields to wire
     default:          panel.innerHTML = '<div class="panel-empty">Unknown type</div>'; return;
@@ -9335,6 +9385,54 @@ function imageForm(slide) {
   `;
 }
 
+function aliasForm(slide) {
+  const src = aliasSource(slide);
+  const on  = !!slide.blankBefore;
+  const F   = state.config.features || DEFAULT_FEATURES();
+  const effType = src?.type || 'alias';
+  const options = state.slides
+    .filter(s => ALIAS_SOURCE_TYPES.includes(s.type))
+    .map(s => `<option value="${esc(s.id)}"${s.id === slide.aliasOf ? ' selected' : ''}>${esc(ALIAS_TYPE_NAMES[s.type])}: ${esc(s.label || '(untitled)')}</option>`)
+    .join('');
+  const blankSection = F.blankBefore ? `
+    <div class="blank-before-row" id="blank-before-row">
+      <div class="toggle${on ? ' on' : ''}" id="bb-toggle"></div>
+      <label data-tip-key="blank-before">Blank slide before this one</label>
+      <div class="qr-toggle-wrap${on ? ' visible' : ''}" id="qr-toggle-wrap">
+        <div class="toggle qr-toggle-inline${effectiveQR(slide) ? ' on' : ''}" id="qr-toggle" data-tip-key="qr-toggle"></div>
+        <label data-tip-key="qr-toggle" class="qr-toggle-label">QR</label>
+      </div>
+    </div>
+    ${F.confidenceMonitor ? `
+      <div class="blank-before-preview${on ? ' visible' : ''}" id="bb-preview">
+        ${customConfidenceMonitorSection('f-blank-spans', slide.blankSpans || [])}
+      </div>
+    ` : `<div class="blank-before-preview${on ? ' visible' : ''}" id="bb-preview" style="display:none"></div>`}
+  ` : '';
+  return `
+    <div class="slide-form">
+      <h2>
+        <input type="text" class="slide-title-input" id="f-label" spellcheck="true" value="${esc(slide.label || '')}" placeholder="${esc(src ? (src.label || ALIAS_TYPE_NAMES[src.type]) : 'Alias')}">
+        ${macroChipsHTML(effType, slidePosKey(slide))}${stageDisplayChipsHTML(effType, slidePosKey(slide))}
+      </h2>
+      <div class="field">
+        <label for="f-alias-source">Alias of</label>
+        <div class="alias-source-row">
+          <select id="f-alias-source">
+            ${src ? '' : '<option value="" selected disabled>Original was deleted — pick a slide</option>'}
+            ${options}
+          </select>
+          <button type="button" class="btn-sm" id="btn-alias-goto"${src ? '' : ' disabled'}>Go to original</button>
+        </div>
+        <p class="alias-hint">Shows the same slide and triggers the same prop as the original, without using another prop slot. Edit the original to change both.</p>
+      </div>
+      <div class="slide-secondary">
+        ${blankSection}
+      </div>
+    </div>
+  `;
+}
+
 function qrMarkerForm(slide) {
   return `
     <div class="slide-form">
@@ -9943,6 +10041,19 @@ function attachFormHandlers(slide) {
 
   // ── Overrides section (macro override, all slide types) ──
   attachOverridesHandlers(slide);
+
+  // ── Alias: which slide it repeats ──
+  const aliasSel = get('f-alias-source');
+  if (aliasSel) {
+    aliasSel.addEventListener('change', () => {
+      slide.aliasOf = aliasSel.value;
+      saveState(); render();
+    });
+    get('btn-alias-goto')?.addEventListener('click', () => {
+      const src = aliasSource(slide);
+      if (src) selectSlide(src.id);
+    });
+  }
 
   // ── Reference (scripture) — auto-syncs label & propName ──
   const refEl = get('f-reference');
@@ -10930,7 +11041,7 @@ function buildSpec() {
     || DEFAULT_STYLE_SCHEME();
   const style = styleForExport(activeScheme);
 
-  const slides = state.slides.map(slide => {
+  const exportSlide = slide => {
     if (slide.type === 'start') return { type: 'start', label: normalizeDeckQuotes(slide.label || 'Start of Notes'), text: normalizeDeckQuotes(slide.text ?? slide.label ?? 'Start of Notes') };
     if (slide.type === 'end')   return { type: 'end',   label: normalizeDeckQuotes(slide.label || 'End of Notes'), text: normalizeDeckQuotes(slide.text ?? slide.label ?? 'End of Notes') };
 
@@ -11122,7 +11233,30 @@ function buildSpec() {
     }
 
     return null;
-  }).filter(Boolean);
+  };
+
+  // An alias re-exports its source verbatim — same content and same prop name,
+  // so it triggers the source's prop slot instead of taking a new one — but
+  // keeps its own label and blank-before/QR. propAlias tells encode.js not to
+  // allocate a slot for it.
+  const exportAlias = slide => {
+    const src = aliasSource(slide);
+    const out = src ? exportSlide(src) : null;
+    if (!out) return null;
+    // Image props are named after the label when there's no propName — pin it
+    // before the alias's own label replaces the source's.
+    if (out.type === 'image' && !out.propName) out.propName = out.label;
+    if (slide.label?.trim()) out.label = normalizeDeckQuotes(slide.label);
+    out.blankBefore = !!slide.blankBefore;
+    if ((slide.blankSpans || []).length) out.blankSpans = normalizeExportSpans(slide.blankSpans);
+    out.qrOn = slide.blankBefore ? effectiveQR(slide) : false;
+    out.propAlias = true;
+    return out;
+  };
+
+  const slides = state.slides
+    .map(slide => slide.type === 'alias' ? exportAlias(slide) : exportSlide(slide))
+    .filter(Boolean);
 
   return {
     name:                buildFileName(),
@@ -11198,6 +11332,9 @@ function preflightWarnings() {
 
   for (const slide of state.slides) {
     const label = slide.label || slide.type;
+    if (slide.type === 'alias' && !aliasSource(slide)) {
+      warn(`An alias slide repeats a slide that was deleted — it will be left out of the export`, slide.id);
+    }
     if (slide.type === 'scripture') {
       if (!slide.reference?.trim()) {
         warn(`Scripture “${label}” has no reference`, slide.id, 'reference');
@@ -14947,13 +15084,16 @@ function helpSections() {
   },
   {
     id: 'other-slides',
-    label: 'Blank · Image · Custom',
+    label: 'Blank · Image · Custom · Alias',
     html: `
       <h3>Blank</h3>
       <p>A black / empty slide. Optionally give it ${D3} text (bold supported). Blanks are also inserted automatically by the <strong>Blank Before</strong> toggle on scripture and point slides — see <em>Slide Notes &amp; Blank Before</em>.</p>
 
       <h3>Image</h3>
       <p>A slide with a background image pulled from your Pro7 media library. Give it a label; reference the media by name. It gets its own reserved prop slot to build out in Pro7 — so the ${D2} shows a deliberate placeholder for this slide instead of whatever the previous slide's prop happened to leave up.</p>
+
+      <h3>Alias</h3>
+      <p>Repeats a Scripture, Point or Image slide somewhere else in the deck — e.g. the same scripture read twice. Right-click the original in the sidebar and choose <strong>Create Alias</strong>; it's placed right after the original, so drag it wherever the repeat belongs. An alias shows the same content and triggers the <em>same</em> prop as the original, so it doesn't use another prop slot, and editing the original updates every alias of it. It keeps its own label and its own Blank Before / QR setting. Aliases have a dashed icon and an <strong>Alias</strong> tag in the sidebar; if you delete the original, the alias turns red and is left out of the export (the pre-export check warns you), or you can point it at another slide from its <strong>Alias of</strong> dropdown.</p>
 
       <h3>Custom</h3>
       <p>An escape hatch. A Custom slide exports as a <strong>blank slot carrying your label</strong> — a placeholder you finish by hand in ProPresenter (a video, a special graphic, anything DeckPro doesn't model). It still holds its place in the deck order, queue, and any macro/stage triggers you attach.</p>

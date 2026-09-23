@@ -751,6 +751,9 @@ function collectPropSpecs(slides, responses = {}, includeResponseCard = false, b
   }
 
   for (const slide of slides) {
+    // An alias repeats another slide under the same prop name, so it already
+    // resolves to that slide's slot via propUuidMap — no slot of its own.
+    if (slide.propAlias) continue;
     if (slide.type === 'scripture') {
       const pName = slide.propName || slide.reference || 'scripture';
       const slot  = nextSlot();

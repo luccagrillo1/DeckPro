@@ -1146,6 +1146,18 @@ body.dark .slide-item.active { background: rgba(224,96,16,.12); }
 #slide-ctx-menu button:hover { background: var(--hover); }
 #slide-ctx-menu .ctx-delete { color: var(--danger); }
 
+/* ─── Alias slides ───────────────────────────────────────────────────── */
+.slide-item.alias-item .slide-icon { outline: 1.5px dashed currentColor; outline-offset: -3px; }
+.si-alias-orphan { background: rgba(220,38,38,.12); color: var(--danger); }
+.si-tag-alias {
+  background: transparent;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+}
+.alias-source-row { display: flex; align-items: center; gap: 8px; }
+.alias-source-row select { flex: 1; min-width: 0; }
+.alias-hint { margin-top: 6px; font-size: 12px; color: var(--muted); line-height: 1.45; }
+
 /* ─── Main panel ──────────────────────────────────────────────────────── */
 
 .main-panel {
