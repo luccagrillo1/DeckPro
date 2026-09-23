@@ -21,14 +21,8 @@ if gh release view "$TAG" > /dev/null 2>&1; then
   exit 1
 fi
 
-# Release notes = the latest CHANGELOG entry from public/app.js
-NOTES=$(node -e "
-const src = require('fs').readFileSync('public/app.js', 'utf8');
-const m = src.match(/changes:\s*\[([\s\S]*?)\]/);
-if (!m) { console.log('See in-app changelog.'); process.exit(0); }
-const bullets = [...m[1].matchAll(/(['\"])((?:\\\\.|(?!\1).)*)\1/g)].map(x => '- ' + x[2]);
-console.log(bullets.join('\n'));
-")
+# Release notes = this version's CHANGELOG entry from public/app.js
+NOTES=$(node scripts/release-notes.js)
 
 ASSETS=()
 for f in "dist/DeckPro-$VERSION-arm64.dmg" "dist/DeckPro-$VERSION-x64.dmg" \
