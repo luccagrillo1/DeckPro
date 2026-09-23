@@ -108,7 +108,7 @@ function expectedCues(s) {
 }
 function expectedTotal(deck) {
   let n = deck.slides.reduce((sum, s) => sum + expectedCues(s), 0);
-  if (deck.includeResponseCard) n += 6; // Blank, R1, R2, R3, R4, Hold
+  if (deck.includeResponseCard) n += 2; // Response Card Blank, Response Card
   return n;
 }
 

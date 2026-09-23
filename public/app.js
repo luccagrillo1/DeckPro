@@ -2,9 +2,18 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.31.0';
+const APP_VERSION = '4.32.0';
 
 const CHANGELOG = [
+  {
+    version: '4.32.0',
+    date: '2026-09-23',
+    changes: [
+      "Response Card is now just two slides before End of Notes: Response Card Blank, then Response Card — one slide (text \"Response Card\") that triggers the Response Card prop, which already shows all four responses on the LED wall. The separate Response 1–4 slides and the Response Card Hold slide are gone.",
+      "Macro/stage-layout triggers: RC Content and RC Hold are merged into one 'Response Card' trigger, since they're now the same slide. Anything you had on either one (e.g. your response card, gradient and no-logo macros, the RESPONSE CARD stage layout) is moved over automatically and keeps firing on the Response Card slide — once, even if it was on both. RC Blank is unchanged.",
+      "Styles: the RC Body and RC Title rows (Text and Layout tabs) are removed — they only styled the old Response 1–4 slides. The Response Card slide uses the Utility style, like Start and End.",
+    ],
+  },
   {
     version: '4.31.0',
     date: '2026-09-23',
@@ -3550,7 +3559,7 @@ function applySavedState(saved) {
       for (const scheme of state.styleSchemes) {
         if (!scheme.stageDisplays?.length) {
           scheme.stageDisplays = [
-            { id: uid(), name: _ss.rcLayoutName      || '', uuid: _ss.rcLayoutUuid      || '', triggers: ['rcBlank', 'rcContent', 'rcHold'] },
+            { id: uid(), name: _ss.rcLayoutName      || '', uuid: _ss.rcLayoutUuid      || '', triggers: ['rcBlank', 'rcContent'] },
             { id: uid(), name: _ss.messageLayoutName || '', uuid: _ss.messageLayoutUuid || '', triggers: ['scripture', 'point', 'blank', 'image', 'custom'] },
           ].filter(d => d.name || d.uuid);
         }
@@ -3576,11 +3585,26 @@ function applySavedState(saved) {
         const triggers = d.role === 'msgLayout'
           ? ['scripture', 'point', 'blank', 'image', 'custom']
           : d.role === 'rcLayout'
-          ? ['rcBlank', 'rcContent', 'rcHold']
+          ? ['rcBlank', 'rcContent']
           : (d.triggers || []);
         return { id: d.id, name: d.name || '', uuid: d.uuid || '', triggers };
       }).filter(Boolean);
     }
+
+    // Fold 'rcHold' into 'rcContent' (v4.32.0+): the Response Card package is
+    // now just RC Blank + one Response Card slide, which replaced both the
+    // old content slides and the old Hold slide — so the two triggers mean the
+    // same cue. builder.js still honors 'rcHold' too, as a safety net.
+    const _foldRcHold = list => {
+      for (const item of (list || [])) {
+        if (Array.isArray(item.triggers) && item.triggers.includes('rcHold')) {
+          item.triggers = [...new Set(item.triggers.map(t => t === 'rcHold' ? 'rcContent' : t))];
+        }
+      }
+    };
+    for (const scheme of state.styleSchemes) { _foldRcHold(scheme.macros); _foldRcHold(scheme.stageDisplays); }
+    _foldRcHold(state.globalMacros);
+    _foldRcHold(state.globalStageDisplays);
 
     // Migrate old string[] bullets → spans[][] for revealing points
     for (const sl of (state.slides || [])) {
@@ -5019,9 +5043,8 @@ function renderSidebar() {
     // Inject RC group just before END
     if (slide.type === 'end') {
       const RC_SUBITEMS = [
-        { id: 'rcBlank',   label: 'RC Blank',   trigger: 'rcBlank'   },
-        { id: 'rcContent', label: 'RC Content',  trigger: 'rcContent' },
-        { id: 'rcHold',    label: 'RC Hold',     trigger: 'rcHold'    },
+        { id: 'rcBlank',   label: 'RC Blank',      triggers: ['rcBlank'] },
+        { id: 'rcContent', label: 'Response Card', triggers: ['rcContent', 'rcHold'] },
       ];
       const rcIsActive = state.activeId === 'rc';
 
@@ -5067,8 +5090,8 @@ function renderSidebar() {
             fixed:     true,
             draggable: false,
             onClick:   () => { state.activeId = 'rc'; render(); },
-            macroBadges: getSlideMacroBadges(sub.trigger),
-            stageBadges: stageDisplayBadgesHTML(sub.trigger),
+            macroBadges: getSlideMacroBadges(...sub.triggers),
+            stageBadges: stageDisplayBadgesHTML(...sub.triggers),
           });
           rcGroup.appendChild(subItem);
         }
@@ -5566,8 +5589,7 @@ const CUSTOM_MACRO_TRIGGERS = [
   ['blankBefore', 'Blank Before'],
   ['image',       'Image'],
   ['rcBlank',     'RC Blank'],
-  ['rcContent',   'RC Content'],
-  ['rcHold',      'RC Hold'],
+  ['rcContent',   'Response Card'],
 ];
 
 
@@ -7309,8 +7331,6 @@ function lyRows() {
     { label: 'Body',         cols: ['bodyX','bodyY','bodyW','bodyH'], region: 'body' },
     { label: 'Point',        cols: ['pointX','pointY','pointW','pointH'], region: 'point' },
     { label: 'Title',        cols: ['titleX','titleY','titleW','titleH'], autoY: { field: 'autoTitleY', gapField: 'titleAutoGap' }, region: 'header' },
-    { label: 'RC Body',      cols: ['rcBodyX','rcBodyY','rcBodyW','rcBodyH'], region: 'rcBody' },
-    { label: 'RC Title',     cols: ['rcTitleX','rcTitleY','rcTitleW','rcTitleH'], autoY: { field: 'rcAutoTitleY', gapField: 'rcTitleAutoGap' }, region: 'rcTitle' },
     { label: 'Utility',      cols: ['startEndX','startEndY','startEndW','startEndH'], region: 'startEnd' },
     { label: 'Live',         cols: ['liveX','liveY','liveW','liveH'], region: 'live' },
     { label: 'Queue',        cols: ['queueX','queueY','queueW','queueH'], region: 'queue' },
@@ -7490,8 +7510,6 @@ function refreshSchemePreviews(panel, scheme) {
     body:      [sv.bodyX??0, sv.bodyY??0, sv.bodyW??0, sv.bodyH??0, mainW, mainH],
     point:     [sv.pointX??sv.bodyX??0, sv.pointY??sv.bodyY??0, sv.pointW??sv.bodyW??0, sv.pointH??sv.bodyH??0, mainW, mainH],
     header:    [sv.titleX??0, sv.titleY??0, sv.titleW??0, sv.titleH??0, mainW, mainH],
-    rcBody:    [sv.rcBodyX??sv.bodyX??0, sv.rcBodyY??sv.bodyY??0, sv.rcBodyW??sv.bodyW??0, sv.rcBodyH??sv.bodyH??0, mainW, mainH],
-    rcTitle:   [sv.rcTitleX??sv.titleX??0, sv.rcTitleY??sv.titleY??0, sv.rcTitleW??sv.titleW??0, sv.rcTitleH??sv.titleH??0, mainW, mainH],
     startEnd:  [sv.startEndX??0, sv.startEndY??0, sv.startEndW??0, sv.startEndH??0, mainW, mainH],
     live:      [sv.liveX??0, sv.liveY??0, sv.liveW??0, sv.liveH??0, mainW, mainH],
     propBody:  [sv.propBodyX??0, sv.propBodyY??0, sv.propBodyW??0, sv.propBodyH??0, propW, propH],
@@ -7619,8 +7637,6 @@ function layoutPreview(scheme, sel) {
     ['body',      'Body',         sv.bodyX ?? 0,     sv.bodyY ?? 0,     sv.bodyW ?? 0,      sv.bodyH ?? 0],
     ['point',     'Point',        sv.pointX ?? sv.bodyX ?? 0, sv.pointY ?? sv.bodyY ?? 0, sv.pointW ?? sv.bodyW ?? 0, sv.pointH ?? sv.bodyH ?? 0],
     ['header',    'Title',        sv.titleX ?? 0,    sv.titleY ?? 0,    sv.titleW ?? 0,     sv.titleH ?? 0],
-    ['rcBody',    'RC Body',      sv.rcBodyX ?? sv.bodyX ?? 0, sv.rcBodyY ?? sv.bodyY ?? 0, sv.rcBodyW ?? sv.bodyW ?? 0, sv.rcBodyH ?? sv.bodyH ?? 0],
-    ['rcTitle',   'RC Title',     sv.rcTitleX ?? sv.titleX ?? 0, sv.rcTitleY ?? sv.titleY ?? 0, sv.rcTitleW ?? sv.titleW ?? 0, sv.rcTitleH ?? sv.titleH ?? 0],
     ['startEnd',  'Utility',      sv.startEndX ?? 0, sv.startEndY ?? 0, sv.startEndW ?? 0,  sv.startEndH ?? 0],
     ['live',      'Live',         sv.liveX ?? 0,     sv.liveY ?? 0,     sv.liveW ?? 0,      sv.liveH ?? 0],
   ];
@@ -7826,8 +7842,6 @@ function renderSchemeGrid(sv, rs, dis) {
       { id: 'bold1',  lbl: 'Bold',        fontF: 'boldFont',      advK: 'boldFontAdv',      sizeF: null },
       { id: 'title1', lbl: 'Title',       fontF: 'titleFont',     advK: 'titleFontAdv',     sizeF: 'titleSize' },
       { id: 'point1', lbl: 'Point',       fontF: 'pointFont',     advK: 'pointFontAdv',     sizeF: 'pointSize' },
-      { id: 'rcBody1',  lbl: 'RC Body',   fontF: 'rcBodyFont',    advK: 'rcBodyFontAdv',    sizeF: 'rcBodySize' },
-      { id: 'rcTitle1', lbl: 'RC Title',  fontF: 'rcTitleFont',   advK: 'rcTitleFontAdv',   sizeF: 'rcTitleSize' },
     ]},
     { label: 'Display 2', rows: [
       { id: 'body2',  lbl: 'Body',        fontF: 'propBodyFont',  advK: 'propBodyFontAdv',  sizeF: 'propBodySize' },
@@ -8049,7 +8063,7 @@ function renderStylePanel(panel) {
     pointFont:     `Point slides — the main point text on the ${dn('mainScreen')}.`,
     propPointFont: `Point slides — the point text on the ${dn('ledWall')} behind the stage (the "prop").`,
     titleFont:    'Slide title text — e.g. a scripture reference or Response Card title.',
-    startEndFont: 'Utility slides like Start, End, and Response Card Hold.',
+    startEndFont: 'Utility slides like Start, End, and the Response Card slide.',
     notesFont:    `Speaker notes shown only on the ${dn('monitor')}, not to the room.`,
     liveFont:     `The small "live" badge shown on the ${dn('monitor')} to mark the active slide.`,
     queueFont:    'The upcoming-slide queue strip down the side of the slide.',
@@ -8835,7 +8849,6 @@ function renderStylePanel(panel) {
       _textSel = slug;
       const TEXT_REGION_TO_ROW = {
         body: 'body1', propBody: 'body2', point: 'point1', propPoint: 'point2',
-        rcBody: 'rcBody1', rcTitle: 'rcTitle1',
         header: 'title1', propHeader: 'title2', startEnd: 'se',
         live: 'live', queue: 'queue',
       };
@@ -8854,7 +8867,6 @@ function renderStylePanel(panel) {
   // Text tab: clicking a row highlights the matching preview region
   const TEXT_ROW_TO_REGION = {
     body1: 'body', bold1: 'body', title1: 'header', point1: 'point',
-    rcBody1: 'rcBody', rcTitle1: 'rcTitle',
     body2: 'propBody', bold2: 'propBody', title2: 'propHeader', point2: 'propPoint',
     se: 'startEnd', live: 'live', queue: 'queue',
   };
@@ -8874,7 +8886,6 @@ function renderStylePanel(panel) {
   if (_textSel) {
     const TEXT_REGION_TO_ROW = {
       body: 'body1', propBody: 'body2', point: 'point1', propPoint: 'point2',
-      rcBody: 'rcBody1', rcTitle: 'rcTitle1',
       header: 'title1', propHeader: 'title2', startEnd: 'se',
       live: 'live', queue: 'queue',
     };
@@ -15164,9 +15175,9 @@ function helpSections() {
     label: 'Response Card',
     html: `
       <h3>Response Card</h3>
-      <p>Enable <strong>Response Card</strong> for a deck and DeckPro appends the full response-card package before the End slide — the hold slide and Response 1 / 2 / 3 / 4, each linked to the <strong>Response Card</strong> prop on the ${D2}.</p>
+      <p>Enable <strong>Response Card</strong> for a deck and DeckPro adds two slides before the End slide: <strong>Response Card Blank</strong>, then <strong>Response Card</strong> — a single slide that triggers the <strong>Response Card</strong> prop, which shows all four responses at once on the ${D2}. There are no separate slides per response.</p>
       <ul>
-        <li>The hold slide automatically triggers the <strong>Response Card stage layout</strong> and the Message-Blank macro, so your stage display and lighting switch on cue.</li>
+        <li>Macros and stage layouts assigned to <strong>RC Blank</strong> fire on the blank; ones assigned to <strong>Response Card</strong> fire on the Response Card slide (so your stage display and lighting switch on cue).</li>
         <li>The four response lines come from the deck's Response Card fields; everything else (positions, fonts) is defined in the style's <strong>Response Card</strong> tab — see <em>LED Wall &amp; Inheritance</em>.</li>
       </ul>
     `,

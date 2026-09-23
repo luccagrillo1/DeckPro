@@ -676,10 +676,7 @@ function makeLiveElement(rs = {}) {
  * there is a bug, not a legitimate case to approximate; a silent guess that
  * disagrees with the real measurement is how this exact class of bug (the
  * title dropping onto the body) has hidden three times now, so this throws
- * instead. Response Card's title (makeRCSlide1) has never had a real Fit
- * Width result behind it and isn't in scope for this rewrite — its call
- * site passes neither knownLines/metrics nor strict, and keeps landing on
- * the char-width estimate below exactly as it always has.
+ * instead.
  */
 function estimateTitleY(displayBody, bw, rs, knownLines, metrics, strict = false) {
   const bodySize = rs.bodySize ?? 44; // only the non-strict char-width fallback below still needs this
@@ -832,51 +829,6 @@ function makeGradientElement() {
 
 function textColorFromAdv(adv, fallback = C_WHITE) {
   return adv?.color ? hexToColor(adv.color) : fallback;
-}
-
-/** Display 1 RC slide: scheme body + title, just like a scripture slide. */
-function makeRCSlide1(label, bodyText, rs = {}) {
-  const bodyAdv = rs.rcBodyFontAdv || rs.bodyFontAdv || {};
-  const titleAdv = rs.rcTitleFontAdv || rs.titleFontAdv || {};
-  const bodyStyle = {
-    ...rs,
-    bodyFont: rs.rcBodyFont || rs.bodyFont,
-    bodySize: rs.rcBodySize || rs.bodySize,
-    bodyFontAdv: bodyAdv,
-  };
-  const titleStyle = {
-    ...rs,
-    titleFont: rs.rcTitleFont || rs.titleFont,
-    titleSize: rs.rcTitleSize || rs.titleSize,
-    titleFontAdv: titleAdv,
-    titleX: rs.rcTitleX ?? rs.titleX,
-    titleW: rs.rcTitleW ?? rs.titleW,
-    titleH: rs.rcTitleH ?? rs.titleH,
-  };
-
-  const bx = rs.rcBodyX ?? rs.bodyX ?? 0;
-  const by = rs.rcBodyY ?? rs.bodyY ?? 0;
-  const bw = rs.rcBodyW ?? rs.bodyW ?? rs.canvasW ?? 1920;
-  const bh = rs.rcBodyH ?? rs.bodyH ?? 100;
-  const bodyYOff = bodyAdv.yOffset ?? 0;
-  const spans = bodyText ? [{ text: bodyText }] : [];
-  const bodyRtf = rtf.rtfBody(spans, bodyStyle);
-  const titleY = (rs.rcAutoTitleY ?? rs.autoTitleY)
-    ? estimateTitleY(spans, bw, {
-        ...rs,
-        bodyY: by,
-        bodyH: bh,
-        bodySize: bodyStyle.bodySize,
-        bodyFontAdv: bodyAdv,
-        titleH: titleStyle.titleH,
-        titleAutoGap: rs.rcTitleAutoGap ?? rs.titleAutoGap,
-      })
-    : (rs.rcTitleY ?? rs.titleY ?? 0);
-  return [
-    makeSlot(makeLiveElement(rs), { info: 2 }),
-    makeSlot(makeTitleElement({ reference: label, titleY }, titleStyle)),
-    makeSlot(makeBodyElement({ x: bx, y: by + bodyYOff, w: bw, h: bh, rtfData: bodyRtf, charCount: (bodyText || '').length }, bodyStyle)),
-  ];
 }
 
 /** Response Card Hold title — Montserrat-BlackItalic, static */
@@ -1410,40 +1362,30 @@ function buildResponseCardCues(responses = {}, rs = {}) {
     ],
   };
 
-  // ── 2–5. Response 1, 2, 3, 4 ──────────────────────────────────────────────
-  const responseCues = [r1, r2, r3, r4].map((text, idx) => {
-    const n = idx + 1;
-    return {
-      uuid: uuid(),
-      completionActionType: 'COMPLETION_ACTION_TYPE_LAST',
-      hotKey: {},
-      isEnabled: true,
-      actions: [
-        makeSlideAction(`Response ${n}`, makeRCSlide1(`Response ${n}`, text, rs), null, rcNotesRtf),
-        propAction('Response Card'),
-      ],
-    };
-  });
-
-  // ── 6. Response Card Hold ────────────────────────────────────────────────────
-  const holdCue = {
+  // ── 2. Response Card ─────────────────────────────────────────────────────────
+  // One slide that just triggers the prop (the LED wall shows all four
+  // responses at once) — no per-response slides. It replaces both the old
+  // Response 1–4 content cues and the old Hold cue, so it answers to BOTH the
+  // rcContent and rcHold triggers (and gets the gradient macro, like content
+  // did): macros/stage layouts users assigned to either keep firing here.
+  const rcCue = {
     uuid: uuid(),
     completionActionType: 'COMPLETION_ACTION_TYPE_LAST',
     hotKey: {},
     isEnabled: true,
     actions: [
-      makeSlideAction('Response Card Hold', [
-        makeSlot(makeStartEndElement({ text: 'Response Card Hold' }, rs)),
+      makeSlideAction('Response Card', [
+        makeSlot(makeStartEndElement({ text: 'Response Card' }, rs)),
       ], null, rcNotesRtf),
       propAction('Response Card'),
     ],
   };
 
   blankCue._isRcBlank = true;
-  for (const c of responseCues) c._isRcContent = true;
-  holdCue._isRcHold = true;
-  for (const c of [blankCue, ...responseCues, holdCue]) c._type = 'rc';
-  return [blankCue, ...responseCues, holdCue];
+  rcCue._isRcContent = true;
+  rcCue._isRcHold = true;
+  for (const c of [blankCue, rcCue]) c._type = 'rc';
+  return [blankCue, rcCue];
 }
 
 // ─── Helper: inject stage layout action into a cue ────────────────────────

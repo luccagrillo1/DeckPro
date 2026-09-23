@@ -82,9 +82,33 @@ const bodyRtf = c => {
 (() => {
   const cues = cuesOf({ name: 'T', includeResponseCard: true, slides: [{ type: 'start' }, { type: 'end' }] });
   const labels = cues.map(labelOf);
-  ok('RC adds Response 1/2/3/4', ['Response 1', 'Response 2', 'Response 3', 'Response 4'].every(l => labels.includes(l)));
-  ok('RC has no separate intro cue (4 equal responses, no "Response Card" cue)', !labels.includes('Response Card'));
-  ok('RC inserted before END', labels.indexOf('Response 1') < labels.indexOf('End of Notes'));
+  ok('RC is exactly Response Card Blank → Response Card → End of Notes',
+    JSON.stringify(labels.slice(-3)) === JSON.stringify(['Response Card Blank', 'Response Card', 'End of Notes']), labels.join(' | '));
+  ok('no per-response slides and no separate Hold slide',
+    !labels.some(l => /^Response [1-4]$/.test(l) || l === 'Response Card Hold'), labels.join(' | '));
+  const rcCue = cues[labels.indexOf('Response Card')];
+  const blankCue = cues[labels.indexOf('Response Card Blank')];
+  const hasProp = c => (c.actions || []).some(a => a.type === 'ACTION_TYPE_PROP');
+  ok('the Response Card slide triggers the prop; the blank does not', hasProp(rcCue) && !hasProp(blankCue));
+})();
+
+// ---- 4b. RC triggers: the Response Card slide answers to BOTH rcContent and
+//          rcHold (it replaces both), so existing macro/stage assignments keep firing ----
+(() => {
+  const mac = (name, triggers) => ({ id: name, name, uuid: 'U-' + name, color: '#fff', triggers });
+  const cues = cuesOf({ name: 'T', includeResponseCard: true,
+    gradientMacro: { name: 'gradient', uuid: 'U-GRAD' },
+    customMacros: [mac('CONTENT', ['rcContent']), mac('HOLD', ['rcHold']), mac('BOTH', ['rcContent', 'rcHold']), mac('BLANK', ['rcBlank'])],
+    slides: [{ type: 'start' }, { type: 'end' }] });
+  const labels = cues.map(labelOf);
+  const macrosOn = label => (cues[labels.indexOf(label)].actions || [])
+    .filter(a => a.type === 'ACTION_TYPE_MACRO').map(a => a.macro?.identification?.parameterName);
+  const rc = macrosOn('Response Card'), blank = macrosOn('Response Card Blank');
+  ok('rcContent macro fires on the Response Card slide', rc.includes('CONTENT'), rc.join(','));
+  ok('rcHold macro fires on the Response Card slide', rc.includes('HOLD'), rc.join(','));
+  ok('a macro on both rcContent + rcHold fires once, not twice', rc.filter(n => n === 'BOTH').length === 1, rc.join(','));
+  ok('gradient macro fires on the Response Card slide (it replaces the content slides)', rc.includes('gradient'), rc.join(','));
+  ok('rcBlank macro stays on the blank only', blank.includes('BLANK') && !rc.includes('BLANK'), `${blank} / ${rc}`);
 })();
 
 // ---- 5. Macro injection: scheme trigger + per-slide override, no dupes ----

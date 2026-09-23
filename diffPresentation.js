@@ -162,13 +162,9 @@ function deepDiff(a, b, path, out, ctx = {}) {
 // point-shaped cue → rtfPointBody (its own span format — see
 // parsePointBodySpans for why it needs a dedicated parser). 'body' on a
 // startEnd-shaped cue → rtfStartEnd (plain text) — covers Start, End, and
-// Response Card Hold (the only things that ever set that element; blank
+// the Response Card cue (the only things that ever set that element; blank
 // slides render no visible element at all, their confidence-monitor text
 // only ever reaches the notes field, not a slide element).
-// Response Card's "Response Card"/"Response 1/2/3" cues build their body+
-// title elements with these exact same rtfBody/rtfTitle calls (see
-// builder.js's makeRCSlide1), so classifyElements' body+title→'scripture'
-// heuristic already covers them here for free — no separate case needed.
 // Out of scope for a different reason, not just unwired: the revealing-
 // point LED-wall list (rtfRevealingPoints) lives in the separate Props file
 // (_Props.pro, a different protobuf type) — this whole diff/merge system

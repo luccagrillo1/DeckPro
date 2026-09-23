@@ -34,10 +34,10 @@ Classification is by action types + element names present:
 | **POINT** | SLIDE + MACRO(NO LOGO) + PROP | `live`, `body`, `this slide`, `atem_gradient`, `queue` |
 | **IMAGE** | SLIDE + MACRO(NO LOGO) + CLEAR | `live`, `atem_gradient`, `queue` |
 
-Note: **Message - Blank** macro is now on the **Response Card Hold** cue only (not END).
+Note: **Message - Blank** macro is now on the **Response Card** cue only (not END).
 
 ### Response Card cues (auto-appended before END if `includeResponseCard`)
-6 cues, in order: `Response Card Blank` → `Response 1` → `Response 2` → `Response 3` → `Response 4` → `Response Card Hold`. Four equal numbered responses (v4.29.0+) — no separate intro/decision cue; `state.config.responses = {r1, r2, r3, r4, notesTemplate}`. All four "Response N" cues (plus the Blank/Hold cues) reference the single "Response Card" prop, which shows all 4 responses at once on the LED wall (Display 2) — see `buildResponseCardCues` in `builder.js`.
+2 cues (v4.32.0+), in order: `Response Card Blank` → `Response Card`. The `Response Card` cue shows the text "Response Card" and triggers the single "Response Card" prop, which shows all 4 responses at once on the LED wall (Display 2); there are no per-response slides. `state.config.responses = {r1, r2, r3, r4, notesTemplate}` still feeds the prop and the slide notes. Macro/stage triggers: `rcBlank` → the blank; `rcContent` → the Response Card cue (which also still honors the legacy `rcHold`, folded into `rcContent` on load) — see `buildResponseCardCues` in `builder.js`.
 
 ## Macro UUIDs (confirmed from output.json)
 - `Message - Start`: `7C586E48-986E-4932-9219-7D6A64BE5B6C`
@@ -222,7 +222,7 @@ await encode(spec, '/path/to/output.pro');
 
 **Post-processing order in `buildPresentation()`:**
 1. Expand slides → raw cues (blank-before injection, multi-body scripture, revealing bullets)
-2. Append Response Card cues before END (if `includeResponseCard`)
+2. Append Response Card cues (Blank + Response Card) before END (if `includeResponseCard`)
 3. Inject Message-Content macro into `cues[1]`
 4. Fire `qrMacro` on blank-before cues whose slide had `qrOn` true (computed client-side, see QR Code section)
 5. Inject `queue` element into every cue (upcoming slide labels, ≤20 chars each)

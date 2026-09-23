@@ -1,5 +1,5 @@
 {
-  "cueCount": 10,
+  "cueCount": 6,
   "cues": [
     {
       "name": null,
@@ -108,7 +108,7 @@
           "transitionDuration": 0.6,
           "bodies": [
             {
-              "text": "Response 1",
+              "text": "Response Card",
               "super": false,
               "bold": false
             }
@@ -121,155 +121,11 @@
       "actions": [
         {
           "type": "PRESENTATION_SLIDE",
-          "label": "Response 1",
+          "label": "Response Card",
           "transitionDuration": 0.6,
           "bodies": [
             {
-              "text": "live",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Response 1",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "I am committing my life to Christ.",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Response 2",
-              "super": false,
-              "bold": false
-            }
-          ]
-        },
-        {
-          "type": "PROP",
-          "prop": "Response Card"
-        }
-      ]
-    },
-    {
-      "name": null,
-      "actions": [
-        {
-          "type": "PRESENTATION_SLIDE",
-          "label": "Response 2",
-          "transitionDuration": 0.6,
-          "bodies": [
-            {
-              "text": "live",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Response 2",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "I am recommitting my life to Christ.",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Response 3",
-              "super": false,
-              "bold": false
-            }
-          ]
-        },
-        {
-          "type": "PROP",
-          "prop": "Response Card"
-        }
-      ]
-    },
-    {
-      "name": null,
-      "actions": [
-        {
-          "type": "PRESENTATION_SLIDE",
-          "label": "Response 3",
-          "transitionDuration": 0.6,
-          "bodies": [
-            {
-              "text": "live",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Response 3",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "I want to learn more about following Jesus.",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Response 4",
-              "super": false,
-              "bold": false
-            }
-          ]
-        },
-        {
-          "type": "PROP",
-          "prop": "Response Card"
-        }
-      ]
-    },
-    {
-      "name": null,
-      "actions": [
-        {
-          "type": "PRESENTATION_SLIDE",
-          "label": "Response 4",
-          "transitionDuration": 0.6,
-          "bodies": [
-            {
-              "text": "live",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Response 4",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "I want to be baptized.",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Response Card Hold",
-              "super": false,
-              "bold": false
-            }
-          ]
-        },
-        {
-          "type": "PROP",
-          "prop": "Response Card"
-        }
-      ]
-    },
-    {
-      "name": null,
-      "actions": [
-        {
-          "type": "PRESENTATION_SLIDE",
-          "label": "Response Card Hold",
-          "transitionDuration": 0.6,
-          "bodies": [
-            {
-              "text": "Response Card Hold",
+              "text": "Response Card",
               "super": false,
               "bold": false
             },

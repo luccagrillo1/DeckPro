@@ -1,5 +1,5 @@
 {
-  "cueCount": 20,
+  "cueCount": 16,
   "cues": [
     {
       "name": null,
@@ -457,7 +457,7 @@
           "transitionDuration": 0.6,
           "bodies": [
             {
-              "text": "Response 1",
+              "text": "Response Card",
               "super": false,
               "bold": false
             }
@@ -475,191 +475,11 @@
       "actions": [
         {
           "type": "PRESENTATION_SLIDE",
-          "label": "Response 1",
+          "label": "Response Card",
           "transitionDuration": 0.6,
           "bodies": [
             {
-              "text": "live",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Response 1",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "I said yes to Jesus — emoji ? & \"quotes\"",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Response 2",
-              "super": false,
-              "bold": false
-            }
-          ]
-        },
-        {
-          "type": "PROP",
-          "prop": "Response Card"
-        },
-        {
-          "type": "MACRO",
-          "macro": "gradient"
-        },
-        {
-          "type": "STAGE_LAYOUT",
-          "stageLayout": "RC",
-          "stageScreen": "Stage"
-        }
-      ]
-    },
-    {
-      "name": null,
-      "actions": [
-        {
-          "type": "PRESENTATION_SLIDE",
-          "label": "Response 2",
-          "transitionDuration": 0.6,
-          "bodies": [
-            {
-              "text": "live",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Response 2",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Option / one",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Response 3",
-              "super": false,
-              "bold": false
-            }
-          ]
-        },
-        {
-          "type": "PROP",
-          "prop": "Response Card"
-        },
-        {
-          "type": "MACRO",
-          "macro": "gradient"
-        },
-        {
-          "type": "STAGE_LAYOUT",
-          "stageLayout": "RC",
-          "stageScreen": "Stage"
-        }
-      ]
-    },
-    {
-      "name": null,
-      "actions": [
-        {
-          "type": "PRESENTATION_SLIDE",
-          "label": "Response 3",
-          "transitionDuration": 0.6,
-          "bodies": [
-            {
-              "text": "live",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Response 3",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Option — two",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Response 4",
-              "super": false,
-              "bold": false
-            }
-          ]
-        },
-        {
-          "type": "PROP",
-          "prop": "Response Card"
-        },
-        {
-          "type": "MACRO",
-          "macro": "gradient"
-        },
-        {
-          "type": "STAGE_LAYOUT",
-          "stageLayout": "RC",
-          "stageScreen": "Stage"
-        }
-      ]
-    },
-    {
-      "name": null,
-      "actions": [
-        {
-          "type": "PRESENTATION_SLIDE",
-          "label": "Response 4",
-          "transitionDuration": 0.6,
-          "bodies": [
-            {
-              "text": "live",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Response 4",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Option… three",
-              "super": false,
-              "bold": false
-            },
-            {
-              "text": "Response Card Hold",
-              "super": false,
-              "bold": false
-            }
-          ]
-        },
-        {
-          "type": "PROP",
-          "prop": "Response Card"
-        },
-        {
-          "type": "MACRO",
-          "macro": "gradient"
-        },
-        {
-          "type": "STAGE_LAYOUT",
-          "stageLayout": "RC",
-          "stageScreen": "Stage"
-        }
-      ]
-    },
-    {
-      "name": null,
-      "actions": [
-        {
-          "type": "PRESENTATION_SLIDE",
-          "label": "Response Card Hold",
-          "transitionDuration": 0.6,
-          "bodies": [
-            {
-              "text": "Response Card Hold",
+              "text": "Response Card",
               "super": false,
               "bold": false
             },
@@ -673,6 +493,10 @@
         {
           "type": "PROP",
           "prop": "Response Card"
+        },
+        {
+          "type": "MACRO",
+          "macro": "gradient"
         },
         {
           "type": "STAGE_LAYOUT",

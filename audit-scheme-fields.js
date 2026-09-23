@@ -99,6 +99,8 @@ function haystacks(style, { prop = false } = {}) {
 }
 
 // ── field table ──────────────────────────────────────────────────────────────
+const RC_D1_DEAD = 'RC Display 1 slides (Response 1–4) removed in v4.32.0 — setting hidden from Styles';
+
 // Each row: { name, set(scheme), prop?, checks:[{layer,needle,note?}], dead? }
 const advFull = (advKey, { prop = false } = {}) => ([
   { name: `${advKey}.charSpacing`,            prop, set: s => deep(s, advKey, 'charSpacing', 7),        checks: [r(`\\expndtw140`)] },
@@ -145,8 +147,8 @@ const FIELDS = [
   { name: 'boldFont',   set: s => { s.boldFont = S.font; },   checks: [r(S.font)] },
   { name: 'pointFont',  set: s => { s.pointFont = S.font; },  checks: [m(`"name":"${S.font}"`), r(S.font)] },
   { name: 'titleFont',  set: s => { s.titleFont = S.font; },  checks: [m(`"name":"${S.font}"`), r(S.font)] },
-  { name: 'rcBodyFont', set: s => { s.rcBodyFont = S.font; }, checks: [m(`"name":"${S.font}"`), r(S.font)] },
-  { name: 'rcTitleFont',set: s => { s.rcTitleFont = S.font;}, checks: [m(`"name":"${S.font}"`), r(S.font)] },
+  { name: 'rcBodyFont', set: s => { s.rcBodyFont = S.font; }, checks: [m(`"name":"${S.font}"`), r(S.font)], expectDead: RC_D1_DEAD },
+  { name: 'rcTitleFont',set: s => { s.rcTitleFont = S.font;}, checks: [m(`"name":"${S.font}"`), r(S.font)], expectDead: RC_D1_DEAD },
   { name: 'startEndFont',set: s => { s.startEndFont = S.font;},checks: [m(`"name":"${S.font}"`), r(S.font)] },
   { name: 'notesFont',  set: s => { s.notesFont = S.font; },  checks: [r(S.font)] },
   { name: 'notesBoldFont', set: s => { s.notesBoldFont = S.font; }, checks: [r(S.font)],
@@ -164,8 +166,8 @@ const FIELDS = [
   { name: 'bodySize',    set: s => { s.bodySize = S.size; },    checks: [m(`"size":${S.size}`), r(`\\fs${S.size*2}`)] },
   { name: 'pointSize',   set: s => { s.pointSize = S.size; },   checks: [m(`"size":${S.size}`), r(`\\fs${S.size*2}`)] },
   { name: 'titleSize',   set: s => { s.titleSize = S.size; },   checks: [m(`"size":${S.size}`), r(`\\fs${S.size*2}`)] },
-  { name: 'rcBodySize',  set: s => { s.rcBodySize = S.size; },  checks: [m(`"size":${S.size}`), r(`\\fs${S.size*2}`)] },
-  { name: 'rcTitleSize', set: s => { s.rcTitleSize = S.size; }, checks: [m(`"size":${S.size}`), r(`\\fs${S.size*2}`)] },
+  { name: 'rcBodySize',  set: s => { s.rcBodySize = S.size; },  checks: [m(`"size":${S.size}`), r(`\\fs${S.size*2}`)], expectDead: RC_D1_DEAD },
+  { name: 'rcTitleSize', set: s => { s.rcTitleSize = S.size; }, checks: [m(`"size":${S.size}`), r(`\\fs${S.size*2}`)], expectDead: RC_D1_DEAD },
   { name: 'startEndSize',set: s => { s.startEndSize = S.size; },checks: [m(`"size":${S.size}`), r(`\\fs${S.size*2}`)] },
   { name: 'notesSize',   set: s => { s.notesSize = S.size; },   checks: [r(`\\fs${S.size*2}`)] },
 
@@ -193,8 +195,8 @@ const FIELDS = [
   { name: 'pointX/Y/W/H', set: s => { s.pointX = 1111.1; s.pointY = 1111.1; s.pointW = 1111.1; s.pointH = 1111.1; }, checks: [m(`1111.1`)] },
   { name: 'titleX/Y/W/H', set: s => { s.autoTitleY = false; s.titleX = 222.2; s.titleY = 222.2; s.titleW = 222.2; s.titleH = 222.2; }, checks: [m(`222.2`)] },
   { name: 'autoTitleY+titleAutoGap', set: s => { s.autoTitleY = true; s.titleAutoGap = 47; }, checks: [], soft: true, note: 'computed offset; verify visually' },
-  { name: 'rcBodyX/Y/W/H', set: s => { s.rcBodyX = 226.2; s.rcBodyY = 226.2; s.rcBodyW = 226.2; s.rcBodyH = 226.2; }, checks: [m(`226.2`)] },
-  { name: 'rcTitleX/Y/W/H', set: s => { s.rcAutoTitleY = false; s.rcTitleX = 227.2; s.rcTitleY = 227.2; s.rcTitleW = 227.2; s.rcTitleH = 227.2; }, checks: [m(`227.2`)] },
+  { name: 'rcBodyX/Y/W/H', set: s => { s.rcBodyX = 226.2; s.rcBodyY = 226.2; s.rcBodyW = 226.2; s.rcBodyH = 226.2; }, checks: [m(`226.2`)], expectDead: RC_D1_DEAD },
+  { name: 'rcTitleX/Y/W/H', set: s => { s.rcAutoTitleY = false; s.rcTitleX = 227.2; s.rcTitleY = 227.2; s.rcTitleW = 227.2; s.rcTitleH = 227.2; }, checks: [m(`227.2`)], expectDead: RC_D1_DEAD },
   { name: 'startEndX/Y/W/H', set: s => { s.startEndX = 333.3; s.startEndY = 333.3; s.startEndW = 333.3; s.startEndH = 333.3; }, checks: [m(`333.3`)] },
   { name: 'liveX/Y/W/H',  set: s => { s.liveX = 444.4; s.liveY = 444.4; s.liveW = 444.4; s.liveH = 444.4; }, checks: [m(`444.4`)] },
   { name: 'queueX/Y/W/H', set: s => { s.queueX = 555.5; s.queueY = 555.5; s.queueW = 555.5; s.queueH = 555.5; }, checks: [m(`555.5`)] },
@@ -214,8 +216,10 @@ const FIELDS = [
   ...advFull('bodyFontAdv'),
   ...advFull('titleFontAdv'),
   ...advFull('pointFontAdv'),
-  ...advFull('rcBodyFontAdv'),
-  ...advFull('rcTitleFontAdv'),
+  // verticalAlignment(top)'s needle also matches other TOP-aligned elements (queue),
+  // so it can't prove absence for a dead field — skip it for these.
+  ...advFull('rcBodyFontAdv').filter(f => !/verticalAlignment/.test(f.name)).map(f => ({ ...f, expectDead: RC_D1_DEAD })),
+  ...advFull('rcTitleFontAdv').filter(f => !/verticalAlignment/.test(f.name)).map(f => ({ ...f, expectDead: RC_D1_DEAD })),
   ...advFull('startEndFontAdv'),
   ...advFull('propBodyFontAdv', { prop: true }),
   ...advFull('propPointFontAdv', { prop: true }),
