@@ -687,7 +687,7 @@ function resolveSpecTransition(specTrans, rs) {
   return rs._propTransition;
 }
 
-function buildAllPropCues(propSpecs, style = {}, collectionName = 'DeckPro') {
+function buildAllPropCues(propSpecs, style = {}, collectionName = 'DeckPro Slot 1') {
   const rs = resolveStyle(style);
   rs._transition     = makeTransition(rs.transitionType     || 'fade', rs.transitionDuration);
   rs._propTransition = makeTransition(rs.propTransitionType || 'fade', rs.propTransitionDuration);

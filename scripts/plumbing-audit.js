@@ -586,7 +586,7 @@ async function checkDeliverModeSinglePropMode(propRoot) {
 
     const patched = PropDocument.toObject(
       PropDocument.decode(fs.readFileSync(confPath)), { defaults: true });
-    const deckproColl = (patched.propCollections || []).find(c => c.name === 'DeckPro');
+    const deckproColl = (patched.propCollections || []).find(c => c.name === 'DeckPro Slot 1');
 
     check('P0', 'props', 'Deliver-mode export completes without error', !!(result && result.propsInstalled), result && result.propsError || '');
     check('P0', 'props', 'Single Prop Mode stays on after re-exporting an existing DeckPro collection',

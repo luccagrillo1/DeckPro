@@ -280,10 +280,15 @@ const DECKPRO_PROP_SLOTS_2 = [
 ];
 
 const PROP_BANKS = {
-  1: { name: 'DeckPro',   collectionUuid: 'DECADE00-CAFE-4000-8000-BABE00000001', slots: DECKPRO_PROP_SLOTS },
-  2: { name: 'DeckPro 2', collectionUuid: 'DECADE00-CAFE-4000-8000-BABE00000002', slots: DECKPRO_PROP_SLOTS_2 },
+  // legacyNames: earlier names for the same collection — matched so an existing
+  // collection is renamed in place on the next export instead of duplicated.
+  1: { name: 'DeckPro Slot 1', legacyNames: ['DeckPro'],   collectionUuid: 'DECADE00-CAFE-4000-8000-BABE00000001', slots: DECKPRO_PROP_SLOTS },
+  2: { name: 'DeckPro Slot 2', legacyNames: ['DeckPro 2'], collectionUuid: 'DECADE00-CAFE-4000-8000-BABE00000002', slots: DECKPRO_PROP_SLOTS_2 },
 };
-for (const b of Object.values(PROP_BANKS)) b.uuidSet = new Set(b.slots.map(s => s.uuid));
+for (const b of Object.values(PROP_BANKS)) {
+  b.uuidSet = new Set(b.slots.map(s => s.uuid));
+  b.matchNames = new Set([b.name, ...b.legacyNames]);
+}
 
 function propBank(n) {
   return PROP_BANKS[Number(n) === 2 ? 2 : 1];
@@ -636,7 +641,7 @@ async function updateConfigProps(newCues, pro7RootFolder = '', bankNum = 1) {
       }
       if (f.fn === 4 && f.dataStart !== undefined) {
         const name = getCollectionName(raw, f.dataStart, f.dataEnd);
-        if (name === bank.name) {
+        if (bank.matchNames.has(name)) {
           deckproCollectionUuid = extractUuidFromCueBytes(raw, f.dataStart, f.dataEnd);
         }
       }
@@ -677,7 +682,7 @@ async function updateConfigProps(newCues, pro7RootFolder = '', bankNum = 1) {
         const collUuid = extractUuidFromCueBytes(raw, f.dataStart, f.dataEnd);
         const collName = getCollectionName(raw, f.dataStart, f.dataEnd);
 
-        if (collUuid === collectionUuid || collName === bank.name) {
+        if (collUuid === collectionUuid || bank.matchNames.has(collName)) {
           // This IS the bank's collection — replace with updated member list.
           // Single Prop Mode is always forced on for DeckPro collections —
           // otherwise every export would silently revert a user's manual toggle
