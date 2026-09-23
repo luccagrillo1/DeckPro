@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.30.2';
+const APP_VERSION = '4.30.3';
 
 const CHANGELOG = [
+  {
+    version: '4.30.3',
+    date: '2026-09-23',
+    changes: [
+      "The prop slot picker is now a clear Slot 1 | 2 switch next to QR in the sidebar's Deck row, instead of a single button whose pressed state meant Slot 2 — both choices are always visible, and the selected one is highlighted.",
+      'Decks set to Slot 2 now show a Slot 2 badge in the Deck Library, so you can see at a glance which decks share a prop collection before you export.',
+    ],
+  },
   {
     version: '4.30.2',
     date: '2026-09-23',
@@ -2670,7 +2678,7 @@ const TOOLTIPS = {
   // QR
   'qr-marker':                'QR Stop\nDrag into the deck to mark where auto QR-fill stops. Blanks before it default to QR on (when the deck-wide QR toggle is on); blanks at or after it default to off. Doesn\'t export as a slide.',
   'qr-toggle':                'QR\nToggles the QR macro for this blank specifically — overrides whatever the QR Stop marker would otherwise set, and stays put even if you move the marker later.',
-  'deck-props-toggle':        'Prop Collection\nWhich ProPresenter prop collection this deck exports into — "DeckPro Slot 1" or "DeckPro Slot 2". Put two decks on different collections (e.g. an event and a gathering) and both stay built and ready at once; exporting one never overwrites the other\'s props. Two decks on the SAME collection still overwrite each other.',
+  'deck-props-toggle':        'Prop Slot\nWhich ProPresenter prop collection this deck exports into — 1 = "DeckPro Slot 1", 2 = "DeckPro Slot 2". Put two decks on different slots (e.g. an event and a gathering) and both stay built and ready at once; exporting one never overwrites the other\'s props. Two decks on the SAME slot still overwrite each other. Decks on Slot 2 show a Slot 2 badge in the Deck Library.',
   'qr-deck-toggle':           'QR\nThis deck\'s default QR state for blanks — turns the QR macro on for blanks before the QR Stop marker (or all blanks, if there\'s no marker). Any blank with its own QR override ignores this.',
 };
 
@@ -4873,11 +4881,11 @@ function renderSidebar() {
   // Update deck-wide QR toggle button state
   const qrToggleBtn = document.getElementById('btn-deck-qr');
   if (qrToggleBtn) qrToggleBtn.classList.toggle('active', !!state.config.qrCode);
-  const propsBtn = document.getElementById('btn-deck-props');
-  if (propsBtn) {
-    const coll2 = state.config.propCollection === 2;
-    propsBtn.classList.toggle('active', coll2);
-    propsBtn.querySelector('.deck-props-label').textContent = coll2 ? 'Slot 2' : 'Slot 1';
+  const slot = state.config.propCollection === 2 ? 2 : 1;
+  for (const b of document.querySelectorAll('#deck-slot-seg button')) {
+    const on = Number(b.dataset.slot) === slot;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-checked', String(on));
   }
 
   for (let _si = 0; _si < state.slides.length; _si++) {
@@ -10471,8 +10479,12 @@ function attachHeaderHandlers() {
     saveState();
     renderSidebar();
   });
-  document.getElementById('btn-deck-props')?.addEventListener('click', () => {
-    state.config.propCollection = state.config.propCollection === 2 ? 1 : 2;
+  document.getElementById('deck-slot-seg')?.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-slot]');
+    if (!btn) return;
+    const slot = Number(btn.dataset.slot);
+    if ((state.config.propCollection === 2 ? 2 : 1) === slot) return;
+    state.config.propCollection = slot;
     saveState();
     renderSidebar();
   });
@@ -14324,6 +14336,8 @@ function deckRowHtml(deck) {
   const badges = [
     isCurrent ? '<span class="deck-current-badge">Open</span>' : '',
     deck.is_template ? '<span class="deck-template-badge">Template</span>' : '',
+    (isCurrent ? state.config.propCollection : deck.prop_collection) === 2
+      ? '<span class="deck-slot-badge" title="Exports into the DeckPro Slot 2 prop collection">Slot 2</span>' : '',
     deck.status === 'archived' ? '<span class="deck-archived-badge">Archived</span>' : '',
   ].join('');
 
@@ -15234,7 +15248,7 @@ function helpSections() {
         <li>A <code>Message_YY.MM.DD_Series_Title.pro</code> presentation in your chosen Pro7 library.</li>
         <li>All prop slots in Pro7's Configuration/Props — active slides get real content, unused slots get empty placeholders.</li>
         <li>A <strong>DeckPro Slot 1</strong> collection folder in the Props panel, kept in sync. Your other prop collections are preserved byte-for-byte.</li>
-        <li>A second, independent <strong>DeckPro Slot 2</strong> collection for decks set to <strong>Slot 2</strong> (the button next to QR in the sidebar's Deck row). Put two decks — say an event and a gathering — on different collections and both stay built and ready in ProPresenter at once; exporting one never touches the other's props.</li>
+        <li>A second, independent <strong>DeckPro Slot 2</strong> collection for decks set to <strong>Slot 2</strong> (the Slot 1 | 2 switch next to QR in the sidebar's Deck row; those decks show a Slot 2 badge in the Deck Library). Put two decks — say an event and a gathering — on different collections and both stay built and ready in ProPresenter at once; exporting one never touches the other's props.</li>
       </ul>
 
       <h4>Merge or Override — when Pro7 has hand-edits</h4>

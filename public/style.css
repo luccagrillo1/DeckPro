@@ -2631,8 +2631,43 @@ body.dark .si-tag-stage {
 .deck-header-btns {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
+/* Prop collection picker — a compact version of .segmented-control, sized to sit beside the QR button */
+.deck-slot {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.deck-slot-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  color: var(--muted);
+}
+.deck-slot-seg {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.deck-slot-seg button {
+  min-width: 22px;
+  padding: 3px 7px;
+  border: none;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.deck-slot-seg button + button { border-left: 1px solid var(--border); }
+.deck-slot-seg button:hover:not(.active) { color: var(--text); }
+.deck-slot-seg button.active { background: var(--blue); color: #fff; }
+.deck-slot-seg button:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 .btn-deck-qr {
   display: flex;
   align-items: center;
@@ -4071,6 +4106,11 @@ details[open] .font-adv-summary::before { transform: rotate(90deg); }
   font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
   color: #b07c10; background: rgba(240,180,41,.16);
   border-radius: 4px; padding: 2px 6px; margin-right: 6px;
+}
+.deck-slot-badge {
+  font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--blue); background: var(--bg); border: 1px solid var(--blue);
+  border-radius: 4px; padding: 1px 6px; margin-right: 6px;
 }
 .deck-archived-badge {
   font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;

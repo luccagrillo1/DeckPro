@@ -166,7 +166,9 @@ function listDecks() {
   return db.prepare(`
     SELECT id, series, title, date, speaker, scheme_id, slide_count, slide_types,
            status, is_template, notes_link, dirty, created_at, updated_at,
-           last_opened_at, last_generated_at, last_delivered_at, last_export_path, last_saved_by
+           last_opened_at, last_generated_at, last_delivered_at, last_export_path, last_saved_by,
+           -- json_valid guard: one corrupt state_json would otherwise fail the whole list
+           CASE WHEN json_valid(state_json) THEN json_extract(state_json, '$.config.propCollection') END AS prop_collection
     FROM decks ORDER BY updated_at DESC
   `).all();
 }

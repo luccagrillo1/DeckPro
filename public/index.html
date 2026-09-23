@@ -115,13 +115,13 @@
       <div class="sidebar-queue-header">
         <span class="queue-header-label">Deck</span>
         <div class="deck-header-btns">
-          <button class="btn-deck-qr" id="btn-deck-props" title="Which prop collection this deck exports into" data-tip-key="deck-props-toggle">
-            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="2.5" y="5" width="11" height="11" rx="1.5" stroke="currentColor" stroke-width="1.6" fill="none"/>
-              <path d="M6.5 3h9a2 2 0 0 1 2 2v9" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-            </svg>
-            <span class="deck-props-label">Slot 1</span>
-          </button>
+          <div class="deck-slot" data-tip-key="deck-props-toggle">
+            <span class="deck-slot-label" id="deck-slot-label">Slot</span>
+            <div class="deck-slot-seg" id="deck-slot-seg" role="radiogroup" aria-labelledby="deck-slot-label">
+              <button type="button" role="radio" data-slot="1" aria-checked="true" class="active">1</button>
+              <button type="button" role="radio" data-slot="2" aria-checked="false">2</button>
+            </div>
+          </div>
           <button class="btn-deck-qr" id="btn-deck-qr" title="Default QR code state for this deck's blanks" data-tip-key="qr-deck-toggle">
             <svg width="14" height="14" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
               <rect x="3" y="3" width="6" height="6" rx="1" stroke="currentColor" stroke-width="1.6" fill="none"/>
