@@ -2,9 +2,18 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.32.0';
+const APP_VERSION = '4.32.1';
 
 const CHANGELOG = [
+  {
+    version: '4.32.1',
+    date: '2026-09-23',
+    changes: [
+      "Fixed Export failing with a Fit Width error ('estimatePropTitleY: a real Fit Width result … is required') on any deck with a scripture slide while LED-wall Auto Title Y is on — broken since 4.28.0. Nothing was written to ProPresenter when this happened, which is why no new slot or presentation appeared. Two causes: the export dropped Display 2's Fit Width results on the way to building props, and scriptures without '+ Display 2' were never measured for the LED wall at all.",
+      "Scripture slides are now always measured for Auto Title Y at export (real line count + font metrics), even when Fit Width or '+ Display 2' is off — the box keeps its fixed Styles size in that case; only the title position uses the measurement.",
+      "Fixed the LED-wall Fit Width box being ignored on real exports since 4.29.3 (scripture, point and revealing-point props fell back to the fixed Styles box), and Split-mode points now send their own LED-wall text to the prop in real exports.",
+    ],
+  },
   {
     version: '4.32.0',
     date: '2026-09-23',
@@ -4576,7 +4585,7 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
       consider(lines, maxW, lines.map(l => l.words.map(w => w.text).join(' ')), part.map(lw => lw.length));
     }
 
-    if (!best) return centered(maxW);
+    if (!best) return centered(maxW, null, N);
     const width = Math.min(best.width, maxW);
     // Emit hard breaks only when the winning layout can't be reproduced by the
     // natural wrap at this width — otherwise box-width alone already gives it.
@@ -4661,15 +4670,18 @@ function computeSlideFitWidth(slide, scheme) {
     // measurement above, but only ever needed alongside it (scripture's title
     // bar), so it's resolved here rather than adding a separate call site.
     const titleM = _fitTitleMetrics(scheme, 'main');
-    if (!wantsProp) return { ...main, bodyLines: main.lines, titleAscent: titleM.ascent, titleDescent: titleM.descent, propBodyW: null, propBodyX: null, propBodyLines: null, propBrokenText: null, propBrokenSpans: null, propAscent: null, propDescent: null, propCapAscent: null, propTitleAscent: null, propTitleDescent: null, propFitHash: null };
     // Display 2 gets its own independent search against rawSpans (unstripped —
     // Strip is a Display-1-only setting) — never derived from Display 1's result.
+    // Always measured for scripture, even without "+ Display 2": LED-wall Auto
+    // Title Y needs the real line count + metrics either way. The line count
+    // is the tier N measured at the full Styles width, which IS the static box
+    // when the width isn't fitted — so it's exact for that box too.
     const prop = computeOptimalBodyWidth(rawSpans, scheme, 'scripture', 'prop');
     const propTitleM = _fitTitleMetrics(scheme, 'prop');
     return {
       ...main, bodyLines: main.lines, titleAscent: titleM.ascent, titleDescent: titleM.descent,
-      propBodyW: prop.bodyW, propBodyX: prop.bodyX, propBodyLines: prop.lines,
-      propBrokenText: prop.brokenText || null, propBrokenSpans: prop.brokenSpans || null,
+      propBodyW: wantsProp ? prop.bodyW : null, propBodyX: wantsProp ? prop.bodyX : null, propBodyLines: prop.lines,
+      propBrokenText: wantsProp ? (prop.brokenText || null) : null, propBrokenSpans: wantsProp ? (prop.brokenSpans || null) : null,
       propAscent: prop.ascent, propDescent: prop.descent, propCapAscent: prop.capAscent,
       propTitleAscent: propTitleM.ascent, propTitleDescent: propTitleM.descent,
       propFitHash: prop.fitHash,
@@ -11108,26 +11120,27 @@ function buildSpec() {
         followReveal:  slide.followReveal || 'single',
         bodyW:         slide.fitWidth ? (slide.bodyW || null) : null,
         bodyX:         slide.fitWidth ? (slide.bodyX || null) : null,
-        bodyLines:     slide.fitWidth ? (slide.bodyLines || null) : null,
-        // Real font metrics for Auto Title Y (see _fitFontMetrics/estimateTitleY)
-        // — gated the same as bodyLines/propBodyLines, since they come from the
-        // same measurement pass and are meaningless without it.
-        ascent:        slide.fitWidth ? (slide.bodyAscent ?? null) : null,
-        descent:       slide.fitWidth ? (slide.bodyDescent ?? null) : null,
-        capAscent:     slide.fitWidth ? (slide.bodyCapAscent ?? null) : null,
+        // Real line counts + font metrics for Auto Title Y (see _fitFontMetrics/
+        // estimateTitleY). Not gated on Fit Width: scripture is always measured
+        // at export (see generate()), and the count at the full Styles width is
+        // exact for the static box too. Only the box geometry below is gated.
+        bodyLines:     slide.bodyLines || null,
+        ascent:        slide.bodyAscent ?? null,
+        descent:       slide.bodyDescent ?? null,
+        capAscent:     slide.bodyCapAscent ?? null,
         // Title bar's own font metrics (see _fitTitleMetrics) — needed so
         // estimateTitleY knows the title's real ink height, not just its box
         // height, when the title is vertically centered in a taller box.
-        titleAscent:   slide.fitWidth ? (slide.titleAscent ?? null) : null,
-        titleDescent:  slide.fitWidth ? (slide.titleDescent ?? null) : null,
+        titleAscent:   slide.titleAscent ?? null,
+        titleDescent:  slide.titleDescent ?? null,
         propBodyW:     (slide.fitWidth && slide.propFitWidth) ? (slide.propBodyW || null) : null,
         propBodyX:     (slide.fitWidth && slide.propFitWidth) ? (slide.propBodyX || null) : null,
-        propBodyLines: (slide.fitWidth && slide.propFitWidth) ? (slide.propBodyLines || null) : null,
-        propAscent:    (slide.fitWidth && slide.propFitWidth) ? (slide.propAscent ?? null) : null,
-        propDescent:   (slide.fitWidth && slide.propFitWidth) ? (slide.propDescent ?? null) : null,
-        propCapAscent: (slide.fitWidth && slide.propFitWidth) ? (slide.propCapAscent ?? null) : null,
-        propTitleAscent:  (slide.fitWidth && slide.propFitWidth) ? (slide.propTitleAscent ?? null) : null,
-        propTitleDescent: (slide.fitWidth && slide.propFitWidth) ? (slide.propTitleDescent ?? null) : null,
+        propBodyLines: slide.propBodyLines || null,
+        propAscent:    slide.propAscent ?? null,
+        propDescent:   slide.propDescent ?? null,
+        propCapAscent: slide.propCapAscent ?? null,
+        propTitleAscent:  slide.propTitleAscent ?? null,
+        propTitleDescent: slide.propTitleDescent ?? null,
       };
     }
 
@@ -11526,18 +11539,28 @@ async function generate() {
   try {
     const scheme = activeStyleScheme();
     for (const slide of state.slides) {
-      if (!slide.fitWidth) continue;
+      // Scripture is always measured — both displays' Auto Title Y need the
+      // real line count + metrics even when Fit Width isn't resizing the box
+      // (measureOnly: keep the static box, take only the measurements).
+      const measureOnly = !slide.fitWidth && slide.type === 'scripture';
+      if (!slide.fitWidth && !measureOnly) continue;
+      const needsProp = slide.propFitWidth || slide.type === 'scripture';
       const bodyStale = slide.bodyFitHash == null || slide.bodyFitHash !== _fitCurrentBodyHash(slide, scheme, 'main');
-      const propStale = slide.propFitWidth &&
+      const propStale = needsProp &&
         (slide.propBodyFitHash == null || slide.propBodyFitHash !== _fitCurrentBodyHash(slide, scheme, 'prop'));
       if (!bodyStale && !propStale) continue;
       const r = computeSlideFitWidth(slide, scheme);
       if (r) {
-        slide.bodyW = r.bodyW; slide.bodyX = r.bodyX; slide.bodyLines = r.bodyLines ?? null;
-        slide.propBodyW = r.propBodyW ?? null; slide.propBodyX = r.propBodyX ?? null; slide.propBodyLines = r.propBodyLines ?? null;
+        slide.bodyLines = r.bodyLines ?? null;
+        slide.propBodyLines = r.propBodyLines ?? null;
+        if (!measureOnly) {
+          slide.bodyW = r.bodyW; slide.bodyX = r.bodyX;
+          slide.propBodyW = r.propBodyW ?? null; slide.propBodyX = r.propBodyX ?? null;
+        }
         // Hard punctuation breaks apply to single-mode point body text and to
-        // scripture — never to revealing points (see computeSlideFitWidth).
-        const carriesBreaks = slide.type === 'scripture' || (slide.type === 'point' && slide.mode !== 'revealing');
+        // scripture — never to revealing points (see computeSlideFitWidth) —
+        // and only when Fit Width is actually fitting the box.
+        const carriesBreaks = !measureOnly && (slide.type === 'scripture' || (slide.type === 'point' && slide.mode !== 'revealing'));
         slide._fitBrokenText = carriesBreaks ? (r.brokenText || null) : null;
         slide._fitBrokenSpans = carriesBreaks ? (r.brokenSpans || null) : null;
         slide._fitPropBrokenText = carriesBreaks ? (r.propBrokenText || null) : null;

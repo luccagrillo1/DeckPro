@@ -734,6 +734,14 @@ async function updateConfigProps(newCues, pro7RootFolder = '', bankNum = 1) {
   }
 }
 
+// Display 2's own Fit Width box, under the exact names buildProp.js reads
+// (spec.propBodyX / spec.propBodyW). Passing them renamed (bodyX/bodyW) is how
+// real exports silently lost the LED-wall box — tests calling buildProp
+// directly never went through here.
+function displayTwoFit(slide) {
+  return { propBodyX: slide.propBodyX ?? null, propBodyW: slide.propBodyW ?? null };
+}
+
 /**
  * Collect prop specs from the slide list, assigning permanent prop slots sequentially.
  * Each content prop gets the next slot (prop_1, prop_2, …).
@@ -766,9 +774,14 @@ function collectPropSpecs(slides, responses = {}, includeResponseCard = false, b
         reference: slide.reference || '',
         bodies: slide.bodies || (slide.body ? [slide.body] : [[]]),
         propTransition: slide.propTransition || null,
-        bodyW: slide.propBodyW || null,
-        bodyX: slide.propBodyX || null,
-        bodyLines: slide.propBodyLines || null,
+        ...displayTwoFit(slide),
+        propBodyLines:        slide.propBodyLines ?? null,
+        propAscent:           slide.propAscent ?? null,
+        propDescent:          slide.propDescent ?? null,
+        propCapAscent:        slide.propCapAscent ?? null,
+        propTitleAscent:      slide.propTitleAscent ?? null,
+        propTitleDescent:     slide.propTitleDescent ?? null,
+        propBodyDisplaySpans: slide.propBodyDisplaySpans ?? null,
       });
     } else if (slide.type === 'point') {
       if (slide.mode === 'revealing') {
@@ -788,8 +801,7 @@ function collectPropSpecs(slides, responses = {}, includeResponseCard = false, b
             propTransition:        slide.propTransition        || null,
             propInitialTransition: slide.propInitialTransition || null,
             propRevealTransition:  slide.propRevealTransition  || null,
-            bodyW: slide.propBodyW || null,
-            bodyX: slide.propBodyX || null,
+            ...displayTwoFit(slide),
           });
         }
       } else {
@@ -804,10 +816,13 @@ function collectPropSpecs(slides, responses = {}, includeResponseCard = false, b
             propName: pName,
             slotName: slot.slot,
             slotUuid: slot.uuid,
-            bodyText: slide.propBodyDisplayText || slide.bodyText || '',
+            mode: slide.mode || 'single',
+            bodyText: slide.bodyText || '',
+            propBodyText:         slide.propBodyText ?? null,
+            propBodyDisplayText:  slide.propBodyDisplayText ?? null,
+            propBodyDisplaySpans: slide.propBodyDisplaySpans ?? null,
             propTransition: slide.propTransition || null,
-            bodyW: slide.propBodyW || null,
-            bodyX: slide.propBodyX || null,
+            ...displayTwoFit(slide),
           });
         }
       }
