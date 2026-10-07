@@ -2,9 +2,18 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.32.1';
+const APP_VERSION = '4.33.0';
 
 const CHANGELOG = [
+  {
+    version: '4.33.0',
+    date: '2026-10-07',
+    changes: [
+      "Fixed the QR Stop not switching the gradient back: the QR-version Gradient macro now fires only on Scripture/Point slides BEFORE the QR Stop. Everything after it gets the regular Gradient macro again (previously the whole QR file used the QR gradient).",
+      "The Response Card always gets the regular Gradient macro now, never the QR-code version.",
+      "New: when this export's QR is on, the QR Stop itself exports as two slides in ProPresenter: a 'Questions' blank that fires the QR macro, then a plain blank with no QR, then your next content slide. If the next slide already has its own blank before it (or is a Blank), that one is used instead of adding a second. With QR off (e.g. the no-QR file of a paired export) the QR Stop still exports nothing.",
+    ],
+  },
   {
     version: '4.32.1',
     date: '2026-09-23',
@@ -11278,8 +11287,18 @@ function buildSpec() {
     return out;
   };
 
+  // qrZone: whether a slide sits before the QR Stop marker (no marker = the
+  // whole deck) — content slides there get the QR-version Gradient macro when
+  // this export's QR toggle is on. The marker itself is sent along so the
+  // builder can turn it into the Questions (QR) + plain blank pair.
+  const markerIdx = state.slides.findIndex(s => s.type === 'qrmarker');
   const slides = state.slides
-    .map(slide => slide.type === 'alias' ? exportAlias(slide) : exportSlide(slide))
+    .map((slide, i) => {
+      if (slide.type === 'qrmarker') return i === markerIdx ? { type: 'qrmarker' } : null;
+      const out = slide.type === 'alias' ? exportAlias(slide) : exportSlide(slide);
+      if (out) out.qrZone = markerIdx === -1 || i < markerIdx;
+      return out;
+    })
     .filter(Boolean);
 
   return {

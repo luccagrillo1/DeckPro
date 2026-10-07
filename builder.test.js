@@ -334,5 +334,45 @@ const bodyRtf = c => {
   ok('split mode: Display 1 body does NOT show propBodyText', !rtfText.includes('LED Wall Only Text'));
 })();
 
+// ---- QR Stop: QR gradient only before the marker, never on the Response
+//      Card; marker becomes Questions (QR) + plain blank when QR is on ----
+(() => {
+  const macros = c => (c.actions || []).filter(a => a.type === 'ACTION_TYPE_MACRO').map(a => a.macro?.identification?.parameterName);
+  const base = {
+    name: 'T', includeResponseCard: true, qrCode: true,
+    qrMacro: { name: 'QR', uuid: 'U-QR' },
+    gradientMacro: { name: 'grad', uuid: 'U-G' }, gradientMacroQr: { name: 'gradQR', uuid: 'U-GQ' },
+    slides: [
+      { type: 'start' },
+      { type: 'point', mode: 'single', label: 'P1', bodyText: 'P1', propName: 'P1', qrZone: true },
+      { type: 'qrmarker' },
+      { type: 'point', mode: 'single', label: 'P2', bodyText: 'P2', propName: 'P2', qrZone: false },
+      { type: 'end' },
+    ],
+  };
+  const cues = cuesOf(base);
+  const labels = cues.map(labelOf);
+  const p1 = macros(cues[labels.indexOf('P1')]), p2 = macros(cues[labels.indexOf('P2')]);
+  ok('QR gradient fires before the QR Stop', p1.includes('gradQR') && !p1.includes('grad'), p1.join(','));
+  ok('regular gradient fires after the QR Stop', p2.includes('grad') && !p2.includes('gradQR'), p2.join(','));
+  const rc = macros(cues[labels.indexOf('Response Card')]);
+  ok('Response Card gets the regular gradient, not the QR one', rc.includes('grad') && !rc.includes('gradQR'), rc.join(','));
+  const qi = labels.indexOf('Questions');
+  ok('QR Stop exports a Questions blank', qi === labels.indexOf('P1') + 1, labels.join('|'));
+  ok('Questions blank fires the QR macro', macros(cues[qi]).includes('QR'));
+  ok('a plain blank without QR follows Questions', labels[qi + 1] === '' && !macros(cues[qi + 1]).includes('QR') && labels[qi + 2] === 'P2', labels.join('|'));
+
+  // Next slide already has its own blank-before → no extra plain blank.
+  const withBB = cuesOf({ ...base, slides: base.slides.map(s => s.label === 'P2' ? { ...s, blankBefore: true, qrOn: false } : s) });
+  const l2 = withBB.map(labelOf), q2 = l2.indexOf('Questions');
+  ok('no duplicate blank when next slide has blank-before', l2[q2 + 1] === '' && l2[q2 + 2] === 'P2', l2.join('|'));
+
+  // QR off → marker exports nothing, regular gradient everywhere.
+  const off = cuesOf({ ...base, qrCode: false });
+  const l3 = off.map(labelOf);
+  ok('QR off: no Questions slide', !l3.includes('Questions'), l3.join('|'));
+  ok('QR off: regular gradient before the marker too', macros(off[l3.indexOf('P1')]).includes('grad'));
+})();
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

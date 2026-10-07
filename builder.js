@@ -1418,10 +1418,12 @@ function injectQRMacro(cue, qrMacro) {
 // ─── Helper: fire the configured Gradient macro on a content cue ─────────
 // Gradient is a macro too (see the retired atem_gradient element note above),
 // fired on Scripture, Point, and Response Card content cues. Which macro
-// depends on this export's own QR toggle: gradientMacroQr when it's on
-// (e.g. the QR half of a paired export), gradientMacro otherwise.
-function injectGradientMacro(cue, gradientMacro, gradientMacroQr, qrCode) {
-  const m = qrCode ? gradientMacroQr : gradientMacro;
+// depends on the cue: gradientMacroQr only when this export's QR toggle is on
+// AND the cue's slide sits before the QR Stop marker (_qrZone, computed
+// client-side); gradientMacro everywhere else — after the QR Stop, and always
+// on the Response Card.
+function injectGradientMacro(cue, gradientMacro, gradientMacroQr, useQr) {
+  const m = useQr ? gradientMacroQr : gradientMacro;
   if (m?.name && m?.uuid) cue.actions.push(macroAction(m.name, m.uuid));
 }
 
@@ -1448,9 +1450,34 @@ function buildPresentation(spec, propUuidMap = {}) {
   const rawCues = [];
 
   let _slidePos = 0;
-  for (const slide of slides) {
+  for (let si = 0; si < slides.length; si++) {
+    const slide = slides[si];
     _slidePos++;
     const _tagCues = (cues) => { for (const c of cues) c._slidePos = _slidePos; };
+    // QR Stop marker: when this export's QR toggle is on it becomes a
+    // "Questions" blank that fires the QR macro, followed by a plain blank
+    // with no QR — unless the next slide already opens with a blank of its
+    // own. With QR off it exports nothing.
+    if (slide.type === 'qrmarker') {
+      if (!qrCode) continue;
+      const qc = buildBlankCue({ label: 'Questions', spans: [] }, rs);
+      qc._isContentBlank = true;
+      qc._qrOn           = true;
+      qc._slidePos       = _slidePos;
+      rawCues.push(qc);
+      const next = slides[si + 1];
+      const nextOpensBlank = next && (next.type === 'blank' || next.type === 'custom' || next.blankBefore);
+      if (!nextOpensBlank) {
+        const pb = buildBlankCue({ label: '', spans: [] }, rs);
+        // Stands in for the next slide's blank-before, so it behaves like one.
+        pb._isBlankBefore  = true;
+        pb._isContentBlank = true;
+        pb._qrOn           = false;
+        pb._slidePos       = _slidePos;
+        rawCues.push(pb);
+      }
+      continue;
+    }
     if (slide.type === 'start') {
       const c = buildStartCue(slide, rs); c._slidePos = _slidePos; rawCues.push(c);
       continue;
@@ -1523,6 +1550,7 @@ function buildPresentation(spec, propUuidMap = {}) {
       const sc = buildScriptureCues(slide, rs);
       const scRef = slide.reference || slide.label || '';
       sc.forEach((c, bi) => {
+        c._qrZone          = slide.qrZone !== false;
         c._slideTransition = slide.transition || null;
         c._macroOverride   = slide.macroOverride || null;
         c._slidePos        = _slidePos;
@@ -1560,6 +1588,7 @@ function buildPresentation(spec, propUuidMap = {}) {
       const pc = buildPointCues(slide, rs);
       const ptRef = slide.label || slide.title || slide.bodyText || '';
       pc.forEach((c, bi) => {
+        c._qrZone          = slide.qrZone !== false;
         c._slideTransition = slide.transition || null;
         c._macroOverride   = slide.macroOverride || null;
         c._slidePos        = _slidePos;
@@ -1600,11 +1629,13 @@ function buildPresentation(spec, propUuidMap = {}) {
   }
 
   // ── Step 3b: Fire the Gradient macro on Scripture/Point/RC Content cues ──
-  // (gradientMacroQr instead of gradientMacro whenever this export's own QR
-  // toggle is on — see injectGradientMacro above.)
+  // (gradientMacroQr instead of gradientMacro on Scripture/Point cues before
+  // the QR Stop when this export's QR toggle is on — never on the Response
+  // Card — see injectGradientMacro above.)
   for (const cue of rawCues) {
-    const isGradientCue = cue._type === 'scripture' || cue._type === 'point' || (cue._type === 'rc' && cue._isRcContent);
-    if (isGradientCue) injectGradientMacro(cue, gradientMacro, gradientMacroQr, qrCode);
+    const isContent = cue._type === 'scripture' || cue._type === 'point';
+    const isGradientCue = isContent || (cue._type === 'rc' && cue._isRcContent);
+    if (isGradientCue) injectGradientMacro(cue, gradientMacro, gradientMacroQr, qrCode && isContent && cue._qrZone);
   }
 
   // ── Step 4: Inject macros from Schemes into matching cues ──
@@ -1737,6 +1768,7 @@ function buildPresentation(spec, propUuidMap = {}) {
     delete cue._isBlankBefore;
     delete cue._isContentBlank;
     delete cue._qrOn;
+    delete cue._qrZone;
     delete cue._isRcBlank;
     delete cue._isRcContent;
     delete cue._isRcHold;
