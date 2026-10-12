@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.33.0';
+const APP_VERSION = '4.34.0';
 
 const CHANGELOG = [
+  {
+    version: '4.34.0',
+    date: '2026-10-12',
+    changes: [
+      'QR Stop is now called "Questions" everywhere (sidebar marker, add-item tooltip, help). Existing decks keep their marker; nothing to redo.',
+      'New: External Content (Styles → QR Code tab). A switch plus two macros for handing the LED wall to an outside source (e.g. an NDI feed) during Questions. When it\'s on and this export\'s QR is on, the Questions marker exports as: a blank with the QR macro, then the Questions slide firing the QR macro + the "External Content: start" macro, and the very next slide (the next item\'s blank-before, or the item itself if it has none) fires the "External Content: end" macro with no QR. With the switch off, or QR off, exports are unchanged.',
+    ],
+  },
   {
     version: '4.33.0',
     date: '2026-10-07',
@@ -2710,10 +2718,10 @@ const TOOLTIPS = {
   'point-split':              'Point — Split\nLike Single, but Main Screen and LED Wall show their own independent text instead of the same words — use when the two screens need to say different things.',
   'point-revealing':          'Point — Revealing\nOne prop per bullet, revealed one at a time. Use for a list that builds as you go.',
   // QR
-  'qr-marker':                'QR Stop\nDrag into the deck to mark where auto QR-fill stops. Blanks before it default to QR on (when the deck-wide QR toggle is on); blanks at or after it default to off. Doesn\'t export as a slide.',
-  'qr-toggle':                'QR\nToggles the QR macro for this blank specifically — overrides whatever the QR Stop marker would otherwise set, and stays put even if you move the marker later.',
+  'qr-marker':                'Questions\nDrag into the deck to mark where auto QR-fill stops. Blanks before it default to QR on (when the deck-wide QR toggle is on); blanks at or after it default to off. When QR is on it exports a "Questions" slide that fires the QR macro.',
+  'qr-toggle':                'QR\nToggles the QR macro for this blank specifically — overrides whatever the Questions marker would otherwise set, and stays put even if you move the marker later.',
   'deck-props-toggle':        'Prop Slot\nWhich ProPresenter prop collection this deck exports into — 1 = "DeckPro Slot 1", 2 = "DeckPro Slot 2". Put two decks on different slots (e.g. an event and a gathering) and both stay built and ready at once; exporting one never overwrites the other\'s props. Two decks on the SAME slot still overwrite each other. Decks on Slot 2 show a Slot 2 badge in the Deck Library.',
-  'qr-deck-toggle':           'QR\nThis deck\'s default QR state for blanks — turns the QR macro on for blanks before the QR Stop marker (or all blanks, if there\'s no marker). Any blank with its own QR override ignores this.',
+  'qr-deck-toggle':           'QR\nThis deck\'s default QR state for blanks — turns the QR macro on for blanks before the Questions marker (or all blanks, if there\'s no marker). Any blank with its own QR override ignores this.',
 };
 
 // ─── State ────────────────────────────────────────────────────────────────────
@@ -3013,6 +3021,12 @@ const DEFAULT_STATE = () => ({
     weekDate:            new Date().toISOString().slice(0, 10),
     qrCode:              false,
     qrMacro:             null,
+    // External Content: the Questions marker hands the wall to an outside
+    // source — externalStartMacro fires on the Questions cue, externalEndMacro
+    // on the cue right after it. Only when qrCode is on.
+    externalContent:     false,
+    externalStartMacro:  null,
+    externalEndMacro:    null,
     // When true AND qrCode is on, Export delivers TWO presentations (no-QR +
     // QR) sharing one prop collection, instead of just the QR-configured deck.
     qrExportPair:        false,
@@ -4832,7 +4846,7 @@ function slidePosKey(slide) { return `pos:${state.slides.indexOf(slide) + 1}`; }
 
 // Auto QR default for a blank-before-eligible slide: true only when the
 // deck-wide QR toggle (state.config.qrCode) is on AND this slide sits before
-// the first QR Stop marker in the deck (no marker in the deck = everything
+// the first Questions marker in the deck (no marker in the deck = everything
 // counts as "before").
 function autoQRDefault(slide) {
   if (!state.config.qrCode) return false;
@@ -4981,7 +4995,7 @@ function renderSidebar() {
     // Hide blank slides from sidebar when showBlanks is false
     if (!state.showBlanks && slide.type === 'blank') continue;
 
-    // QR Stop marker: a striped divider, not a real slide — marks where
+    // Questions marker: a striped divider, not a real slide — marks where
     // auto QR-fill (deck-wide QR toggle) stops. No form, no export.
     if (slide.type === 'qrmarker') {
       const marker = document.createElement('div');
@@ -4989,7 +5003,7 @@ function renderSidebar() {
       marker.dataset.id = slide.id;
       marker.draggable = true;
       const tickSvg = `<svg class="qr-marker-ticks" width="20" height="12" viewBox="0 0 20 12" fill="none" xmlns="http://www.w3.org/2000/svg"><line x1="2" y1="10" x2="6" y2="2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="10" x2="12" y2="2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="14" y1="10" x2="18" y2="2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
-      marker.innerHTML = `${tickSvg}<span class="qr-marker-label">QR STOP</span>${tickSvg}`;
+      marker.innerHTML = `${tickSvg}<span class="qr-marker-label">QUESTIONS</span>${tickSvg}`;
       marker.addEventListener('click', () => selectSlide(slide.id));
       marker.addEventListener('contextmenu', e => {
         e.preventDefault();
@@ -6236,9 +6250,31 @@ function attachSchemesQRTab(containerId) {
   if (!el) return;
   el.innerHTML = '';
   renderSingleMacroField(el, 'qrMacro', 'QR Macro',
-    'QR Code is a macro, not an image DeckPro draws. Pick which macro fires on any blank slide with QR turned on — see the QR toggle next to "Blank slide before this one" on scripture/point/image slides, the QR Stop marker in the deck sidebar, and this deck\'s own QR toggle (Decks → edit this deck).');
+    'QR Code is a macro, not an image DeckPro draws. Pick which macro fires on any blank slide with QR turned on — see the QR toggle next to "Blank slide before this one" on scripture/point/image slides, the Questions marker in the deck sidebar, and this deck\'s own QR toggle (Decks → edit this deck).');
   renderSingleMacroField(el, 'gradientMacroQr', 'Gradient (QR code version)',
     'Fires on Scripture, Point, and Response Card content cues instead of the normal Gradient macro (Macros tab), whenever this export\'s QR toggle is on — for a background treatment that matches the QR-configured look.');
+
+  // External Content: the Questions marker hands the wall to an outside source.
+  const ext = document.createElement('div');
+  ext.className = 'field';
+  ext.innerHTML = `
+    <label>External Content</label>
+    <p class="style-group-hint">For when something outside ProPresenter (e.g. an NDI feed) takes over the wall during Questions. When on, and this export's QR is on, the Questions marker exports a blank (QR) and then the Questions slide firing the start macro below; the very next slide fires the end macro so ProPresenter takes the wall back.</p>
+    <div class="rc-toggle-row" id="external-content-row">
+      <div class="toggle ${state.config.externalContent === true ? 'on' : ''}" id="external-content-toggle"></div>
+      <span>Hand off to external content at Questions</span>
+    </div>
+  `;
+  el.appendChild(ext);
+  ext.querySelector('#external-content-row').addEventListener('click', () => {
+    state.config.externalContent = state.config.externalContent !== true;
+    ext.querySelector('#external-content-toggle').classList.toggle('on', state.config.externalContent);
+    saveState();
+  });
+  renderSingleMacroField(el, 'externalStartMacro', 'External Content: start (on Questions)',
+    'Fires on the Questions slide, alongside the QR macro — e.g. clear the series title and scripture so the outside source can use the wall.');
+  renderSingleMacroField(el, 'externalEndMacro', 'External Content: end (next slide)',
+    'Fires on the slide right after Questions (the next item\'s blank-before, or the item itself if it has none) — e.g. clear the outside source so ProPresenter takes the wall back.');
 }
 
 function renderConfigPanel(panel) {
@@ -9468,10 +9504,13 @@ function aliasForm(slide) {
 function qrMarkerForm(slide) {
   return `
     <div class="slide-form">
-      <h2>QR Stop</h2>
+      <h2>Questions</h2>
       <p style="color:var(--muted);font-size:13px;margin-top:4px">
-        Not a real slide — doesn't export. It's a boundary: when this deck's QR toggle (Decks → edit this deck) is on,
+        A boundary: when this deck's QR toggle (Decks → edit this deck) is on,
         blanks before this marker default to showing the QR macro, and blanks at or after it default to not.
+        With QR on it exports a "Questions" slide that fires the QR macro (nothing with QR off). With External Content
+        on (Styles → QR Code tab), that slide gets its own blank and fires the External Content start macro, and the
+        next slide fires the end macro.
         Drag it anywhere in the deck to move the boundary. Any blank you've manually toggled with its own QR
         switch keeps that choice regardless of where this marker is.
       </p>
@@ -10528,7 +10567,7 @@ function addSlide(type) {
     blank:     { label: 'Blank', spans: [], transition: null, qrOverride: null },
     image:     { label: 'Image', blankBefore: true, blankSpans: [], transition: null, propTransition: null, qrOverride: null },
     custom:    { label: 'Custom' },
-    qrmarker:  { label: 'QR Stop' },
+    qrmarker:  { label: 'Questions' },
   };
   const slide = { id: uid(), type, fixed: false, ...defaults[type] };
   // Insert right after whichever slide is currently selected, so building a
@@ -11287,7 +11326,7 @@ function buildSpec() {
     return out;
   };
 
-  // qrZone: whether a slide sits before the QR Stop marker (no marker = the
+  // qrZone: whether a slide sits before the Questions marker (no marker = the
   // whole deck) — content slides there get the QR-version Gradient macro when
   // this export's QR toggle is on. The marker itself is sent along so the
   // builder can turn it into the Questions (QR) + plain blank pair.
@@ -11308,6 +11347,9 @@ function buildSpec() {
     qrMacro:             state.config.qrMacro || null,
     gradientMacro:       state.config.gradientMacro || null,
     gradientMacroQr:     state.config.gradientMacroQr || null,
+    externalContent:     !!state.config.externalContent,
+    externalStartMacro:  state.config.externalStartMacro || null,
+    externalEndMacro:    state.config.externalEndMacro || null,
     includeResponseCard: includeResponseCard,
     outputFolder:        outputFolder || '',
     responses:           Object.fromEntries(Object.entries(responses || { r1: '', r2: '', r3: '', r4: '' }).map(([k, v]) => [k, normalizeDeckQuotes(v)])),
@@ -14362,6 +14404,7 @@ const PERSISTENT_CONFIG_FIELDS = [
   'pro7Port', 'pro7Password', 'pro7RootFolder', 'pro7LibraryFolder',
   'autoManagePro7', 'outputFolder', 'setupComplete', 'stageScreen',
   'qrMacro', 'qrExportPair', 'gradientMacro', 'gradientMacroQr', 'icloudSync', 'theme',
+  'externalContent', 'externalStartMacro', 'externalEndMacro',
   // Bible lookup
   'bibleApiKey', 'bibleId', 'bibleName', 'bibleList', 'verseNumbers', 'verseSuper',
   // App-wide preferences (mirrors SYNC_SECTIONS()'s portable-vs-deck split)
@@ -14488,7 +14531,7 @@ function deckEditFormHtml(deck) {
         <input class="deck-edit-input" id="de-title"  placeholder="Title"  value="${esc(deck.title  || '')}" spellcheck="true">
         <input class="deck-edit-input" id="de-speaker" placeholder="Speaker" value="${esc(deck.speaker || '')}" spellcheck="true">
         <input class="deck-edit-input deck-edit-date" id="de-date" type="date" value="${esc(deck.date || '')}">
-        <label class="deck-edit-qr-wrap" title="Default QR state for this deck's blanks — a quick on/off you can flip per deck. Sets the starting point for untouched blanks only; the QR Stop marker and each blank's own QR toggle still apply on top of it.">
+        <label class="deck-edit-qr-wrap" title="Default QR state for this deck's blanks — a quick on/off you can flip per deck. Sets the starting point for untouched blanks only; the Questions marker and each blank's own QR toggle still apply on top of it.">
           <div class="toggle${deck._qrOn ? ' on' : ''}" id="de-qr-toggle"></div>
           QR
         </label>
@@ -15380,12 +15423,15 @@ function helpSections() {
       <h4>Setup — three pieces</h4>
       <ul>
         <li><strong>Pick the macro.</strong> Styles → <em>QR Code</em> tab → Pick Macro. One deck-wide setting, not per-style — the macro that shows a QR code doesn't change with visual style.</li>
-        <li><strong>This deck's QR toggle.</strong> Decks → edit this deck → the QR toggle. Off by default. When on, it sets the <em>default</em> for every blank in the deck — before the QR Stop marker (see below), blanks default to firing the macro; after it, they default to not.</li>
-        <li><strong>Per-slide QR toggle.</strong> Next to "Blank slide before this one" on scripture, point, and image slides. Overrides the auto default for that one blank specifically, and keeps that choice even if you later move the QR Stop marker or flip the deck's QR toggle.</li>
+        <li><strong>This deck's QR toggle.</strong> Decks → edit this deck → the QR toggle. Off by default. When on, it sets the <em>default</em> for every blank in the deck — before the Questions marker (see below), blanks default to firing the macro; after it, they default to not.</li>
+        <li><strong>Per-slide QR toggle.</strong> Next to "Blank slide before this one" on scripture, point, and image slides. Overrides the auto default for that one blank specifically, and keeps that choice even if you later move the Questions marker or flip the deck's QR toggle.</li>
       </ul>
 
-      <h4>QR Stop marker</h4>
-      <p>Add <strong>QR Stop</strong> from the sidebar — it renders as a striped divider, not a real slide (it never exports). Drag it anywhere in the deck. Blanks before it default to QR on (when the deck's QR toggle is on); blanks at or after it default to off. It's purely a bulk-default boundary — any blank you've touched with its own QR toggle ignores it entirely.</p>
+      <h4>Questions marker</h4>
+      <p>Add <strong>Questions</strong> from the sidebar — it renders as a striped divider. Drag it anywhere in the deck. Blanks before it default to QR on (when the deck's QR toggle is on); blanks at or after it default to off. It's purely a bulk-default boundary — any blank you've touched with its own QR toggle ignores it entirely. When this export's QR is on, the marker itself exports as a "Questions" slide that fires the QR macro, followed by a plain blank (the next item's own blank-before is used if it has one); with QR off it exports nothing.</p>
+
+      <h4>External Content</h4>
+      <p>For Q&amp;A where something outside ProPresenter (e.g. an NDI feed) takes over the LED wall. In the <em>QR Code</em> tab, turn on <strong>External Content</strong> and pick its two macros. With QR on, the Questions marker then exports: a blank with the QR macro, the Questions slide firing the QR macro plus the <em>start</em> macro, and the very next slide (the next item's blank-before, or the item itself if it has none) firing the <em>end</em> macro with no QR. No extra blank is added after Questions in this mode.</p>
 
       <div class="help-callout">
         <strong>Manual always wins.</strong> Once you've clicked a slide's own QR toggle, that choice is locked in — moving the marker or flipping the deck-wide toggle later never changes it again. Only untouched blanks follow the auto default.
@@ -15768,6 +15814,9 @@ function SYNC_SECTIONS() {
     qrExportPair:     { get: () => ({ v: c.qrExportPair }), set: v => { c.qrExportPair = !!v.v; } },
     gradientMacro:    { get: () => c.gradientMacro,    set: v => { c.gradientMacro = v || null; } },
     gradientMacroQr:  { get: () => c.gradientMacroQr,  set: v => { c.gradientMacroQr = v || null; } },
+    externalContent:    { get: () => ({ v: c.externalContent }), set: v => { c.externalContent = !!v.v; } },
+    externalStartMacro: { get: () => c.externalStartMacro, set: v => { c.externalStartMacro = v || null; } },
+    externalEndMacro:   { get: () => c.externalEndMacro,   set: v => { c.externalEndMacro = v || null; } },
     globalTypography: { get: () => state.globalTypography, set: v => { state.globalTypography = v; } },
     globalLayout:     { get: () => state.globalLayout,     set: v => { state.globalLayout = v; } },
     globalFontAdv:    { get: () => state.globalFontAdv,    set: v => { state.globalFontAdv = v; } },

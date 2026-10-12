@@ -372,6 +372,30 @@ const bodyRtf = c => {
   const l3 = off.map(labelOf);
   ok('QR off: no Questions slide', !l3.includes('Questions'), l3.join('|'));
   ok('QR off: regular gradient before the marker too', macros(off[l3.indexOf('P1')]).includes('grad'));
+
+  // External Content: blank (QR) + Questions (QR + start), end macro on the next cue.
+  const ext = { ...base, externalContent: true,
+    externalStartMacro: { name: 'extStart', uuid: 'U-ES' }, externalEndMacro: { name: 'extEnd', uuid: 'U-EE' } };
+  const e1 = cuesOf({ ...ext, slides: ext.slides.map(s => s.label === 'P2' ? { ...s, blankBefore: true, qrOn: false } : s) });
+  const le1 = e1.map(labelOf), qe1 = le1.indexOf('Questions');
+  ok('ext: Questions gets its own blank with QR', le1[qe1 - 1] === '' && le1[qe1 - 2] === 'P1' && macros(e1[qe1 - 1]).includes('QR'), le1.join('|'));
+  ok('ext: Questions fires QR + start, not end', macros(e1[qe1]).includes('QR') && macros(e1[qe1]).includes('extStart') && !macros(e1[qe1]).includes('extEnd'), macros(e1[qe1]).join(','));
+  ok('ext: next blank-before fires end, no QR', le1[qe1 + 1] === '' && le1[qe1 + 2] === 'P2' && macros(e1[qe1 + 1]).includes('extEnd') && !macros(e1[qe1 + 1]).includes('QR'), macros(e1[qe1 + 1]).join(','));
+  ok('ext: start/end fire exactly once', e1.flatMap(macros).filter(m => m === 'extStart').length === 1 && e1.flatMap(macros).filter(m => m === 'extEnd').length === 1);
+
+  // Next slide has no blank-before → no extra blank, end macro on the slide itself.
+  const e2 = cuesOf(ext), le2 = e2.map(labelOf), qe2 = le2.indexOf('Questions');
+  ok('ext: no blank-before → end macro on next slide', le2[qe2 + 1] === 'P2' && macros(e2[qe2 + 1]).includes('extEnd'), le2.join('|'));
+
+  // Marker last → end macro lands on whatever follows (Response Card blank).
+  const e3 = cuesOf({ ...ext, slides: ext.slides.filter(s => s.label !== 'P2') }), le3 = e3.map(labelOf), qe3 = le3.indexOf('Questions');
+  ok('ext: marker last → end macro on following cue', macros(e3[qe3 + 1]).includes('extEnd'), le3.join('|'));
+
+  // QR off → still nothing; unassigned macros → no crash.
+  const e4 = cuesOf({ ...ext, qrCode: false });
+  ok('ext + QR off: nothing exported', !e4.map(labelOf).includes('Questions') && !e4.flatMap(macros).some(m => m === 'extStart' || m === 'extEnd'));
+  const e5 = cuesOf({ ...ext, externalStartMacro: null, externalEndMacro: null });
+  ok('ext: unassigned macros add nothing', e5.map(labelOf).includes('Questions') && !e5.flatMap(macros).some(m => m === 'extStart' || m === 'extEnd'));
 })();
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -1005,7 +1005,7 @@ header h1:hover { opacity: .8; }
 .slide-item.active { background: #e8f0fe; border-color: var(--blue); }
 body.dark .slide-item.active { background: rgba(224,96,16,.12); }
 
-/* QR Stop marker: diagonal tick marks flanking the label, not a real slide */
+/* Questions (QR Stop) marker: diagonal tick marks flanking the label, not a real slide */
 .qr-marker-item {
   justify-content: center;
   align-items: center;

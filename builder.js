@@ -12,6 +12,9 @@
  *   {
  *     name: 'Message_26.02.24_Series_Title',
  *     qrMacro: { name, uuid } | null,   // fires on any blank-before cue with qrOn
+ *     externalContent: false,           // Questions marker hands the wall to an outside source
+ *     externalStartMacro: { name, uuid } | null, // fires on the Questions cue
+ *     externalEndMacro:   { name, uuid } | null, // fires on the cue right after it
  *     includeResponseCard: true,
  *     slides: [
  *       { type: 'start' },
@@ -1433,6 +1436,7 @@ function buildPresentation(spec, propUuidMap = {}) {
   const {
     name, slides = [], qrCode = false, qrMacro = null,
     gradientMacro = null, gradientMacroQr = null,
+    externalContent = false, externalStartMacro = null, externalEndMacro = null,
     includeResponseCard = false, responses = {}, style = {}, stageScreen: specStageScreen = {},
   } = spec;
   const rs = resolveStyle(style);
@@ -1454,17 +1458,30 @@ function buildPresentation(spec, propUuidMap = {}) {
     const slide = slides[si];
     _slidePos++;
     const _tagCues = (cues) => { for (const c of cues) c._slidePos = _slidePos; };
-    // QR Stop marker: when this export's QR toggle is on it becomes a
-    // "Questions" blank that fires the QR macro, followed by a plain blank
-    // with no QR — unless the next slide already opens with a blank of its
-    // own. With QR off it exports nothing.
+    // Questions marker (QR Stop): when this export's QR toggle is on it
+    // becomes a "Questions" blank that fires the QR macro, followed by a plain
+    // blank with no QR — unless the next slide already opens with a blank of
+    // its own. With QR off it exports nothing.
+    // With External Content on, Questions is where an outside source takes
+    // over the wall: it gets its own blank-before (QR still up) and no plain
+    // blank is added after it — the External Content end macro rides on
+    // whatever cue comes next (Step 3c).
     if (slide.type === 'qrmarker') {
       if (!qrCode) continue;
+      if (externalContent) {
+        const qb = buildBlankCue({ label: '', spans: [] }, rs);
+        qb._isBlankBefore  = true;
+        qb._isContentBlank = true;
+        qb._qrOn           = true;
+        qb._slidePos       = _slidePos;
+        rawCues.push(qb);
+      }
       const qc = buildBlankCue({ label: 'Questions', spans: [] }, rs);
       qc._isContentBlank = true;
       qc._qrOn           = true;
       qc._slidePos       = _slidePos;
       rawCues.push(qc);
+      if (externalContent) { qc._extStart = true; continue; }
       const next = slides[si + 1];
       const nextOpensBlank = next && (next.type === 'blank' || next.type === 'custom' || next.blankBefore);
       if (!nextOpensBlank) {
@@ -1628,6 +1645,16 @@ function buildPresentation(spec, propUuidMap = {}) {
     if (cue._isContentBlank && cue._qrOn) injectQRMacro(cue, qrMacro);
   }
 
+  // ── Step 3c: External Content — start macro on the Questions cue, end
+  //             macro on the cue right after it (the next slide's blank-before
+  //             when it has one, otherwise the next cue itself). ──
+  rawCues.forEach((cue, i) => {
+    if (!cue._extStart) return;
+    if (externalStartMacro?.name && externalStartMacro?.uuid) cue.actions.push(macroAction(externalStartMacro.name, externalStartMacro.uuid));
+    const next = rawCues[i + 1];
+    if (next && externalEndMacro?.name && externalEndMacro?.uuid) next.actions.push(macroAction(externalEndMacro.name, externalEndMacro.uuid));
+  });
+
   // ── Step 3b: Fire the Gradient macro on Scripture/Point/RC Content cues ──
   // (gradientMacroQr instead of gradientMacro on Scripture/Point cues before
   // the QR Stop when this export's QR toggle is on — never on the Response
@@ -1769,6 +1796,7 @@ function buildPresentation(spec, propUuidMap = {}) {
     delete cue._isContentBlank;
     delete cue._qrOn;
     delete cue._qrZone;
+    delete cue._extStart;
     delete cue._isRcBlank;
     delete cue._isRcContent;
     delete cue._isRcHold;
