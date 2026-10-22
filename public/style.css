@@ -4582,3 +4582,106 @@ body.dark .g-tip-title { color: #ff8a4c; }
   color: #ddd; font-size: 12px; text-align: left; cursor: pointer;
 }
 #sg-ctx-menu button:hover { background: rgba(255,255,255,.08); }
+
+/* ── Styles → Text tab: live preview + element list + inspector ───────────── */
+.tp-preview { margin-bottom: 14px; }
+.tp-scenes { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 10px; }
+.tp-scene {
+  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border);
+  font-size: 11px; font-weight: 600; color: var(--muted); cursor: pointer; user-select: none;
+}
+.tp-scene:hover { color: var(--text); }
+.tp-scene.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+.tp-hint { margin-left: auto; font-size: 11px; color: var(--muted); }
+.tp-wrap { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.tp-canvas-block { min-width: 0; }
+.tp-notes-block { margin-top: 12px; max-width: 60%; }
+.tp-canvas {
+  position: relative; width: 100%; container-type: inline-size;
+  background: #000; border: 1px solid var(--border); border-radius: 6px;
+}
+/* Main screen is keyed over camera — a mid-tone backdrop shows the gradient,
+   outline and shadow the way they read on the real output. */
+.tp-main { background: linear-gradient(135deg, #59606b, #2f343c 60%, #3b4048); overflow: hidden; }
+.tp-led { overflow: hidden; }
+.tp-strip { background: #111; overflow: hidden; }
+.tp-off-lbl { margin-top: 8px; }
+.tp-notes { overflow: hidden; background: #111; }
+.tp-gradient {
+  position: absolute; left: 0; right: 0; bottom: 0; pointer-events: none;
+  background: linear-gradient(to top, rgba(0,0,0,.95) 50%, rgba(0,0,0,0));
+}
+.tp-el {
+  position: absolute; box-sizing: border-box; display: flex; flex-direction: column;
+  cursor: pointer; outline: 1px dashed transparent; outline-offset: -1px;
+}
+.tp-el:hover { outline-color: rgba(255,255,255,.45); }
+.tp-el.sel { outline: 2px solid var(--blue); z-index: 2; }
+.tp-text { white-space: normal; overflow-wrap: break-word; pointer-events: none; }
+.tp-empty {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: rgba(255,255,255,.35); font-size: 12px;
+}
+
+.tp-body { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 16px; align-items: start; }
+.tp-list { display: flex; flex-direction: column; gap: 1px; position: sticky; top: 8px; }
+.tp-list-sec {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); margin: 10px 0 4px 8px;
+}
+.tp-list-sec:first-child { margin-top: 0; }
+.tp-list-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  padding: 6px 8px; border-radius: 6px; font-size: 13px; color: var(--text); cursor: pointer; user-select: none;
+}
+.tp-list-item:hover { background: rgba(127,127,127,.12); }
+.tp-list-item.active { background: rgba(224,96,16,.16); color: var(--blue); font-weight: 600; }
+.tp-list-item:focus-visible, .tp-scene:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.tp-tag { font-size: 10px; color: var(--muted); font-weight: 500; }
+.tp-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #f59e0b; flex: none; }
+
+.tp-insp { min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 4px 14px 10px; }
+.tp-insp-hd {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.tp-insp-sec { font-size: 11px; color: var(--muted); margin-right: 6px; }
+.tp-insp-name { font-size: 16px; font-weight: 700; }
+.tp-follow { font-size: 11px; color: var(--muted); }
+.tp-group { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.tp-group:last-of-type { border-bottom: none; }
+.tp-group-lbl { font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+.tp-group-sub { font-weight: 400; color: var(--muted); margin-left: 4px; }
+.tp-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; }
+.tp-row + .tp-row { margin-top: 10px; }
+.tp-num { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
+.tp-cell.sg-td { border: none; padding: 0; text-align: left; display: flex; align-items: center; gap: 4px; }
+.tp-grow { flex: 1 1 200px; min-width: 0; }
+.tp-cell.sg-td-scheme .tp-input, .tp-cell.sg-td-scheme .tp-select, .tp-cell.sg-td-scheme .tp-color { box-shadow: 0 0 0 1px #f59e0b; }
+.tp-select, .tp-input {
+  height: 30px; box-sizing: border-box; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text); font-size: 13px; padding: 0 8px;
+}
+.tp-select { width: 100%; min-width: 120px; cursor: pointer; }
+.tp-input { width: 64px; text-align: right; -moz-appearance: textfield; }
+.tp-input:focus, .tp-select:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
+.tp-unit { font-size: 11px; color: var(--muted); }
+.tp-na { font-size: 12px; color: var(--muted); height: 30px; display: flex; align-items: center; }
+.tp-color { width: 40px; height: 30px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); cursor: pointer; }
+.tp-seg-wrap, .tp-seg { display: inline-flex; }
+.tp-seg-wrap .tp-cell + .tp-cell .tp-tog, .tp-seg .tp-align + .tp-align { margin-left: -1px; }
+.sg-tog.tp-tog, .sg-align-cell.tp-align {
+  width: auto; min-width: 32px; height: 30px; padding: 0 9px; border-radius: 6px;
+  font-size: 13px; color: var(--text); display: inline-flex; align-items: center; justify-content: center;
+}
+.sg-align-cell.tp-align::before { content: none; }
+.sg-align-cell.tp-align svg { display: block; }
+.tp-sw-lbl::after { content: 'Off'; }
+.sg-tog.tp-tog.on .tp-sw-lbl::after { content: 'On'; }
+.tp-legend { display: flex; align-items: center; gap: 6px; margin: 10px 0 0; font-size: 11px; color: var(--muted); }
+
+@media (max-width: 900px) {
+  .tp-wrap, .tp-body { grid-template-columns: minmax(0, 1fr); }
+  .tp-list { position: static; flex-direction: row; flex-wrap: wrap; }
+  .tp-notes-block { max-width: none; }
+}

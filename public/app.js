@@ -2,9 +2,19 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.34.0';
+const APP_VERSION = '4.35.0';
 
 const CHANGELOG = [
+  {
+    version: '4.35.0',
+    date: '2026-10-21',
+    changes: [
+      'Styles → Text is rebuilt. The 34-column grid is gone: you now get a live preview of the main screen and LED wall drawn with your real fonts, sizes, colours, outline, shadow, caps and alignment, using this deck\'s own scripture and point text. Click any text in the preview (or pick it from the list) and a single inspector shows just that element\'s settings, grouped into Font, Style, Alignment, Outline, Shadow, Spacing and Margins. Every change updates the preview instantly.',
+      'The preview follows export: scripture titles sit where Auto Title Y will put them, text shrinks to fit its box like ProPresenter does (unless set to Never resize), and Queue/Live, which live below the screen for the stage display, get their own strip when selected.',
+      'Fixed the Font and Weight dropdowns in Styles only listing the current font. When the system font list came back empty, DeckPro took that as success instead of falling back to its own font list, so you couldn\'t pick a different font.',
+      'Locked styles and the Global view can still be browsed: clicking elements and switching preview slides works; editing stays locked.',
+    ],
+  },
   {
     version: '4.34.0',
     date: '2026-10-12',
@@ -7813,8 +7823,7 @@ function renderGlobalPanel(panel, schemeOptionsHTML) {
 
     <fieldset class="scheme-fields scheme-locked" disabled>
       <div class="style-tab-body" id="g-tab-text"   ${_gTab !== 'text'   ? 'style="display:none"' : ''}>
-        <div class="sg-lp-compact">${layoutPreview(gScheme, null)}</div>
-        ${renderSchemeGrid(sv, rs, 'disabled')}
+        ${renderSchemeGrid(sv, rs, 'disabled', styleForExport(gScheme))}
       </div>
       <div class="style-tab-body" id="g-tab-layout" ${_gTab !== 'layout' ? 'style="display:none"' : ''}>
         ${layoutPreview(gScheme, null)}
@@ -7889,43 +7898,233 @@ function renderGlobalPanel(panel, schemeOptionsHTML) {
       });
     });
   });
+  wireTextTab(document.getElementById('g-tab-text'), () => styleForExport(gScheme), () => renderGlobalPanel(panel, schemeOptionsHTML));
 }
 
 // Spreadsheet-style data grid for Text tab — one row per element, one column per property.
-function renderSchemeGrid(sv, rs, dis) {
-  const sections = [
-    { label: 'Display 1', rows: [
-      { id: 'body1',  lbl: 'Body',        fontF: 'bodyFont',      advK: 'bodyFontAdv',      sizeF: 'bodySize' },
-      { id: 'bold1',  lbl: 'Bold',        fontF: 'boldFont',      advK: 'boldFontAdv',      sizeF: null },
-      { id: 'title1', lbl: 'Title',       fontF: 'titleFont',     advK: 'titleFontAdv',     sizeF: 'titleSize' },
-      { id: 'point1', lbl: 'Point',       fontF: 'pointFont',     advK: 'pointFontAdv',     sizeF: 'pointSize' },
-    ]},
-    { label: 'Display 2', rows: [
-      { id: 'body2',  lbl: 'Body',        fontF: 'propBodyFont',  advK: 'propBodyFontAdv',  sizeF: 'propBodySize' },
-      { id: 'bold2',  lbl: 'Bold',        fontF: 'propBoldFont',  advK: 'propBoldFontAdv',  sizeF: null },
-      { id: 'title2', lbl: 'Title',       fontF: 'propTitleFont', advK: 'propTitleFontAdv', sizeF: 'propTitleSize' },
-      { id: 'point2', lbl: 'Point',       fontF: 'propPointFont', advK: 'propPointFontAdv', sizeF: 'propPointSize' },
-      { id: 'pointStacked', lbl: 'Point Stacked', fontF: 'pointStackedFont', advK: 'pointStackedFontAdv', sizeF: 'pointStackedSize' },
-    ]},
-    { label: 'Display 3', rows: [
-      { id: 'notes',      lbl: 'Slide Notes', fontF: 'notesFont',     advK: 'notesFontAdv',     sizeF: 'notesSize' },
-      { id: 'notesBold',  lbl: 'Notes Alt',   fontF: 'notesBoldFont', advK: 'notesBoldFontAdv', sizeF: null },
-    ]},
-    { label: 'Utility', rows: [
-      { id: 'se',    lbl: 'Utility',     fontF: 'startEndFont',  advK: 'startEndFontAdv',  sizeF: 'startEndSize' },
-      { id: 'live',  lbl: 'Live Badge',  fontF: 'liveFont',      advK: 'liveFontAdv',      sizeF: 'liveSize' },
-      { id: 'queue', lbl: 'Queue',       fontF: 'queueFont',     advK: 'queueFontAdv',     sizeF: 'queueSize' },
-    ]},
+// ── Styles → Text tab: live preview + element list + inspector ──────────────
+// Replaced the old 34-column spreadsheet grid. Every control keeps the class
+// names / data-* attributes / ids the grid used (.sg-tog, .fav-num,
+// .sg-adv-color, .fav-select, .sg-halign-btn, #sf-fam-*, #ss-* …), so the
+// save handlers in renderStylePanel and the right-click reset menu
+// (#style-tab-text .sg-td) work unchanged; only the layout is new.
+const TEXT_TAB_SECTIONS = () => [
+  { label: dn('mainScreen'), rows: [
+    { id: 'body1',  lbl: 'Body',        fontF: 'bodyFont',      advK: 'bodyFontAdv',      sizeF: 'bodySize' },
+    { id: 'bold1',  lbl: 'Bold',        fontF: 'boldFont',      advK: 'boldFontAdv',      sizeF: null, sizeFrom: 'Body' },
+    { id: 'title1', lbl: 'Title',       fontF: 'titleFont',     advK: 'titleFontAdv',     sizeF: 'titleSize' },
+    { id: 'point1', lbl: 'Point',       fontF: 'pointFont',     advK: 'pointFontAdv',     sizeF: 'pointSize' },
+  ]},
+  { label: dn('ledWall'), rows: [
+    { id: 'body2',  lbl: 'Body',        fontF: 'propBodyFont',  advK: 'propBodyFontAdv',  sizeF: 'propBodySize' },
+    { id: 'bold2',  lbl: 'Bold',        fontF: 'propBoldFont',  advK: 'propBoldFontAdv',  sizeF: null, sizeFrom: 'Body' },
+    { id: 'title2', lbl: 'Title',       fontF: 'propTitleFont', advK: 'propTitleFontAdv', sizeF: 'propTitleSize' },
+    { id: 'point2', lbl: 'Point',       fontF: 'propPointFont', advK: 'propPointFontAdv', sizeF: 'propPointSize' },
+    { id: 'pointStacked', lbl: 'Point Stacked', fontF: 'pointStackedFont', advK: 'pointStackedFontAdv', sizeF: 'pointStackedSize' },
+  ]},
+  { label: dn('monitor'), rows: [
+    { id: 'notes',      lbl: 'Slide Notes', fontF: 'notesFont',     advK: 'notesFontAdv',     sizeF: 'notesSize' },
+    { id: 'notesBold',  lbl: 'Notes Alt',   fontF: 'notesBoldFont', advK: 'notesBoldFontAdv', sizeF: null, sizeFrom: 'Slide Notes' },
+  ]},
+  { label: 'Utility', rows: [
+    { id: 'se',    lbl: 'Start / End', fontF: 'startEndFont',  advK: 'startEndFontAdv',  sizeF: 'startEndSize' },
+    { id: 'live',  lbl: 'Live Badge',  fontF: 'liveFont',      advK: 'liveFontAdv',      sizeF: 'liveSize' },
+    { id: 'queue', lbl: 'Queue',       fontF: 'queueFont',     advK: 'queueFontAdv',     sizeF: 'queueSize' },
+  ]},
+];
+// Which preview scene shows each row best.
+const TEXT_ROW_SCENE = {
+  body1: 'scripture', bold1: 'scripture', title1: 'scripture', point1: 'point',
+  body2: 'scripture', bold2: 'scripture', title2: 'scripture', point2: 'point',
+  pointStacked: 'stacked', notes: 'notes', notesBold: 'notes',
+  se: 'utility', live: 'scripture', queue: 'scripture',
+};
+const TEXT_SCENES = [['scripture', 'Scripture'], ['point', 'Point'], ['stacked', 'Stacked points'], ['utility', 'Start / End'], ['notes', 'Notes']];
+
+// Sample copy for the preview — the deck's own first scripture / point when it
+// has one, so you style against real text.
+function _tpSamples() {
+  const slides = state.slides || [];
+  const hasText = s => s.type === 'scripture' && (s.bodies?.[0] || []).some(sp => (sp.text || '').trim());
+  // Prefer a verse with bolded words so the Bold rows have something to show.
+  const scr = slides.find(s => hasText(s) && s.bodies[0].some(sp => sp.bold && sp.text.trim())) || slides.find(hasText);
+  const pt  = slides.find(s => s.type === 'point' && (s.bodyText || '').trim());
+  let spans = scr ? scr.bodies[0].filter(sp => sp.text) : null;
+  if (spans && !spans.some(sp => sp.bold)) {
+    const words = spans.map(sp => sp.text).join('').split(' ');
+    const cut = Math.max(1, words.length - 4);
+    spans = [{ text: words.slice(0, cut).join(' ') + ' ' }, { text: words.slice(cut).join(' '), bold: true }];
+  }
+  return {
+    spans: spans && spans.length ? spans : [
+      { text: 'For God so loved the world that he gave ' },
+      { text: 'his one and only Son', bold: true },
+      { text: ', that whoever believes in him shall not perish.' },
+    ],
+    reference: (scr && scr.reference) || 'John 3:16',
+    point: (pt && pt.bodyText) || 'Love shows up before it is asked.',
+    bullets: ['Love shows up first', 'Love stays when it costs', 'Love tells the truth'],
+  };
+}
+
+function _tpHex(v, fb) {
+  if (!v) return fb;
+  return v.startsWith('#') ? v : '#' + v;
+}
+
+// CSS for one text row, in container units of the canvas it sits on (cw = that
+// canvas's width in Pro7 px), so the preview is an exact scale of the slide.
+function _tpTextCss(font, size, adv, cw) {
+  const a = adv || FONT_ADV_DEFAULTS();
+  const d = _fitFontDescriptor(font, a);
+  const u = v => `${((Number(v) || 0) / cw * 100).toFixed(4)}cqw`;
+  const css = [
+    `font-family:${d.fontFamily}`, `font-weight:${d.fontWeight}`, `font-style:${d.fontStyle}`,
+    `font-size:${u(size)}`, `color:${_tpHex(a.color, '#ffffff')}`,
+    `letter-spacing:${u(a.charSpacing || 0)}`, `line-height:${((Number(a.lineHeight) || 1) * 1.2).toFixed(3)}`,
   ];
+  const deco = [a.underline && 'underline', a.strikethrough && 'line-through'].filter(Boolean);
+  css.push(`text-decoration:${deco.length ? deco.join(' ') : 'none'}`);
+  if (a.strokeEnabled && Number(a.strokeWidth) > 0) {
+    // Pro7 strokes outside the glyph; paint-order puts the fill on top so the
+    // doubled width shows the same visible outline.
+    css.push(`-webkit-text-stroke:${u(Number(a.strokeWidth) * 2)} ${_tpHex(a.strokeColor, '#000000')}`, 'paint-order:stroke fill');
+  } else {
+    css.push('-webkit-text-stroke:0');
+  }
+  if (a.shadowEnabled) {
+    const rad = (Number(a.shadowAngle ?? 315) * Math.PI) / 180;
+    const off = Number(a.shadowOffset ?? 5);
+    css.push(`text-shadow:${u(Math.cos(rad) * off)} ${u(-Math.sin(rad) * off)} ${u(a.shadowBlur ?? 5)} ${_tpHex(a.shadowColor, '#000000')}`);
+  }
+  // Goes inside a double-quoted style="" attribute — the font list's quotes must not close it.
+  return css.join(';').replace(/"/g, "'");
+}
+
+// One positioned text element. `spans` are [{text, alt}] — alt spans use the
+// alt (bold) row's font/adv at the base size, like the exporter does.
+function _tpEl(pv, cw, ch, o) {
+  const { row, box, font, size, adv, spans, altFont, altAdv, fill, sel, anchor, autoGap } = o;
+  const [x, y, w, h] = box;
+  if (!w || !h) return '';
+  const a = adv || FONT_ADV_DEFAULTS();
+  const pct = (v, d) => `${((Number(v) || 0) / d * 100).toFixed(3)}%`;
+  const u = v => `${((Number(v) || 0) / cw * 100).toFixed(4)}cqw`;
+  const VA = { '': 'flex-start', middle: 'center', bottom: 'flex-end' };
+  const HA = { '': 'left', center: 'center', right: 'right', justify: 'justify' };
+  const inner = spans.map(sp => {
+    const sa = sp.alt ? (altAdv || a) : a;
+    const txt = esc(_fitCaseText(sp.text, sa.capitalization || '')).replace(/\n/g, '<br>');
+    return sp.alt ? `<span style="${_tpTextCss(altFont || font, size, altAdv || a, cw)}">${txt}</span>` : txt;
+  }).join('');
+  return `<div class="tp-el${sel ? ' sel' : ''}" data-row="${row}"${a.scaleBehavior === 'none' ? '' : ' data-fit="1"'}${anchor ? ' data-anchor="1"' : ''}${autoGap != null ? ` data-autogap="${Number(autoGap) || 0}"` : ''}
+    style="left:${pct(x, cw)};top:${pct(y, ch)};width:${pct(w, cw)};height:${pct(h, ch)};justify-content:${VA[a.verticalAlignment ?? ''] || 'flex-start'};
+      padding:${u(a.marginTop)} ${u(a.marginRight)} ${u(a.marginBottom)} ${u(a.marginLeft)};${fill ? `background:${_tpHex(fill, 'transparent')};` : ''}">
+    <div class="tp-text" style="${_tpTextCss(font, size, a, cw)};text-align:${HA[a.alignment ?? ''] || 'left'};
+      margin:${u(a.paragraphSpacingBefore)} 0 ${u(a.paragraphSpacingAfter)}">${inner}</div></div>`;
+}
+
+function renderTextPreview(pv, scene, selRow) {
+  const smp = _tpSamples();
+  const mainW = pv.canvasW || 1920, mainH = pv.canvasH || 1080;
+  const propW = pv.propCanvasW || 3200, propH = pv.propCanvasH || 1280;
+  const L = (o) => _tpEl(pv, propW, propH, { ...o, sel: o.row === selRow || (o.alsoSel || []).includes(selRow) });
+  const bodySpans = smp.spans.map(sp => ({ text: sp.text, alt: !!sp.bold }));
+  const box = (p, fb) => [pv[p + 'X'] ?? pv[fb + 'X'] ?? 0, pv[p + 'Y'] ?? pv[fb + 'Y'] ?? 0, pv[p + 'W'] ?? pv[fb + 'W'] ?? 0, pv[p + 'H'] ?? pv[fb + 'H'] ?? 0];
+  const queueSpans = [{ text: [smp.reference, 'Point 1', 'Blank', 'Point 2', 'Response Card'].join('\n') }];
+
+  const showContent = scene !== 'utility';
+  const mainEls = [
+    showContent ? ({ row: 'queue', box: box('queue'), font: pv.queueFont, size: pv.queueSize, adv: pv.queueFontAdv, spans: queueSpans }) : '',
+    scene === 'scripture' || scene === 'notes'
+      ? ({ row: 'body1', alsoSel: ['bold1'], anchor: true, box: box('body'), font: pv.bodyFont, size: pv.bodySize, adv: pv.bodyFontAdv,
+            spans: bodySpans, altFont: pv.boldFont, altAdv: pv.boldFontAdv }) : '',
+    scene === 'scripture' || scene === 'notes'
+      ? ({ row: 'title1', box: box('title'), font: pv.titleFont, size: pv.titleSize, adv: pv.titleFontAdv,
+            spans: [{ text: smp.reference }], fill: pv.fillEnabled ? pv.titleFill : null, autoGap: pv.autoTitleY ? (pv.titleAutoGap ?? 16) : null })
+      : '',
+    scene === 'point' || scene === 'stacked'
+      ? ({ row: 'point1', box: box('point', 'body'), font: pv.pointFont, size: pv.pointSize, adv: pv.pointFontAdv, spans: [{ text: smp.point }] })
+      : '',
+    scene === 'utility'
+      ? ({ row: 'se', box: box('startEnd'), font: pv.startEndFont, size: pv.startEndSize, adv: pv.startEndFontAdv, spans: [{ text: 'Start of Notes' }] })
+      : '',
+    showContent ? ({ row: 'live', box: box('live'), font: pv.liveFont, size: pv.liveSize, adv: pv.liveFontAdv, spans: [{ text: 'live' }] }) : '',
+  ].filter(Boolean);
+  const isSel = o => o.row === selRow || (o.alsoSel || []).includes(selRow);
+  const onMain  = mainEls.filter(o => o.box[1] < mainH);
+  const offMain = mainEls.filter(o => o.box[1] >= mainH && o.box[2] && o.box[3]);
+  const main = onMain.map(o => _tpEl(pv, mainW, mainH, { ...o, sel: isSel(o) })).join('');
+  // Elements parked below the canvas (queue/live for the stage display) get
+  // their own strip at true scale instead of spilling over the page — only
+  // while one of them is being edited, since the strip can be tall.
+  const stripH = offMain.length ? Math.max(...offMain.map(o => o.box[1] + o.box[3])) - mainH : 0;
+  const offStrip = offMain.some(isSel) ? `
+        <div class="lp-canvas-lbl tp-off-lbl">Below the screen · stage display only</div>
+        <div class="tp-canvas tp-strip" style="aspect-ratio:${mainW} / ${Math.max(stripH, 1)}">
+          ${offMain.map(o => _tpEl(pv, mainW, stripH, { ...o, box: [o.box[0], o.box[1] - mainH, o.box[2], o.box[3]], sel: isSel(o) })).join('')}
+        </div>` : '';
+
+  let led = '';
+  if (scene === 'scripture' || scene === 'notes') {
+    led = L({ row: 'body2', alsoSel: ['bold2'], anchor: true, box: box('propBody'), font: pv.propBodyFont, size: pv.propBodySize, adv: pv.propBodyFontAdv,
+              spans: bodySpans, altFont: pv.propBoldFont, altAdv: pv.propBoldFontAdv })
+        + L({ row: 'title2', box: box('propTitle'), font: pv.propTitleFont, size: pv.propTitleSize, adv: pv.propTitleFontAdv,
+              spans: [{ text: smp.reference }], fill: pv.fillEnabled ? pv.titleFill : null, autoGap: pv.propAutoTitleY ? (pv.propTitleAutoGap ?? 16) : null });
+  } else if (scene === 'point') {
+    led = L({ row: 'point2', box: box('propPoint', 'propBody'), font: pv.propPointFont, size: pv.propPointSize, adv: pv.propPointFontAdv, spans: [{ text: smp.point }] });
+  } else if (scene === 'stacked') {
+    led = L({ row: 'pointStacked', box: box('propPoint', 'propBody'), font: pv.pointStackedFont, size: pv.pointStackedSize, adv: pv.pointStackedFontAdv,
+              spans: [{ text: smp.bullets.join('\n') }] });
+  }
+
+  const notes = scene === 'notes' ? `
+    <div class="tp-canvas-block tp-notes-block">
+      <div class="lp-canvas-lbl">${esc(dn('monitor'))} · slide notes</div>
+      <div class="tp-canvas tp-notes" style="aspect-ratio:1920 / 360">
+        ${_tpEl(pv, 1920, 360, { row: 'notes', alsoSel: ['notesBold'], sel: selRow === 'notes' || selRow === 'notesBold', box: [40, 20, 1840, 320],
+          font: pv.notesFont, size: pv.notesSize, adv: pv.notesFontAdv, altFont: pv.notesBoldFont, altAdv: pv.notesBoldFontAdv,
+          spans: [{ text: 'Read slowly. ' }, { text: 'Pause after "one and only Son".', alt: true }, { text: ' Then go to Point 1.' }] })}
+      </div>
+    </div>` : '';
+
+  return `
+    <div class="tp-scenes" role="tablist">
+      ${TEXT_SCENES.map(([k, lbl]) => `<div role="tab" tabindex="0" class="tp-scene${k === scene ? ' active' : ''}" data-scene="${k}">${lbl}</div>`).join('')}
+      <span class="tp-hint">Live preview · click any text to edit it</span>
+    </div>
+    <div class="tp-wrap">
+      <div class="tp-canvas-block">
+        <div class="lp-canvas-lbl">${esc(dn('mainScreen'))} · ${Math.round(mainW)}×${Math.round(mainH)}</div>
+        <div class="tp-canvas tp-main" data-cw="${mainW}" style="aspect-ratio:${mainW} / ${mainH}">
+          ${showContent ? `<div class="tp-gradient" style="top:${(351.77 / mainH * 100).toFixed(2)}%"></div>` : ''}
+          ${main}
+        </div>${offStrip}
+      </div>
+      <div class="tp-canvas-block">
+        <div class="lp-canvas-lbl">${esc(dn('ledWall'))} · ${Math.round(propW)}×${Math.round(propH)}</div>
+        <div class="tp-canvas tp-led" data-cw="${propW}" style="aspect-ratio:${propW} / ${propH}">
+          ${led || `<div class="tp-empty">Nothing on the ${esc(dn('ledWall'))} for this slide</div>`}
+        </div>
+      </div>
+    </div>
+    ${notes}`;
+}
+
+function renderSchemeGrid(sv, rs, dis, pv) {
+  pv = pv || sv;
+  const sections = TEXT_TAB_SECTIONS();
+  const allRows = sections.flatMap(sec => sec.rows.map(r => ({ ...r, section: sec.label })));
+  const cur = allRows.find(r => r.id === _textRow) || allRows[0];
+  _textRow = cur.id;
+  const scene = _textScene || TEXT_ROW_SCENE[cur.id] || 'scripture';
 
   const families = (_fontFamilyMap && typeof _fontFamilyMap === 'object')
     ? Object.keys(_fontFamilyMap).sort((a, b) => a.localeCompare(b))
     : [];
-
   const famOptsFn = (curFam) => families.length
     ? families.map(f => `<option value="${esc(f)}"${f === curFam ? ' selected' : ''}>${esc(f)}</option>`).join('')
     : `<option value="${esc(curFam || '')}">${esc(curFam || '—')}</option>`;
-
   const styOptsFn = (curFam, curPS) => {
     const arr = _fontFamilyMap?.[curFam];
     if (arr && arr.length) return arr.map(({ style, postscript }) =>
@@ -7934,158 +8133,253 @@ function renderSchemeGrid(sv, rs, dis) {
     return `<option value="${esc(curPS || '')}">${esc(parseFontPS(curPS || '').style || 'Regular')}</option>`;
   };
 
-  const colorVal = (v, fb = '#ffffff') => {
-    if (!v) return fb;
-    return v.startsWith('#') ? v : '#' + v;
-  };
-
-  const NUM_COLS = 34;
-
-  const dataRow = ({ id, lbl, fontF, typoKey, advK, sizeF }) => {
-    const ps      = fontF ? (sv[fontF] || '') : (typoKey ? (sv[typoKey] || '') : '');
-    const curFam  = (fontF || typoKey) ? fontFamilyOf(ps) : '';
-    const adv     = sv[advK] || FONT_ADV_DEFAULTS();
-    const noFont  = !fontF && !typoKey;
-
-    const fontTypoKey = fontF ? (FONT_FIELD_TO_TYPO_KEY[fontF] || null) : (typoKey || null);
-    const advRaw  = rs[advK];
-    const _globalAdv = ensureGlobalFontAdv()[advK] || FONT_ADV_DEFAULTS();
-    const advOv   = (field) => {
-      if (!advRaw) return false;
-      const v = advRaw[field];
-      if (v === undefined || v === null) return false;
-      const def = _globalAdv[field];
-      if (def === null || def === undefined) return false;
+  const _globalTypo = ensureGlobalTypography();
+  const rowOverrides = (r) => {
+    const raw = rs[r.advK];
+    const glb = ensureGlobalFontAdv()[r.advK] || FONT_ADV_DEFAULTS();
+    const advDiff = raw ? Object.keys(glb).some(f => {
+      const v = raw[f], def = glb[f];
+      if (v === undefined || v === null || def === null || def === undefined) return false;
       if (typeof def === 'number') return Math.abs(Number(v) - def) > 0.01;
       if (typeof def === 'boolean') return !!v !== def;
       return v !== def;
-    };
-    const _globalTypo = ensureGlobalTypography();
-    const fontOv     = fontTypoKey ? (rs.typography?.[fontTypoKey] != null && rs.typography?.[fontTypoKey] !== _globalTypo[fontTypoKey]) : false;
-    const fontFieldOv = !!(fontF && rs.fontFields?.[fontF]);
-    const sizeOv   = sizeF ? (rs.typography?.[sizeF] != null && Number(rs.typography?.[sizeF]) !== Number(_globalTypo[sizeF])) : false;
-    const alignOv  = advOv('alignment');
-    const vAlignOv = advOv('verticalAlignment');
-    const sc = (ov) => ov ? ' sg-td-scheme' : '';
-
-    const togCell  = (field) => {
-      const glbOn = !!_globalAdv[field];
-      return `<td class="sg-td sg-td-tog${sc(advOv(field))}" data-scheme="${advK}" data-field="${field}"><button type="button" class="fav-toggle sg-tog ${adv[field] ? 'on' : ''}${glbOn ? ' sg-tog-global' : ''}" data-scheme="${advK}" data-field="${field}" ${dis}></button></td>`;
-    };
-    const HA_ICONS = {
-      '':       `<svg viewBox="0 0 14 10" fill="none" stroke="currentColor" stroke-linecap="round" width="14" height="10"><path d="M1 2h12M1 5.5h7M1 9h9" stroke-width="1.4"/></svg>`,
-      center:   `<svg viewBox="0 0 14 10" fill="none" stroke="currentColor" stroke-linecap="round" width="14" height="10"><path d="M1 2h12M3.5 5.5h7M2.5 9h9" stroke-width="1.4"/></svg>`,
-      right:    `<svg viewBox="0 0 14 10" fill="none" stroke="currentColor" stroke-linecap="round" width="14" height="10"><path d="M1 2h12M6 5.5h7M4 9h9" stroke-width="1.4"/></svg>`,
-      justify:  `<svg viewBox="0 0 14 10" fill="none" stroke="currentColor" stroke-linecap="round" width="14" height="10"><path d="M1 2h12M1 5.5h12M1 9h9" stroke-width="1.4"/></svg>`,
-    };
-    const VA_ICONS = {
-      '':       `<svg viewBox="0 0 10 12" fill="none" stroke="currentColor" stroke-linecap="round" width="10" height="12"><path d="M1 2h8" stroke-width="2"/><path d="M2.5 5.5h5M2.5 9h5" stroke-width="1.4"/></svg>`,
-      middle:   `<svg viewBox="0 0 10 12" fill="none" stroke="currentColor" stroke-linecap="round" width="10" height="12"><path d="M2 3h6M2 6h6M2 9h6" stroke-width="1.4"/></svg>`,
-      bottom:   `<svg viewBox="0 0 10 12" fill="none" stroke="currentColor" stroke-linecap="round" width="10" height="12"><path d="M2.5 3h5M2.5 6.5h5" stroke-width="1.4"/><path d="M1 10h8" stroke-width="2"/></svg>`,
-    };
-    const glbAlign = _globalAdv.alignment ?? '';
-    const glbVAlign = _globalAdv.verticalAlignment ?? '';
-    const haBtn = (v, title) => {
-      const isOn = adv.alignment === v;
-      const isGlb = glbAlign === v;
-      return `<td class="sg-td sg-td-align${alignOv ? ' sg-td-scheme' : ''}" data-scheme="${advK}" data-field="alignment"><button type="button" class="sg-halign-btn sg-align-cell${isOn ? ' on' : ''}${isGlb ? ' sg-align-global' : ''}" data-scheme="${advK}" data-val="${v}" title="${title}" ${dis}>${HA_ICONS[v] || ''}</button></td>`;
-    };
-    const vaBtn = (v, title) => {
-      const isOn = adv.verticalAlignment === v;
-      const isGlb = glbVAlign === v;
-      return `<td class="sg-td sg-td-align${vAlignOv ? ' sg-td-scheme' : ''}" data-scheme="${advK}" data-field="verticalAlignment"><button type="button" class="sg-valign-btn sg-align-cell${isOn ? ' on' : ''}${isGlb ? ' sg-align-global' : ''}" data-scheme="${advK}" data-val="${v}" title="${title}" ${dis}>${VA_ICONS[v] || ''}</button></td>`;
-    };
-    const numCell  = (field, dflt, step) =>
-      `<td class="sg-td${sc(advOv(field))}" data-scheme="${advK}" data-field="${field}"><input type="number" class="fav-num sg-num" data-scheme="${advK}" data-field="${field}" value="${adv[field] ?? dflt}" step="${step}" ${dis}></td>`;
-    const colorCell = (field, fb) =>
-      `<td class="sg-td sg-td-color${sc(advOv(field))}" data-scheme="${advK}" data-field="${field}"><input type="color" class="sg-adv-color" data-scheme="${advK}" data-field="${field}" value="${colorVal(adv[field], fb)}" ${dis}></td>`;
-
-    return `<tr class="sg-row" data-rowid="${id}">
-      <th scope="row" class="sg-row-lbl">${esc(lbl)}</th>
-      <td class="sg-td sg-td-fam${sc(fontOv || fontFieldOv)}" data-typokey="${fontTypoKey || ''}">${noFont ? '<span class="sg-na">—</span>'
-        : typoKey ? `<select class="sg-typo-fam sg-fam" id="sg-typo-fam-${id}" data-typokey="${typoKey}" ${dis}>${famOptsFn(curFam)}</select>`
-        : `<select class="sf-fam-select sg-fam" id="sf-fam-${fontF}" ${dis}>${famOptsFn(curFam)}</select>`}</td>
-      <td class="sg-td sg-td-sty${sc(fontOv || fontFieldOv)}" data-typokey="${fontTypoKey || ''}">${noFont ? '<span class="sg-na">—</span>'
-        : typoKey ? `<select class="sg-typo-sty sg-sty" id="sg-typo-sty-${id}" data-typokey="${typoKey}" ${dis}>${styOptsFn(curFam, ps)}</select>`
-        : `<select class="sf-sty-select sg-sty" id="sf-sty-${fontF}" ${dis}>${styOptsFn(curFam, ps)}</select>`}</td>
-      <td class="sg-td sg-td-color${sc(advOv('color'))}" data-scheme="${advK}" data-field="color"><input type="color" class="sg-adv-color sg-color" data-scheme="${advK}" data-field="color" value="${colorVal(adv.color)}" ${dis}></td>
-      <td class="sg-td${sc(sizeOv)}" data-typokey="${sizeF || ''}">${sizeF
-        ? `<input type="number" class="sz-input sf-size sg-size" id="ss-${sizeF}" value="${sv[sizeF] ?? 44}" min="1" max="400" step="1" ${dis}>`
-        : '<span class="sg-na">—</span>'}</td>
-      ${togCell('bold')}${togCell('italic')}${togCell('underline')}${togCell('strikethrough')}
-      <td class="sg-td${sc(advOv('capitalization'))}" data-scheme="${advK}" data-field="capitalization"><select class="fav-select sg-caps" data-scheme="${advK}" data-field="capitalization" ${dis}>
-        <option value="" ${adv.capitalization === '' ? 'selected' : ''}>—</option>
-        <option value="allCaps" ${adv.capitalization === 'allCaps' ? 'selected' : ''}>ALL</option>
-        <option value="titleCase" ${adv.capitalization === 'titleCase' ? 'selected' : ''}>Title</option>
-        <option value="startCase" ${adv.capitalization === 'startCase' ? 'selected' : ''}>Start</option>
-        <option value="allLower" ${adv.capitalization === 'allLower' ? 'selected' : ''}>lower</option>
-      </select></td>
-      <td class="sg-td${sc(advOv('scaleBehavior'))}" data-scheme="${advK}" data-field="scaleBehavior"><select class="fav-select sg-scale" data-scheme="${advK}" data-field="scaleBehavior" ${dis}>
-        <option value="" ${!adv.scaleBehavior ? 'selected' : ''}>—</option>
-        <option value="SCALE_BEHAVIOR_SCALE_FONT_DOWN" ${adv.scaleBehavior === 'SCALE_BEHAVIOR_SCALE_FONT_DOWN' ? 'selected' : ''}>↓</option>
-        <option value="SCALE_BEHAVIOR_SCALE_FONT_UP_DOWN" ${adv.scaleBehavior === 'SCALE_BEHAVIOR_SCALE_FONT_UP_DOWN' ? 'selected' : ''}>↕</option>
-        <option value="none" ${adv.scaleBehavior === 'none' ? 'selected' : ''}>✕</option>
-      </select></td>
-      ${haBtn('', 'Left')}${haBtn('center', 'Center')}${haBtn('right', 'Right')}${haBtn('justify', 'Justify')}
-      ${vaBtn('', 'Top')}${vaBtn('middle', 'Middle')}${vaBtn('bottom', 'Bottom')}
-      ${togCell('strokeEnabled')}
-      ${numCell('strokeWidth', 1, 0.5)}
-      ${colorCell('strokeColor', '#000000')}
-      ${togCell('shadowEnabled')}
-      ${colorCell('shadowColor', '#000000')}
-      ${numCell('shadowAngle', 315, 15)}
-      ${numCell('shadowOffset', 5, 0.5)}
-      ${numCell('shadowBlur', 5, 0.5)}
-      ${numCell('charSpacing', 0, 0.5)}
-      ${numCell('lineHeight', 1, 0.05)}
-      ${numCell('paragraphSpacingBefore', 0, 1)}
-      ${numCell('paragraphSpacingAfter', 0, 1)}
-      ${numCell('marginTop', 0, 1)}
-      ${numCell('marginBottom', 0, 1)}
-      ${numCell('marginLeft', 0, 1)}
-      ${numCell('marginRight', 0, 1)}
-    </tr>`;
+    }) : false;
+    const typoKey = FONT_FIELD_TO_TYPO_KEY[r.fontF];
+    const fontDiff = !!(rs.fontFields?.[r.fontF]) || (typoKey && rs.typography?.[typoKey] != null && rs.typography[typoKey] !== _globalTypo[typoKey]);
+    const sizeDiff = r.sizeF && rs.typography?.[r.sizeF] != null && Number(rs.typography[r.sizeF]) !== Number(_globalTypo[r.sizeF]);
+    return advDiff || fontDiff || sizeDiff;
   };
 
-  const tbody = sections.map(sec =>
-    `<tr class="sg-section-hd"><th colspan="${NUM_COLS}" class="sg-section-lbl">${esc(sec.label)}</th></tr>` +
-    sec.rows.map(dataRow).join('')
-  ).join('');
+  const list = sections.map(sec => `
+    <div class="tp-list-sec">${esc(sec.label)}</div>
+    ${sec.rows.map(r => {
+      const inherits = D2_ADV_INHERIT[r.advK] && rs[r.advK] == null;
+      return `<div role="button" tabindex="0" class="tp-list-item${r.id === cur.id ? ' active' : ''}" data-row="${r.id}">
+        <span>${esc(r.lbl)}</span>
+        ${inherits ? '<span class="tp-tag" title="Follows its Display 1 row until you change something">follows D1</span>'
+          : rowOverrides(r) ? '<span class="tp-dot" title="This style overrides Global here"></span>' : ''}
+      </div>`;
+    }).join('')}`).join('');
 
-  return `<div class="sg-scroll"><table class="sg-table">
-    <thead>
-      <tr class="sg-grp-row">
-        <th rowspan="2" class="sg-corner"></th>
-        <th colspan="2" class="sg-grp">Font</th>
-        <th class="sg-grp sg-solo">Color</th>
-        <th class="sg-grp sg-solo">Size</th>
-        <th colspan="4" class="sg-grp">Formatting</th>
-        <th rowspan="2" class="sg-grp sg-hd-solo">Caps</th>
-        <th rowspan="2" class="sg-grp sg-hd-solo">Scale</th>
-        <th colspan="4" class="sg-grp">H-Align</th>
-        <th colspan="3" class="sg-grp">V-Align</th>
-        <th colspan="3" class="sg-grp">Stroke</th>
-        <th colspan="5" class="sg-grp">Shadow</th>
-        <th rowspan="2" class="sg-grp sg-hd-solo">Char</th>
-        <th rowspan="2" class="sg-grp sg-hd-solo">Line</th>
-        <th colspan="2" class="sg-grp">Para</th>
-        <th colspan="4" class="sg-grp">Margins</th>
-      </tr>
-      <tr class="sg-col-row">
-        <th class="sg-col">font</th><th class="sg-col">weight</th>
-        <th class="sg-col"></th>
-        <th class="sg-col">pt</th>
-        <th class="sg-col">B</th><th class="sg-col"><i>I</i></th><th class="sg-col"><u>U</u></th><th class="sg-col"><s>S</s></th>
-        <th class="sg-col">L</th><th class="sg-col">C</th><th class="sg-col">R</th><th class="sg-col">J</th>
-        <th class="sg-col">T</th><th class="sg-col">M</th><th class="sg-col">B</th>
-        <th class="sg-col">on</th><th class="sg-col">w</th><th class="sg-col">clr</th>
-        <th class="sg-col">on</th><th class="sg-col">clr</th><th class="sg-col">°</th><th class="sg-col">px</th><th class="sg-col">blur</th>
-        <th class="sg-col">↑</th><th class="sg-col">↓</th>
-        <th class="sg-col">T</th><th class="sg-col">B</th><th class="sg-col">L</th><th class="sg-col">R</th>
-      </tr>
-    </thead>
-    <tbody>${tbody}</tbody>
-  </table></div>`;
+  // ── Inspector for the selected row ──
+  const { fontF, advK, sizeF } = cur;
+  const ps     = sv[fontF] || '';
+  const curFam = fontFamilyOf(ps);
+  const adv    = sv[advK] || FONT_ADV_DEFAULTS();
+  const fontTypoKey = FONT_FIELD_TO_TYPO_KEY[fontF] || null;
+  const advRaw = rs[advK];
+  const _globalAdv = ensureGlobalFontAdv()[advK] || FONT_ADV_DEFAULTS();
+  const advOv = (field) => {
+    if (!advRaw) return false;
+    const v = advRaw[field];
+    if (v === undefined || v === null) return false;
+    const def = _globalAdv[field];
+    if (def === null || def === undefined) return false;
+    if (typeof def === 'number') return Math.abs(Number(v) - def) > 0.01;
+    if (typeof def === 'boolean') return !!v !== def;
+    return v !== def;
+  };
+  const fontOv = (fontTypoKey ? (rs.typography?.[fontTypoKey] != null && rs.typography?.[fontTypoKey] !== _globalTypo[fontTypoKey]) : false)
+    || !!(rs.fontFields?.[fontF]);
+  const sizeOv = sizeF ? (rs.typography?.[sizeF] != null && Number(rs.typography?.[sizeF]) !== Number(_globalTypo[sizeF])) : false;
+  const sc = (ov) => ov ? ' sg-td-scheme' : '';
+  const cell = (field, html, extra = '') =>
+    `<div class="sg-td tp-cell${sc(advOv(field))}${extra}" data-scheme="${advK}" data-field="${field}">${html}</div>`;
+  const tog = (field, label, title) => {
+    const glbOn = !!_globalAdv[field];
+    return cell(field, `<button type="button" class="fav-toggle sg-tog tp-tog ${adv[field] ? 'on' : ''}${glbOn ? ' sg-tog-global' : ''}" data-scheme="${advK}" data-field="${field}" title="${title}" ${dis}>${label}</button>`);
+  };
+  const num = (field, label, dflt, step, unit = '') =>
+    `<div class="tp-num">${label}${cell(field, `<input type="number" class="fav-num sg-num tp-input" data-scheme="${advK}" data-field="${field}" value="${adv[field] ?? dflt}" step="${step}" ${dis}>${unit ? `<span class="tp-unit">${unit}</span>` : ''}`)}</div>`;
+  const color = (field, fb, title) =>
+    cell(field, `<input type="color" class="sg-adv-color tp-color" data-scheme="${advK}" data-field="${field}" value="${_tpHex(adv[field], fb)}" title="${title}" ${dis}>`);
+  const HA = [['', 'Left'], ['center', 'Center'], ['right', 'Right'], ['justify', 'Justify']];
+  const VA = [['', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']];
+  const HA_ICONS = {
+    '':      '<path d="M1 2h12M1 5.5h7M1 9h9" stroke-width="1.4"/>',
+    center:  '<path d="M1 2h12M3.5 5.5h7M2.5 9h9" stroke-width="1.4"/>',
+    right:   '<path d="M1 2h12M6 5.5h7M4 9h9" stroke-width="1.4"/>',
+    justify: '<path d="M1 2h12M1 5.5h12M1 9h9" stroke-width="1.4"/>',
+  };
+  const VA_ICONS = {
+    '':     '<path d="M1 1.5h12" stroke-width="2"/><path d="M4 5h6M4 8h6" stroke-width="1.4"/>',
+    middle: '<path d="M4 3h6M4 9h6" stroke-width="1.4"/><path d="M1 6h12" stroke-width="1" stroke-dasharray="1.5 1.5"/>',
+    bottom: '<path d="M4 3h6M4 6.5h6" stroke-width="1.4"/><path d="M1 10.5h12" stroke-width="2"/>',
+  };
+  const alignBtns = (cls, field, opts, icons) => cell(field, opts.map(([v, title]) =>
+    `<button type="button" class="${cls} sg-align-cell tp-align${adv[field] === v ? ' on' : ''}${(_globalAdv[field] ?? '') === v ? ' sg-align-global' : ''}" data-scheme="${advK}" data-val="${v}" title="${title}" ${dis}><svg viewBox="0 0 14 12" fill="none" stroke="currentColor" stroke-linecap="round" width="14" height="12">${icons[v]}</svg></button>`
+  ).join(''), ' tp-seg');
+
+  const inheritsD1 = D2_ADV_INHERIT[advK] && rs[advK] == null;
+  const d1Name = { propBodyFontAdv: 'Body', propPointFontAdv: 'Point', propTitleFontAdv: 'Title', propBoldFontAdv: 'Bold' }[advK];
+  const inspector = `
+    <div class="tp-insp-hd">
+      <div><span class="tp-insp-sec">${esc(cur.section)}</span><span class="tp-insp-name">${esc(cur.lbl)}</span></div>
+      ${D2_ADV_INHERIT[advK] && d1Name ? (inheritsD1
+        ? `<span class="tp-follow">Follows ${esc(dn('mainScreen'))} ${d1Name} — change anything to make it its own</span>`
+        : `<button type="button" class="btn-sm tp-reset-d1" data-scheme="${advK}" ${dis}>↺ Follow ${esc(dn('mainScreen'))} ${d1Name} again</button>`) : ''}
+    </div>
+
+    <div class="tp-group">
+      <div class="tp-group-lbl">Font</div>
+      <div class="tp-row">
+        <div class="sg-td tp-cell tp-grow${sc(fontOv)}" data-typokey="${fontTypoKey || ''}"><select class="sf-fam-select sg-fam tp-select" id="sf-fam-${fontF}" ${dis}>${famOptsFn(curFam)}</select></div>
+        <div class="sg-td tp-cell${sc(fontOv)}" data-typokey="${fontTypoKey || ''}"><select class="sf-sty-select sg-sty tp-select" id="sf-sty-${fontF}" ${dis}>${styOptsFn(curFam, ps)}</select></div>
+      </div>
+      <div class="tp-row">
+        <div class="tp-num">Size
+          <div class="sg-td tp-cell${sc(sizeOv)}" data-typokey="${sizeF || ''}">${sizeF
+            ? `<input type="number" class="sz-input sf-size sg-size tp-input" id="ss-${sizeF}" value="${sv[sizeF] ?? 44}" min="1" max="400" step="1" ${dis}><span class="tp-unit">pt</span>`
+            : `<span class="tp-na">same as ${esc(cur.sizeFrom || 'Body')}</span>`}</div>
+        </div>
+        <div class="tp-num">Color ${color('color', '#ffffff', 'Text color')}</div>
+      </div>
+    </div>
+
+    <div class="tp-group">
+      <div class="tp-group-lbl">Style</div>
+      <div class="tp-row">
+        <div class="tp-seg-wrap">${tog('bold', '<b>B</b>', 'Bold')}${tog('italic', '<i>I</i>', 'Italic')}${tog('underline', '<u>U</u>', 'Underline')}${tog('strikethrough', '<s>S</s>', 'Strikethrough')}</div>
+        <div class="tp-num">Caps ${cell('capitalization', `<select class="fav-select sg-caps tp-select" data-scheme="${advK}" data-field="capitalization" ${dis}>
+          ${[['', 'As typed'], ['allCaps', 'ALL CAPS'], ['titleCase', 'Title Case'], ['startCase', 'Start Case'], ['allLower', 'lowercase']].map(([v, l]) =>
+            `<option value="${v}" ${(adv.capitalization || '') === v ? 'selected' : ''}>${l}</option>`).join('')}
+        </select>`)}</div>
+        <div class="tp-num" title="What ProPresenter does when text doesn't fit the box">Overflow ${cell('scaleBehavior', `<select class="fav-select sg-scale tp-select" data-scheme="${advK}" data-field="scaleBehavior" ${dis}>
+          ${[['', 'Shrink to fit (default)'], ['SCALE_BEHAVIOR_SCALE_FONT_DOWN', 'Shrink to fit'], ['SCALE_BEHAVIOR_SCALE_FONT_UP_DOWN', 'Grow or shrink'], ['none', 'Never resize']].map(([v, l]) =>
+            `<option value="${v}" ${(adv.scaleBehavior || '') === v ? 'selected' : ''}>${l}</option>`).join('')}
+        </select>`)}</div>
+      </div>
+    </div>
+
+    <div class="tp-group">
+      <div class="tp-group-lbl">Alignment</div>
+      <div class="tp-row">
+        <div class="tp-num">Horizontal ${alignBtns('sg-halign-btn', 'alignment', HA, HA_ICONS)}</div>
+        <div class="tp-num">Vertical ${alignBtns('sg-valign-btn', 'verticalAlignment', VA, VA_ICONS)}</div>
+      </div>
+    </div>
+
+    <div class="tp-group">
+      <div class="tp-group-lbl">Outline</div>
+      <div class="tp-row">
+        ${tog('strokeEnabled', '<span class="tp-sw-lbl"></span>', 'Text outline on/off')}
+        ${num('strokeWidth', 'Width', 1, 0.5, 'px')}
+        <div class="tp-num">Color ${color('strokeColor', '#000000', 'Outline color')}</div>
+      </div>
+    </div>
+
+    <div class="tp-group">
+      <div class="tp-group-lbl">Shadow</div>
+      <div class="tp-row">
+        ${tog('shadowEnabled', '<span class="tp-sw-lbl"></span>', 'Drop shadow on/off')}
+        <div class="tp-num">Color ${color('shadowColor', '#000000', 'Shadow color')}</div>
+        ${num('shadowAngle', 'Angle', 315, 15, '°')}
+        ${num('shadowOffset', 'Distance', 5, 0.5, 'px')}
+        ${num('shadowBlur', 'Blur', 5, 0.5, 'px')}
+      </div>
+    </div>
+
+    <div class="tp-group">
+      <div class="tp-group-lbl">Spacing</div>
+      <div class="tp-row">
+        ${num('charSpacing', 'Letters', 0, 0.5, 'px')}
+        ${num('lineHeight', 'Line height', 1, 0.05, '×')}
+        ${num('paragraphSpacingBefore', 'Before ¶', 0, 1, 'px')}
+        ${num('paragraphSpacingAfter', 'After ¶', 0, 1, 'px')}
+      </div>
+    </div>
+
+    <div class="tp-group">
+      <div class="tp-group-lbl">Margins <span class="tp-group-sub">inside the text box</span></div>
+      <div class="tp-row">
+        ${num('marginTop', 'Top', 0, 1, 'px')}
+        ${num('marginBottom', 'Bottom', 0, 1, 'px')}
+        ${num('marginLeft', 'Left', 0, 1, 'px')}
+        ${num('marginRight', 'Right', 0, 1, 'px')}
+      </div>
+    </div>
+    <p class="tp-legend"><span class="tp-dot"></span> overrides Global · right-click any control to reset it or push it to Global</p>`;
+
+  return `
+    <div class="tp-preview">${renderTextPreview(pv, scene, cur.id)}</div>
+    <div class="tp-body">
+      <nav class="tp-list">${list}</nav>
+      <div class="tp-insp">${inspector}</div>
+    </div>`;
+}
+
+// Export defaults every text box to ProPresenter's "shrink to fit" (only
+// "Never resize" turns it off), so overflowing preview text shrinks the same way.
+function _tpShrinkToFit(root) {
+  root.querySelectorAll('.tp-el[data-fit]').forEach(el => {
+    const txt = el.querySelector('.tp-text');
+    const sized = [txt, ...txt.querySelectorAll('span')];
+    for (let i = 0; i < 8; i++) {
+      const cs = getComputedStyle(el);
+      const availH = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+      const availW = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      const k = Math.min(availH / txt.scrollHeight, availW / txt.scrollWidth, 1);
+      if (!(k < 0.995) || availH <= 0) break;
+      sized.forEach(n => { n.style.fontSize = `${parseFloat(getComputedStyle(n).fontSize) * Math.max(k, 0.5)}px`; });
+    }
+  });
+}
+
+// Lay out a rendered preview the way export does: shrink-to-fit first, then
+// Auto Title Y — export sets the title's Y from the body's real line count, so
+// the static titleY is meaningless for those slides. Mirror it by measuring the
+// rendered body text and parking the title box `gap` above its first line.
+function _tpLayout(root) {
+  _tpShrinkToFit(root);
+  root.querySelectorAll('.tp-canvas[data-cw]').forEach(cv => {
+    const body = cv.querySelector('.tp-el[data-anchor] .tp-text');
+    const title = cv.querySelector('.tp-el[data-autogap]');
+    if (!body || !title) return;
+    const cr = cv.getBoundingClientRect();
+    if (!cr.width) return;
+    const scale = cr.width / Number(cv.dataset.cw);
+    const textTop = body.getBoundingClientRect().top - cr.top;
+    const top = textTop - Number(title.dataset.autogap) * scale - title.offsetHeight;
+    title.style.top = `${(top / cr.height * 100).toFixed(3)}%`;
+  });
+}
+
+// Selection, scene switching and live preview refresh for the Text tab.
+// `getPv` returns the export-resolved style to draw; `rerender` rebuilds the
+// whole panel (used when the selected element changes).
+function wireTextTab(root, getPv, rerender) {
+  if (!root) return;
+  const refresh = () => {
+    const host = root.querySelector('.tp-preview');
+    if (!host) return;
+    host.innerHTML = renderTextPreview(getPv(), _textScene || TEXT_ROW_SCENE[_textRow] || 'scripture', _textRow);
+    _tpLayout(host);
+  };
+  _tpLayout(root);
+  document.fonts?.ready.then(refresh);
+  let timer = 0;
+  const schedule = () => { clearTimeout(timer); timer = setTimeout(refresh, 0); };
+  // Bubble-phase listeners run after each control's own save handler.
+  root.addEventListener('input', schedule);
+  root.addEventListener('change', schedule);
+  root.addEventListener('click', e => {
+    const item = e.target.closest('.tp-list-item, .tp-el');
+    if (item) {
+      _textRow = item.dataset.row;
+      // Clicking text in the preview keeps the scene you're looking at.
+      if (item.classList.contains('tp-list-item')) _textScene = null;
+      rerender();
+      return;
+    }
+    const sceneBtn = e.target.closest('.tp-scene');
+    if (sceneBtn) { _textScene = sceneBtn.dataset.scene; refresh(); return; }
+    if (e.target.closest('.tp-insp')) schedule();
+  });
+  root.addEventListener('keydown', e => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.tp-list-item, .tp-scene')) {
+      e.preventDefault(); e.target.click();
+    }
+  });
 }
 
 function renderStylePanel(panel) {
@@ -8200,9 +8494,7 @@ function renderStylePanel(panel) {
 
       <!-- TEXT tab — canvas map + data grid -->
       <div class="style-tab-body" id="style-tab-text" ${_styleTab !== 'text' ? 'style="display:none"' : ''}>
-        <div class="sg-lp-compact">${layoutPreview(scheme, _textSel)}</div>
-
-        ${renderSchemeGrid(schemeView, scheme, dis)}
+        ${renderSchemeGrid(schemeView, scheme, dis, styleForExport(scheme))}
       </div>
 
       <!-- MOTION tab — Transitions + Build Order -->
@@ -8451,6 +8743,9 @@ function renderStylePanel(panel) {
     const s = getScheme();
     if (s) { s.name = e.target.value; saveState(); }
   });
+
+  // Text tab: element selection, scene switching, live preview (also when locked — browsing isn't editing)
+  wireTextTab(document.getElementById('style-tab-text'), () => styleForExport(getScheme() || scheme), () => renderStylePanel(panel));
 
   if (locked) return; // no need to attach change handlers when locked
 
@@ -8896,6 +9191,14 @@ function renderStylePanel(panel) {
       forkAdv(s, key);
       s[key][field] = e.target.value;
       saveState();
+    });
+  });
+
+  panel.querySelectorAll('.tp-reset-d1').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const s = getScheme(); if (!s) return;
+      if (D2_ADV_INHERIT[btn.dataset.scheme]) s[btn.dataset.scheme] = null;
+      saveState(); renderStylePanel(panel);
     });
   });
 
@@ -12247,6 +12550,8 @@ let _styleTab = 'text';      // Text | Layout | Motion | Preview
 let _motionTab = 'transitions'; // within Motion: transitions | build
 let _layoutSel = null;          // selected region slug in the Layout visual preview
 let _textSel   = null;          // selected region slug in the Text visual preview
+let _textRow   = 'body1';       // selected element in the Text tab inspector
+let _textScene = null;          // Text preview scene override (null = follow the selected element)
 
 function attachPdfHandlers() {
   const zone      = document.getElementById('pdf-drop-zone');
@@ -14137,6 +14442,9 @@ async function loadFonts() {
   if (typeof queryLocalFonts === 'function') {
     try {
       const fonts = await queryLocalFonts();
+      // No local-fonts permission resolves with [] rather than throwing — treat
+      // that as a failure so the server font list still fills the selects.
+      if (!fonts.length) throw new Error('no local fonts');
       _fontFamilyMap = {};
       for (const { family, style, postscriptName } of fonts) {
         if (!_fontFamilyMap[family]) _fontFamilyMap[family] = [];
@@ -15305,14 +15613,15 @@ function helpSections() {
     label: 'Text & Layout',
     html: `
       <h3>Text tab</h3>
-      <p>A grid of every text element, grouped by output. Each row sets font family &amp; style, colour, size, <strong>B</strong>/<strong>I</strong>/<strong>U</strong>/strikethrough, capitalization, scale behaviour, horizontal &amp; vertical alignment, plus advanced styling (character spacing, line height, paragraph spacing, margins, stroke, shadow).</p>
+      <p>A <strong>live preview</strong> of the main screen and LED wall, drawn with your real fonts, sizes, colours, outline, shadow, capitalization and alignment (sample text comes from this deck). Pick a slide type above it — Scripture, Point, Stacked points, Start/End, Notes — to see each element in place.</p>
+      <p>Click any text in the preview, or a name in the list on the left, to open its <strong>inspector</strong>: Font (family &amp; weight), Size &amp; Colour, Style (<strong>B</strong>/<strong>I</strong>/<strong>U</strong>/strikethrough, caps, overflow), Alignment, Outline, Shadow, Spacing and Margins. Every change shows in the preview as you make it. Queue and Live sit below the screen (stage display only), so they get their own strip when selected.</p>
       <ul>
-        <li><strong>${D1} (main screen):</strong> Body, Bold (emphasis), Title, Point, RC Body, RC Title.</li>
+        <li><strong>${D1} (main screen):</strong> Body, Bold (emphasis), Title, Point.</li>
         <li><strong>${D2} (LED wall props):</strong> Body, Bold, Title, Point, Point Stacked.</li>
         <li><strong>${D3}:</strong> Slide Notes, Notes Alt.</li>
         <li><strong>Utility:</strong> Start/End banner, Live badge, Queue sidebar.</li>
       </ul>
-      <p class="help-muted">Right-click any cell for Reset / Push / Reset-to-Display-1. Blue cells inherit, orange cells override.</p>
+      <p class="help-muted">Right-click any control for Reset / Push to Global. An amber dot in the list (or amber ring on a control) means this style overrides Global there; LED-wall rows marked “follows D1” track their main-screen row until you change them.</p>
 
       <h3>Layout tab</h3>
       <p>The X / Y / W / H bounds of every element, on both canvases — the main <strong>1920×1080</strong> screen and the <strong>${D2}</strong> prop canvas (3200×1280).</p>
