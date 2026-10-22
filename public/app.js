@@ -2,9 +2,19 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.37.0';
+const APP_VERSION = '4.38.0';
 
 const CHANGELOG = [
+  {
+    version: '4.38.0',
+    date: '2026-10-21',
+    changes: [
+      "Styles → Motion is rebuilt like the Text, Style and Layout tabs: a preview, a list (Transitions: main screen, LED wall · Builds: Scripture, Point, Start / End) and an inspector for the one you pick. New ▶ Play button animates the transition or the slide's builds on the preview, with long delays shortened.",
+      "Build steps are now cards that read as a sentence (\"Verse text fades out 60 s after the slide's transition finishes\") with plain labels — Element, In (show) / Out (hide), Starts, Delay, Animation, Length.",
+      "Removed the Blank build tab: blank slides export with no elements, so builds set there never reached ProPresenter.",
+      "Fixed: changing only a transition's length still said \"Using Global\"; and emptying the length now follows Global instead of quietly saving 0.6 s for the style.",
+    ],
+  },
   {
     version: '4.37.0',
     date: '2026-10-21',
@@ -5435,81 +5445,233 @@ const BO_TRANSITIONS = [
   ['fade',     'Fade'],
 ];
 
+// ── Styles → Motion tab: same preview / list / inspector shape as Text ──────
+// Transitions (main + LED) follow Global per field; builds follow Global as
+// one set (scheme.buildOrders === null) until the first edit forks a copy.
+const MOTION_ITEMS = () => [
+  { id: 'slide',    group: 'Transitions', lbl: dn('mainScreen'), scene: 'scripture', kind: 'trans', typeF: 'transitionType',     durF: 'transitionDuration' },
+  { id: 'prop',     group: 'Transitions', lbl: dn('ledWall'),    scene: 'scripture', kind: 'trans', typeF: 'propTransitionType', durF: 'propTransitionDuration' },
+  { id: 'content',  group: 'Builds',      lbl: 'Scripture',      scene: 'scripture', kind: 'build' },
+  { id: 'point',    group: 'Builds',      lbl: 'Point',          scene: 'point',     kind: 'build' },
+  { id: 'startEnd', group: 'Builds',      lbl: 'Start / End',    scene: 'utility',   kind: 'build' },
+];
+// Build-order element name → [label, preview row] per slide type.
+const BO_EL_INFO = {
+  content:  { body: ['Verse text', 'body1'], title: ['Title', 'title1'], live: ['Live badge', 'live'] },
+  point:    { body: ['Point text', 'point1'], live: ['Live badge', 'live'] },
+  startEnd: { body: ['Text', 'se'] },
+};
+const TRANS_LABEL = { fade: 'Fade', dissolve: 'Dissolve', cut: 'Cut' };
+
+function _boSentence(tab, e) {
+  const el = BO_EL_INFO[tab]?.[e.element]?.[0] || e.element;
+  const verb = e.dir === 'in' ? (e.transition === 'cut' ? 'appears' : 'fades in') : (e.transition === 'cut' ? 'disappears' : 'fades out');
+  const when = { START_WITH_SLIDE: "the slide's transition finishes", ON_CLICK: 'the next click',
+                 START_WITH_PREVIOUS: 'the step above starts', START_AFTER_PREVIOUS: 'the step above finishes' }[e.start] || '';
+  const d = Number(e.delay) || 0;
+  if (!d && e.start === 'ON_CLICK') return `${el} ${verb} on the next click.`;
+  return `${el} ${verb} ${d ? `${d} s after` : 'when'} ${when}.`;
+}
+
+// Build steps as cards. Keeps the bo-* classes attachBuildRowHandlers binds.
 function renderBuildTable(tab, scheme, locked) {
   const entries  = (scheme.buildOrders ?? ensureGlobalMotion().buildOrders)[tab] || [];
-  const elements = BO_ELEMENTS[tab] || ['this slide'];
+  const elements = BO_ELEMENTS[tab] || ['body'];
   const dis      = locked ? 'disabled' : '';
-
-  const rows = entries.map((entry, i) => {
-    const isCut  = entry.transition === 'cut';
-    const isLast = i === entries.length - 1;
+  const steps = entries.map((entry, i) => {
+    const isCut = entry.transition === 'cut';
     return `
-      <tr class="bo-row">
-        <td class="bo-cell-ord">
-          <button class="bo-mv" data-dir="up"   data-idx="${i}" ${i === 0    || locked ? 'disabled' : ''} title="Move up">↑</button>
-          <button class="bo-mv" data-dir="down" data-idx="${i}" ${isLast     || locked ? 'disabled' : ''} title="Move down">↓</button>
-        </td>
-        <td class="bo-cell-en">
-          <input type="checkbox" class="bo-en" data-idx="${i}" ${entry.enabled ? 'checked' : ''} ${dis}>
-        </td>
-        <td class="bo-cell-el">
-          <select class="bo-el" data-idx="${i}" ${dis}>
-            ${elements.map(el => `<option value="${esc(el)}" ${entry.element === el ? 'selected' : ''}>${esc(el)}</option>`).join('')}
-          </select>
-        </td>
-        <td class="bo-cell-dir">
-          <select class="bo-dir" data-idx="${i}" ${dis}>
-            <option value="in"  ${entry.dir === 'in'  ? 'selected' : ''}>In</option>
-            <option value="out" ${entry.dir === 'out' ? 'selected' : ''}>Out</option>
-          </select>
-        </td>
-        <td class="bo-cell-start">
-          <select class="bo-start" data-idx="${i}" ${dis}>
+      <div class="mo-step${entry.enabled ? '' : ' mo-step-off'}">
+        <div class="mo-step-hd">
+          <span class="pt-layer-step mo-num">${i + 1}</span>
+          <span class="mo-sentence">${esc(_boSentence(tab, entry))}</span>
+          <label class="lt-switch mo-on"><input type="checkbox" class="bo-en" data-idx="${i}" ${entry.enabled ? 'checked' : ''} ${dis}> On</label>
+          <span class="mo-step-btns">
+            <button type="button" class="btn-sm bo-mv" data-dir="up"   data-idx="${i}" ${i === 0 || locked ? 'disabled' : ''} title="Move up">↑</button>
+            <button type="button" class="btn-sm bo-mv" data-dir="down" data-idx="${i}" ${i === entries.length - 1 || locked ? 'disabled' : ''} title="Move down">↓</button>
+            <button type="button" class="btn-sm bo-del" data-idx="${i}" ${dis} title="Remove step">×</button>
+          </span>
+        </div>
+        <div class="tp-row">
+          <div class="tp-num">Element<select class="tp-select bo-el" data-idx="${i}" ${dis}>
+            ${elements.map(el => `<option value="${esc(el)}" ${entry.element === el ? 'selected' : ''}>${esc(BO_EL_INFO[tab]?.[el]?.[0] || el)}</option>`).join('')}
+          </select></div>
+          <div class="tp-num">Direction<select class="tp-select bo-dir" data-idx="${i}" ${dis}>
+            <option value="in"  ${entry.dir === 'in'  ? 'selected' : ''}>In (show)</option>
+            <option value="out" ${entry.dir === 'out' ? 'selected' : ''}>Out (hide)</option>
+          </select></div>
+          <div class="tp-num">Starts<select class="tp-select bo-start" data-idx="${i}" ${dis}>
             ${BO_STARTS.filter(([val]) => validBoStartsForPosition(i).includes(val))
               .map(([val, lbl]) => `<option value="${val}" ${entry.start === val ? 'selected' : ''}>${lbl}</option>`).join('')}
-          </select>
-        </td>
-        <td class="bo-cell-delay">
-          <input type="number" class="bo-num bo-delay" data-idx="${i}"
-            value="${entry.delay ?? 0}" min="0" step="0.5" placeholder="s" ${dis}>
-        </td>
-        <td class="bo-cell-trans">
-          <select class="bo-trans" data-idx="${i}" ${dis}>
+          </select></div>
+          <div class="tp-num">Delay<span class="tp-cell"><input type="number" class="tp-input bo-num bo-delay" data-idx="${i}" value="${entry.delay ?? 0}" min="0" step="0.5" ${dis}><span class="tp-unit">s</span></span></div>
+          <div class="tp-num">Animation<select class="tp-select bo-trans" data-idx="${i}" ${dis}>
             ${BO_TRANSITIONS.map(([val, lbl]) => `<option value="${val}" ${entry.transition === val ? 'selected' : ''}>${lbl}</option>`).join('')}
-          </select>
-        </td>
-        <td class="bo-cell-dur">
-          <input type="number" class="bo-num bo-dur" data-idx="${i}"
-            value="${isCut ? '' : (entry.duration ?? 0.6)}" min="0" max="10" step="0.1" placeholder="s"
-            ${isCut || locked ? 'disabled' : ''} ${isCut ? 'style="opacity:.3"' : ''}>
-        </td>
-        <td class="bo-cell-del">
-          <button class="bo-del" data-idx="${i}" ${dis} title="Remove">×</button>
-        </td>
-      </tr>`;
+          </select></div>
+          <div class="tp-num">Length<span class="tp-cell"><input type="number" class="tp-input bo-num bo-dur" data-idx="${i}" value="${isCut ? '' : (entry.duration ?? 0.6)}" min="0" max="10" step="0.1" ${isCut || locked ? 'disabled' : ''}><span class="tp-unit">s</span></span></div>
+        </div>
+      </div>`;
   }).join('');
+  return `
+    ${steps || '<p class="mo-empty">No builds — everything on the slide appears together with its transition.</p>'}
+    <button type="button" class="btn-sm bo-add-btn" id="bo-add-btn" ${dis}>+ Add step</button>`;
+}
 
-  const empty = !rows ? `<tr><td colspan="9" class="bo-empty">No builds — click + Add</td></tr>` : '';
+function renderMotionTab(scheme, dis, locked, pv) {
+  const items = MOTION_ITEMS();
+  const cur = items.find(x => x.id === _motionSel) || items[0];
+  _motionSel = cur.id;
+  if (cur.kind === 'build') _boActiveTab = cur.id;
+  const g = ensureGlobalMotion();
+  const transOwn = it => scheme[it.typeF] != null || scheme[it.durF] != null;
+  const buildsOwn = scheme.buildOrders != null;
+
+  const list = ['Transitions', 'Builds'].map(grp => `
+    <div class="tp-list-sec">${grp}</div>
+    ${items.filter(x => x.group === grp).map(x => {
+      const own = x.kind === 'trans' ? transOwn(x) : false;
+      const sub = x.kind === 'trans'
+        ? `${TRANS_LABEL[pv[x.typeF]] || 'Fade'}${pv[x.typeF] === 'cut' ? '' : ` ${pv[x.durF] ?? 0.6} s`}`
+        : `${((pv.buildOrders || {})[x.id] || []).filter(e => e.enabled).length || 'no'} step${((pv.buildOrders || {})[x.id] || []).filter(e => e.enabled).length === 1 ? '' : 's'}`;
+      return `<div role="button" tabindex="0" class="tp-list-item mo-item${x.id === cur.id ? ' active' : ''}" data-mo="${x.id}">
+        <span>${esc(x.lbl)}<small class="mo-sub">${esc(sub)}</small></span>
+        ${own ? '<span class="tp-dot" title="This style sets its own value"></span>' : ''}
+      </div>`;
+    }).join('')}`).join('');
+
+  const status = (own, globalTxt, kind) => `<div class="pt-status">${own
+    ? `<span class="pt-status-txt">Set for this style${globalTxt ? ` <span class="pt-muted">· Global is ${esc(globalTxt)}</span>` : ''}</span>
+       <span class="pt-status-btns">
+         <button type="button" class="btn-sm mo-use-global" data-kind="${kind}" ${dis}>↺ Use Global</button>
+         <button type="button" class="btn-sm mo-make-global" data-kind="${kind}" ${dis}>↑ Make Global</button>
+       </span>`
+    : `<span class="pt-status-txt pt-muted">From Global — change it to set it for this style only</span>`}</div>`;
+
+  let inspector;
+  if (cur.kind === 'trans') {
+    const type = pv[cur.typeF] || 'fade', dur = pv[cur.durF] ?? 0.6;
+    const gTxt = `${TRANS_LABEL[g[cur.typeF]] || 'Fade'}${g[cur.typeF] === 'cut' ? '' : ` ${g[cur.durF]} s`}`;
+    inspector = `
+      <div class="tp-insp-hd">
+        <div><span class="tp-insp-sec">Transition</span><span class="tp-insp-name">${esc(cur.lbl)}</span></div>
+        <span class="tp-follow">${cur.id === 'slide' ? 'How each slide replaces the one before it.' : 'How each prop replaces the one before it on the LED wall.'}</span>
+      </div>
+      <div class="tp-group">
+        <div class="tp-row">
+          <div class="tp-num">Style<span class="tp-cell tp-seg">${['fade', 'dissolve', 'cut'].map(v =>
+            `<button type="button" class="sg-align-cell tp-align mo-trans${type === v ? ' on' : ''}" data-kind="${cur.id}" data-val="${v}" ${dis}>${TRANS_LABEL[v]}</button>`).join('')}</span></div>
+          ${type === 'cut' ? '' : `<div class="tp-num">Length<span class="tp-cell"><input type="number" class="tp-input mo-dur${scheme[cur.durF] == null ? ' lt-inherit' : ''}" data-kind="${cur.id}" value="${dur}" min="0.1" max="5" step="0.1" ${dis}><span class="tp-unit">s</span></span></div>`}
+        </div>
+        ${status(transOwn(cur), gTxt, cur.id)}
+      </div>
+      <p class="lt-note">Press ▶ Play on the preview to watch it. Empty the length to follow Global again.</p>`;
+  } else {
+    inspector = `
+      <div class="tp-insp-hd">
+        <div><span class="tp-insp-sec">Builds</span><span class="tp-insp-name">${esc(cur.lbl)}</span></div>
+        <span class="tp-follow">Animate parts of the slide in or out after it appears.</span>
+      </div>
+      <div class="tp-group">
+        ${status(buildsOwn, '', 'builds')}
+        <p class="lt-note">Builds are kept as one set for Scripture, Point and Start / End — changing any of them gives this style its own copy of all three. Delays are real seconds (▶ Play shortens long ones).</p>
+      </div>
+      <div class="tp-group" id="bo-table-wrap">${renderBuildTable(cur.id, scheme, locked)}</div>`;
+  }
 
   return `
-    <table class="bo-table">
-      <thead>
-        <tr>
-          <th class="bo-th-ord"></th>
-          <th class="bo-th-en">On</th>
-          <th class="bo-th-el">Element</th>
-          <th class="bo-th-dir">Dir</th>
-          <th class="bo-th-start">Start</th>
-          <th class="bo-th-delay">Delay</th>
-          <th class="bo-th-trans">Transition</th>
-          <th class="bo-th-dur">Dur</th>
-          <th class="bo-th-del"></th>
-        </tr>
-      </thead>
-      <tbody>${rows || empty}</tbody>
-    </table>
-    <button class="btn-sm bo-add-btn" id="bo-add-btn" ${locked ? 'disabled' : ''}>+ Add</button>
-  `;
+    <div class="tp-preview mo-preview">
+      ${renderTextPreview(pv, cur.scene, [], '', true, false)}
+      <div class="mo-play-bar">
+        <button type="button" class="btn-sm mo-play">▶ Play</button>
+        <span class="mo-caption"></span>
+      </div>
+    </div>
+    <div class="tp-body">
+      <nav class="tp-list">${list}</nav>
+      <div class="tp-insp">${inspector}</div>
+    </div>`;
+}
+
+// Animate the selected transition, or the selected slide type's builds, on
+// the preview. Long build delays are shortened so you don't wait a minute.
+function playMotion(root, pv) {
+  const host = root.querySelector('.mo-preview');
+  const cur = MOTION_ITEMS().find(x => x.id === _motionSel);
+  if (!host || !cur) return;
+  const cap = host.querySelector('.mo-caption');
+  const timers = [];
+  const say = (t, ms) => timers.push(setTimeout(() => { cap.textContent = t; }, ms));
+  const fadeIn = (els, ms, delay = 0) => els.forEach(e => e.animate([{ opacity: 0 }, { opacity: 1 }], { duration: Math.max(ms, 1), delay, fill: 'both', easing: 'ease-in-out' }));
+  const fadeOut = (els, ms, delay = 0) => els.forEach(e => e.animate([{ opacity: 1 }, { opacity: 0 }], { duration: Math.max(ms, 1), delay, fill: 'both', easing: 'ease-in-out' }));
+  host.getAnimations({ subtree: true }).forEach(a => a.cancel());
+
+  const transOf = id => { const it = MOTION_ITEMS().find(x => x.id === id); return { type: pv[it.typeF] || 'fade', ms: (pv[it.typeF] === 'cut' ? 0 : (pv[it.durF] ?? 0.6)) * 1000 }; };
+  const content = sel => [...host.querySelectorAll(`${sel} .tp-el, ${sel} .tp-gradient`)];
+  let end;
+  if (cur.kind === 'trans') {
+    const canvas = cur.id === 'slide' ? '.tp-main' : '.tp-led';
+    const { type, ms } = transOf(cur.id);
+    const els = content(canvas);
+    fadeOut(els, 1, 0);
+    fadeIn(els, ms, 500);
+    say(`${TRANS_LABEL[type]}${type === 'cut' ? '' : ` · ${ms / 1000} s`}`, 500);
+    end = 500 + ms;
+  } else {
+    const { ms: tMs } = transOf('slide');
+    const els = content('.tp-main');
+    fadeOut(els, 1, 0);
+    fadeIn(els, tMs, 400);
+    say(`Slide transition · ${tMs / 1000} s`, 400);
+    const entries = ((pv.buildOrders || {})[cur.id] || []).filter(e => e.enabled);
+    const info = BO_EL_INFO[cur.id] || {};
+    // Builds that bring something IN start hidden.
+    for (const e of entries) {
+      const row = info[e.element]?.[1];
+      if (e.dir === 'in' && row) fadeOut([...host.querySelectorAll(`.tp-el[data-row="${row}"]`)], 1, 0);
+    }
+    let prevStart = 400 + tMs, prevEnd = 400 + tMs;
+    entries.forEach((e, i) => {
+      const realDelay = Number(e.delay) || 0;
+      const delay = Math.min(realDelay, 1.5) * 1000;
+      const len = e.transition === 'cut' ? 1 : (Number(e.duration) || 0.6) * 1000;
+      const base = { START_WITH_SLIDE: 400 + tMs, ON_CLICK: prevEnd + 800, START_WITH_PREVIOUS: prevStart, START_AFTER_PREVIOUS: prevEnd }[e.start] ?? prevEnd;
+      const at = base + delay;
+      const row = info[e.element]?.[1];
+      const targets = row ? [...host.querySelectorAll(`.tp-el[data-row="${row}"]`)] : [];
+      (e.dir === 'in' ? fadeIn : fadeOut)(targets, len, at);
+      const shortened = realDelay > 1.5 ? ` (really ${realDelay} s later — shortened)` : '';
+      say(`Step ${i + 1}: ${_boSentence(cur.id, e).replace(/\.$/, '')}${e.start === 'ON_CLICK' ? ' — click' : ''}${shortened}`, base);
+      prevStart = at; prevEnd = at + len;
+    });
+    if (!entries.length) say('No builds — everything appears with the slide', 400 + tMs);
+    end = prevEnd;
+  }
+  timers.push(setTimeout(() => {
+    host.getAnimations({ subtree: true }).forEach(a => a.cancel());
+    cap.textContent = 'Done';
+  }, end + 1600));
+  root._moTimers?.forEach(clearTimeout);
+  root._moTimers = timers;
+}
+
+// Navigation + Play for the Motion tab (works when locked — nothing here edits).
+function wireMotionTab(root, getPv, rerender) {
+  if (!root) return;
+  _tpLayout(root);
+  document.fonts?.ready.then(() => _tpLayout(root));
+  root.addEventListener('click', e => {
+    const item = e.target.closest('.mo-item');
+    if (item) { _motionSel = item.dataset.mo; rerender(); return; }
+    if (e.target.closest('.mo-play')) playMotion(root, getPv());
+    // Add / move / delete step: the bo-* handler has already saved; redraw the
+    // whole tab so the list counts and Global status catch up.
+    if (e.target.closest('.bo-add-btn, .bo-mv, .bo-del')) setTimeout(rerender, 0);
+  });
+  // Step summaries and list counts follow edits (the bo-* handlers save first).
+  root.addEventListener('change', e => { if (e.target.closest('#bo-table-wrap')) rerender(); });
+  root.addEventListener('keydown', e => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.mo-item')) { e.preventDefault(); e.target.click(); }
+  });
 }
 
 function attachBuildOrderHandlers(getScheme, panel, locked) {
@@ -5530,29 +5692,6 @@ function attachBuildOrderHandlers(getScheme, panel, locked) {
     wrap.innerHTML = renderBuildTable(_boActiveTab, s, locked);
     attachBuildRowHandlers(getEntries, wrap, getScheme, panel, locked);
   };
-
-  // Tab switching
-  panel.querySelectorAll('.bo-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      _boActiveTab = btn.dataset.tab;
-      panel.querySelectorAll('.bo-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === _boActiveTab));
-      refresh();
-    });
-  });
-
-  // Whole-object reset-to-global / push-to-global
-  panel.querySelector('.wf-reset[data-wf="buildOrders"]')?.addEventListener('click', () => {
-    const s = getScheme(); if (!s) return;
-    s.buildOrders = null;
-    saveState(); renderStylePanel(panel);
-  });
-  panel.querySelector('.wf-push[data-wf="buildOrders"]')?.addEventListener('click', () => {
-    const s = getScheme(); if (!s) return;
-    const glbMotion = ensureGlobalMotion();
-    glbMotion.buildOrders = deepClone(s.buildOrders ?? glbMotion.buildOrders);
-    saveState(); renderStylePanel(panel);
-    toast('success', 'Pushed to Global', 'Every style inheriting build orders will now use this.');
-  });
 
   attachBuildRowHandlers(getEntries, wrap, getScheme, panel, locked);
 }
@@ -7950,28 +8089,7 @@ function renderGlobalPanel(panel, schemeOptionsHTML) {
         ${renderLayoutTab(gScheme, 'disabled', styleForExport(gScheme))}
       </div>
       <div class="style-tab-body" id="g-tab-motion" ${_gTab !== 'motion' ? 'style="display:none"' : ''}>
-        <div class="trans-cols">
-          <div class="trans-col">
-            <div class="trans-col-title">Slide</div>
-            <div class="segmented-control trans-seg">
-              ${['fade','dissolve','cut'].map(v => `<button class="${gMotion.transitionType === v ? 'active' : ''}" disabled>${v[0].toUpperCase()}${v.slice(1)}</button>`).join('')}
-            </div>
-            ${gMotion.transitionType !== 'cut' ? `<div class="trans-dur-wrap"><input type="number" value="${gMotion.transitionDuration}" disabled><span class="fav-unit">s</span></div>` : ''}
-          </div>
-          <div class="trans-col">
-            <div class="trans-col-title">Prop</div>
-            <div class="segmented-control trans-seg">
-              ${['fade','dissolve','cut'].map(v => `<button class="${gMotion.propTransitionType === v ? 'active' : ''}" disabled>${v[0].toUpperCase()}${v.slice(1)}</button>`).join('')}
-            </div>
-            ${gMotion.propTransitionType !== 'cut' ? `<div class="trans-dur-wrap"><input type="number" value="${gMotion.propTransitionDuration}" disabled><span class="fav-unit">s</span></div>` : ''}
-          </div>
-        </div>
-        <p class="style-group-hint" style="margin-top:16px">Build order (read-only) — ${_boActiveTab}</p>
-        <div class="bo-tabs" id="g-bo-tabs">
-          ${[['content','Scripture'],['point','Point'],['blank','Blank'],['startEnd','Utility']].map(([tab, lbl]) =>
-            `<button class="bo-tab${_boActiveTab === tab ? ' active' : ''}" data-gbotab="${tab}">${lbl}</button>`).join('')}
-        </div>
-        ${renderBuildTable(_boActiveTab, gScheme, true)}
+        ${renderMotionTab(gScheme, 'disabled', true, styleForExport(gScheme))}
       </div>
       <div class="style-tab-body" id="g-tab-macros" ${_gTab !== 'macros' ? 'style="display:none"' : ''}>
         ${gMacros.length
@@ -8001,13 +8119,6 @@ function renderGlobalPanel(panel, schemeOptionsHTML) {
     renderStylePanel(panel);
   });
 
-  panel.querySelectorAll('[data-gbotab]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      _boActiveTab = btn.dataset.gbotab;
-      renderGlobalPanel(panel, schemeOptionsHTML);
-    });
-  });
-
   panel.querySelectorAll('[data-gtab]').forEach(btn => {
     btn.addEventListener('click', () => {
       _styleTab = btn.dataset.gtab;
@@ -8019,6 +8130,7 @@ function renderGlobalPanel(panel, schemeOptionsHTML) {
   });
   wireTextTab(document.getElementById('g-tab-text'), () => styleForExport(gScheme), () => renderGlobalPanel(panel, schemeOptionsHTML));
   wireLayoutTab(document.getElementById('g-tab-layout'), () => styleForExport(gScheme), () => renderGlobalPanel(panel, schemeOptionsHTML), null);
+  wireMotionTab(document.getElementById('g-tab-motion'), () => styleForExport(gScheme), () => renderGlobalPanel(panel, schemeOptionsHTML));
 }
 
 // Spreadsheet-style data grid for Text tab — one row per element, one column per property.
@@ -8144,7 +8256,7 @@ function _tpEl(pv, cw, ch, o) {
       margin:${u(a.paragraphSpacingBefore)} 0 ${u(a.paragraphSpacingAfter)}">${inner}</div></div>`;
 }
 
-function renderTextPreview(pv, scene, selRow, hint, showStrip = true) {
+function renderTextPreview(pv, scene, selRow, hint, showStrip = true, showScenes = true) {
   // selRow: one row id, or a list of them (the Style tab highlights every
   // element a slot feeds).
   const selSet = new Set([].concat(selRow || []));
@@ -8212,7 +8324,7 @@ function renderTextPreview(pv, scene, selRow, hint, showStrip = true) {
     </div>` : '';
 
   return `
-    <div class="tp-scenes" role="tablist">
+    <div class="tp-scenes" role="tablist"${showScenes ? '' : ' hidden'}>
       ${TEXT_SCENES.map(([k, lbl]) => `<div role="tab" tabindex="0" class="tp-scene${k === scene ? ' active' : ''}" data-scene="${k}">${lbl}</div>`).join('')}
       <span class="tp-hint">${esc(hint || 'Live preview · click any text to edit it')}</span>
     </div>
@@ -8619,74 +8731,7 @@ function renderStylePanel(panel) {
 
       <!-- MOTION tab — Transitions + Build Order -->
       <div class="style-tab-body" id="style-tab-motion" ${_styleTab !== 'motion' ? 'style="display:none"' : ''}>
-        <div class="motion-subtabs">
-          ${[['transitions', 'Transitions'], ['build', 'Build Order']].map(([t, lbl]) =>
-            `<button class="motion-subtab${_motionTab === t ? ' active' : ''}" data-mtab="${t}">${lbl}</button>`).join('')}
-        </div>
-
-        <div class="motion-sub" id="motion-sub-transitions" ${_motionTab !== 'transitions' ? 'style="display:none"' : ''}>
-          ${(() => {
-            const glbMotion = ensureGlobalMotion();
-            const slideInherit = scheme.transitionType == null;
-            const curType = scheme.transitionType ?? glbMotion.transitionType ?? 'fade';
-            const curDur  = scheme.transitionDuration ?? glbMotion.transitionDuration ?? 0.6;
-            const propInherit = scheme.propTransitionType == null;
-            const curPropType = scheme.propTransitionType ?? glbMotion.propTransitionType ?? 'fade';
-            const curPropDur  = scheme.propTransitionDuration ?? glbMotion.propTransitionDuration ?? 0.6;
-            const wfBadge = (inherit, field) => `
-              <div class="wf-row">
-                <span class="wf-badge ${inherit ? 'wf-inherit' : 'wf-custom'}">${inherit ? '● Using Global' : '● Custom'}</span>
-                ${inherit ? '' : `<button class="btn-sm wf-reset" type="button" data-wf="${field}" ${dis}>↺ Reset to Global</button>`}
-                <button class="btn-sm wf-push" type="button" data-wf="${field}" ${dis}>↑ Push to Global</button>
-              </div>`;
-            return `
-          <div class="trans-cols">
-            <div class="trans-col">
-              <div class="trans-col-title">Slide</div>
-              <div class="segmented-control trans-seg" id="adv-trans-seg">
-                <button data-val="fade"     class="${curType === 'fade'     ? 'active' : ''}" ${dis}>Fade</button>
-                <button data-val="dissolve" class="${curType === 'dissolve' ? 'active' : ''}" ${dis}>Dissolve</button>
-                <button data-val="cut"      class="${curType === 'cut'      ? 'active' : ''}" ${dis}>Cut</button>
-              </div>
-              <div class="trans-dur-wrap" id="adv-dur-field" style="${curType === 'cut' ? 'display:none' : ''}">
-                <input type="number" id="adv-trans-dur" value="${curDur}" min="0.1" max="5" step="0.1" class="trans-dur" ${dis}>
-                <span class="fav-unit">s</span>
-              </div>
-              ${wfBadge(slideInherit, 'transition')}
-            </div>
-            <div class="trans-col">
-              <div class="trans-col-title">Prop</div>
-              <div class="segmented-control trans-seg" id="adv-prop-trans-seg">
-                <button data-val="fade"     class="${curPropType === 'fade'     ? 'active' : ''}" ${dis}>Fade</button>
-                <button data-val="dissolve" class="${curPropType === 'dissolve' ? 'active' : ''}" ${dis}>Dissolve</button>
-                <button data-val="cut"      class="${curPropType === 'cut'      ? 'active' : ''}" ${dis}>Cut</button>
-              </div>
-              <div class="trans-dur-wrap" id="adv-prop-dur-field" style="${curPropType === 'cut' ? 'display:none' : ''}">
-                <input type="number" id="adv-prop-trans-dur" value="${curPropDur}" min="0.1" max="5" step="0.1" class="trans-dur" ${dis}>
-                <span class="fav-unit">s</span>
-              </div>
-              ${wfBadge(propInherit, 'propTransition')}
-            </div>
-          </div>`;
-          })()}
-        </div>
-
-        <div class="motion-sub" id="motion-sub-build" ${_motionTab !== 'build' ? 'style="display:none"' : ''}>
-          <p class="style-group-hint">Advanced — controls how each element animates in and out, per slide type.</p>
-          <div class="wf-row">
-            <span class="wf-badge ${scheme.buildOrders == null ? 'wf-inherit' : 'wf-custom'}">${scheme.buildOrders == null ? '● Using Global' : '● Custom'}</span>
-            ${scheme.buildOrders == null ? '' : `<button class="btn-sm wf-reset" type="button" data-wf="buildOrders" ${dis}>↺ Reset to Global</button>`}
-            <button class="btn-sm wf-push" type="button" data-wf="buildOrders" ${dis}>↑ Push to Global</button>
-          </div>
-          <div class="bo-tabs" id="bo-tabs">
-            ${[['content','Scripture'],['point','Point'],['blank','Blank'],['startEnd','Utility']].map(([tab, lbl]) =>
-              `<button class="bo-tab${_boActiveTab === tab ? ' active' : ''}" data-tab="${tab}">${lbl}</button>`
-            ).join('')}
-          </div>
-          <div id="bo-table-wrap">
-            ${renderBuildTable(_boActiveTab, scheme, locked)}
-          </div>
-        </div>
+        ${renderMotionTab(scheme, dis, locked, styleForExport(scheme))}
       </div>
 
       <!-- LAYOUT tab -->
@@ -8739,16 +8784,6 @@ function renderStylePanel(panel) {
   // QR Code tab (deck-wide macro, not per-scheme)
   attachSchemesQRTab('scheme-qr-tab');
 
-  // Motion sub-tabs: Transitions / Build Order
-  panel.querySelectorAll('.motion-subtab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      _motionTab = btn.dataset.mtab;
-      panel.querySelectorAll('.motion-subtab').forEach(b => b.classList.toggle('active', b.dataset.mtab === _motionTab));
-      panel.querySelectorAll('.motion-sub').forEach(sub => {
-        sub.style.display = sub.id === `motion-sub-${_motionTab}` ? '' : 'none';
-      });
-    });
-  });
 
 
 
@@ -8856,6 +8891,7 @@ function renderStylePanel(panel) {
       Object.assign(s, fields);
       saveState(); renderStylePanel(panel);
     });
+  wireMotionTab(document.getElementById('style-tab-motion'), () => styleForExport(getScheme() || scheme), () => renderStylePanel(panel));
   wirePaletteTab(document.getElementById('style-tab-palette'), () => styleForExport(getScheme() || scheme), () => renderStylePanel(panel), row => {
     _styleTab = 'text'; _textRow = row; _textScene = null;
     renderStylePanel(panel);
@@ -9022,55 +9058,41 @@ function renderStylePanel(panel) {
     });
   });
 
-  // Transition
-  document.getElementById('adv-trans-seg')?.querySelectorAll('button').forEach(btn => {
+  // Motion tab: transitions (per field, null = Global) and whole-set builds.
+  const motionItem = id => MOTION_ITEMS().find(x => x.id === id);
+  panel.querySelectorAll('#style-tab-motion .mo-trans').forEach(btn => {
     btn.addEventListener('click', () => {
-      const s = getScheme(); if (!s) return;
-      s.transitionType = btn.dataset.val;
+      const s = getScheme(); const it = motionItem(btn.dataset.kind); if (!s || !it) return;
+      s[it.typeF] = btn.dataset.val;
       saveState(); renderStylePanel(panel);
     });
   });
-  document.getElementById('adv-trans-dur')?.addEventListener('input', e => {
-    const s = getScheme();
-    if (s) { s.transitionDuration = parseFloat(e.target.value) || 0.6; saveState(); }
+  panel.querySelectorAll('#style-tab-motion .mo-dur').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const s = getScheme(); const it = motionItem(inp.dataset.kind); if (!s || !it) return;
+      const v = parseFloat(inp.value);
+      s[it.durF] = Number.isFinite(v) && v > 0 ? v : null; // empty = follow Global
+      saveState();
+    });
+    inp.addEventListener('change', () => renderStylePanel(panel));
   });
-
-  // Prop transition (global)
-  document.getElementById('adv-prop-trans-seg')?.querySelectorAll('button').forEach(btn => {
+  panel.querySelectorAll('#style-tab-motion .mo-use-global').forEach(btn => {
     btn.addEventListener('click', () => {
       const s = getScheme(); if (!s) return;
-      s.propTransitionType = btn.dataset.val;
+      if (btn.dataset.kind === 'builds') s.buildOrders = null;
+      else { const it = motionItem(btn.dataset.kind); s[it.typeF] = null; s[it.durF] = null; }
       saveState(); renderStylePanel(panel);
     });
   });
-  document.getElementById('adv-prop-trans-dur')?.addEventListener('input', e => {
-    const s = getScheme();
-    if (s) { s.propTransitionDuration = parseFloat(e.target.value) || 0.6; saveState(); }
-  });
-
-  // Motion transition: whole-field reset-to-global / push-to-global
-  panel.querySelectorAll('.wf-reset[data-wf="transition"], .wf-reset[data-wf="propTransition"]').forEach(btn => {
+  panel.querySelectorAll('#style-tab-motion .mo-make-global').forEach(btn => {
     btn.addEventListener('click', () => {
       const s = getScheme(); if (!s) return;
-      const isProp = btn.dataset.wf === 'propTransition';
-      s[isProp ? 'propTransitionType' : 'transitionType'] = null;
-      s[isProp ? 'propTransitionDuration' : 'transitionDuration'] = null;
+      const what = btn.dataset.kind === 'builds' ? 'these builds' : 'this transition';
+      if (!confirm(`Make ${what} the Global default?\n\nStyles that follow Global will use it too.`)) return;
+      const pv = styleForExport(s); const g = ensureGlobalMotion();
+      if (btn.dataset.kind === 'builds') { g.buildOrders = deepClone(pv.buildOrders); s.buildOrders = null; }
+      else { const it = motionItem(btn.dataset.kind); g[it.typeF] = pv[it.typeF]; g[it.durF] = pv[it.durF]; s[it.typeF] = null; s[it.durF] = null; }
       saveState(); renderStylePanel(panel);
-    });
-  });
-  panel.querySelectorAll('.wf-push[data-wf="transition"], .wf-push[data-wf="propTransition"]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const s = getScheme(); if (!s) return;
-      const glbMotion = ensureGlobalMotion();
-      if (btn.dataset.wf === 'propTransition') {
-        glbMotion.propTransitionType = s.propTransitionType ?? glbMotion.propTransitionType;
-        glbMotion.propTransitionDuration = s.propTransitionDuration ?? glbMotion.propTransitionDuration;
-      } else {
-        glbMotion.transitionType = s.transitionType ?? glbMotion.transitionType;
-        glbMotion.transitionDuration = s.transitionDuration ?? glbMotion.transitionDuration;
-      }
-      saveState(); renderStylePanel(panel);
-      toast('success', 'Pushed to Global', 'Every style inheriting this will now use it.');
     });
   });
 
@@ -12666,7 +12688,7 @@ function clearNotesPanelView() {
 }
 
 let _styleTab = 'text';      // Text | Layout | Motion | Preview
-let _motionTab = 'transitions'; // within Motion: transitions | build
+let _motionSel = 'slide';       // selected item in the Motion tab (slide | prop | content | point | startEnd)
 let _layoutEl    = 'body';      // selected element in the Layout tab
 let _layoutScene = null;        // Layout preview scene override (null = follow the element)
 let _textSel   = null;          // selected region slug in the Text visual preview
@@ -15765,13 +15787,13 @@ function helpSections() {
     label: 'Motion',
     html: `
       <h3>Motion tab</h3>
-      <p>Two sub-tabs control animation.</p>
+      <p>Same shape as the Text tab: a preview, a list on the left (Transitions and Builds), and an inspector for the one you pick. Press <strong>▶ Play</strong> to watch it — long build delays are shortened so you don't wait a minute.</p>
       <h4>Transitions</h4>
-      <p>The default transition <strong>type</strong> and <strong>duration</strong> for the main screen and, separately, for the ${D2} prop. Individual slides can override these in their Overrides section.</p>
-      <h4>Build Order</h4>
-      <p>Per slide type (Content, Point, Blank, Start/End), the order and animation in which a slide's elements — body, title, live — build in or out. Each build tab holds its own ordered rows. (The bottom gradient isn't in this list — it's a Pro7 macro, not a DeckPro element; see <em>QR Code</em> and <em>Macros &amp; Stage</em> for the Gradient macro fields.)</p>
+      <p>The transition <strong>style</strong> (Fade / Dissolve / Cut) and <strong>length</strong> for the main screen and, separately, for the ${D2} prop. Empty the length to follow Global again. Individual slides can override these in their Overrides section.</p>
+      <h4>Builds</h4>
+      <p>For Scripture, Point and Start/End slides: steps that bring parts of the slide in or take them out after it appears (verse text, title, live badge). Each step reads as a sentence — e.g. “Verse text fades out 60 s after the slide's transition finishes.” Blank slides have nothing to build, so they aren't listed. Builds are kept as one set for all three slide types: changing any of them gives the style its own copy. (The bottom gradient isn't in this list — it's a Pro7 macro, not a DeckPro element; see <em>QR Code</em> and <em>Macros &amp; Stage</em> for the Gradient macro fields.)</p>
       <p>Each row's <strong>Start</strong> option is constrained to match how ProPresenter's own build order actually works: the <em>first</em> row in a list can only start <strong>After Transition</strong> or <strong>On Click</strong> — there's no earlier item for it to start "with" or "after." Every row after that can only start <strong>On Click</strong>, <strong>With Previous</strong>, or <strong>After Previous</strong>, always referencing the row directly above it. Reordering, adding, or deleting rows automatically corrects any row left with an invalid Start for its new position.</p>
-      <p class="help-muted">Like everything else, Motion values inherit Global by default (blue) until you override them (orange), with Reset / Push on each.</p>
+      <p class="help-muted">Like everything else, Motion follows Global until you change it; the line under each control says which, with ↺ Use Global / ↑ Make Global.</p>
     `,
   },
   {

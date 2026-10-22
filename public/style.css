@@ -4674,7 +4674,7 @@ body.dark .g-tip-title { color: #ff8a4c; }
   width: auto; min-width: 32px; height: 30px; padding: 0 9px; border-radius: 6px;
   font-size: 13px; color: var(--text); display: inline-flex; align-items: center; justify-content: center;
 }
-.sg-align-cell.tp-align::before { content: none; }
+.sg-align-cell.tp-align::before { content: none !important; } /* beats the old grid's .on dot rule */
 .sg-align-cell.tp-align svg { display: block; }
 .tp-sw-lbl::after { content: 'Off'; }
 .sg-tog.tp-tog.on .tp-sw-lbl::after { content: 'On'; }
@@ -4745,3 +4745,19 @@ body.dark .g-tip-title { color: #ff8a4c; }
 .lt-auto-note { font-size: 12px; }
 .lt-switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; height: 30px; cursor: pointer; }
 .tp-align.lt-align:disabled { opacity: .35; cursor: not-allowed; }
+
+/* ── Styles → Motion tab ─────────────────────────────────────────────────── */
+.mo-preview { position: relative; }
+.mo-play-bar { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.mo-caption { font-size: 12px; color: var(--muted); }
+.mo-sub { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
+.tp-list-item.active .mo-sub { color: inherit; opacity: .75; }
+.mo-step { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+.mo-step-off { opacity: .55; }
+.mo-step-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.mo-sentence { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; }
+.mo-on { height: auto; font-size: 12px; }
+.mo-step-btns { display: flex; gap: 4px; }
+.mo-step .tp-select { min-width: 0; width: auto; }
+.mo-empty { font-size: 13px; color: var(--muted); margin: 0 0 10px; }
+.tp-scenes[hidden] { display: none; }
