@@ -2,9 +2,20 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.35.0';
+const APP_VERSION = '4.36.0';
 
 const CHANGELOG = [
+  {
+    version: '4.36.0',
+    date: '2026-10-21',
+    changes: [
+      "Styles → Style tab is rebuilt to match the Text tab: a live preview that outlines every element the selected slot feeds, a slot list (Font 1, Font 2, Bold / ALT, Neutral, Accent), and an inspector showing the slot's layers — Global, this style, and which elements set their own value. Each of those elements has \"↺ Use …\" to hand it back to the slot and \"Edit →\" to open it in the Text tab. Colour changes show in the preview while you drag.",
+      "Global advanced styling (bold/italic, caps, alignment, outline, shadow, spacing, margins) is now a real layer. Before, every style kept its own full copy, so Push to Global changed nothing anywhere. Now Reset to Global re-links a field so it follows Global live, Push to Global sends the value up and keeps following it, and new styles start out following Global. Existing styles export exactly as before.",
+      "Fixed: right-clicking an element's font and choosing Reset reset the style's Font slot instead and left the element's own font in place. It now drops the element's own font (\"Use the Style tab font\"); colours read \"Use the Style tab colour\".",
+      "Fixed: LED-wall rows set to follow the main screen (and the Response Card text rows) stopped following after an app restart. LED Body could also fall back to blank defaults. They now stay linked.",
+      "The Text tab's amber marker now means only \"this element sets its own value\" — a font chosen on the Style tab no longer marks every element.",
+    ],
+  },
   {
     version: '4.35.0',
     date: '2026-10-21',
@@ -2897,8 +2908,12 @@ const ADV_SCHEME_KEYS = [...REGULAR_ADV_FIELDS, ...HIGHLIGHT_ADV_FIELDS, ...BOLD
 const DEFAULT_GLOBAL_FONT_ADV = () => Object.fromEntries(ADV_SCHEME_KEYS.map(k => [k, FONT_ADV_DEFAULTS()]));
 function ensureGlobalFontAdv() {
   if (!state.globalFontAdv) state.globalFontAdv = DEFAULT_GLOBAL_FONT_ADV();
+  // Fill gaps in place — never swap the objects out, so a caller holding
+  // globalFontAdv[k] (e.g. Push to Global) can't end up writing to a stale copy.
+  const def = FONT_ADV_DEFAULTS();
   for (const k of ADV_SCHEME_KEYS) {
-    state.globalFontAdv[k] = { ...FONT_ADV_DEFAULTS(), ...(state.globalFontAdv[k] || {}) };
+    const cur = state.globalFontAdv[k] || (state.globalFontAdv[k] = {});
+    for (const f in def) if (!(f in cur)) cur[f] = def[f];
   }
   return state.globalFontAdv;
 }
@@ -3192,6 +3207,17 @@ function resolveSchemeTypography(scheme, global = ensureGlobalTypography()) {
   };
 }
 
+// Advanced styling resolves Global → style one field at a time: a style's own
+// value wins, null means "use Global's" (live). Colour is the exception — it
+// comes from the Style tab's palette slots unless the element sets its own.
+function resolveAdv(raw, glb) {
+  const out = { ...FONT_ADV_DEFAULTS(), ...(glb || {}), color: '' };
+  for (const [f, v] of Object.entries(raw || {})) if (v != null) out[f] = v;
+  return out;
+}
+// A fresh advanced-styling object that follows Global for every field.
+const INHERIT_ADV = () => Object.fromEntries(Object.keys(FONT_ADV_DEFAULTS()).map(k => [k, null]));
+
 function setAdvColor(style, key, color) {
   style[key] = { ...FONT_ADV_DEFAULTS(), ...(style[key] || {}), color: normalizeHexColor(color) };
 }
@@ -3205,18 +3231,15 @@ function applyTypographyToStyle(scheme, global = ensureGlobalTypography()) {
   for (const key of HIGHLIGHT_FONT_FIELDS)  style[key] = ff[key] || t.font2;
   for (const key of BOLD_FONT_FIELDS)       style[key] = ff[key] || t.boldFont;
   for (const key of SIZE_FIELDS)            style[key] = t[key];
-  // Per-field color override: if scheme has a color set on the adv, keep it; else use palette
-  for (const key of REGULAR_ADV_FIELDS) {
-    if (scheme[key]?.color) style[key] = { ...FONT_ADV_DEFAULTS(), ...(scheme[key] || {}) };
-    else setAdvColor(style, key, t.colorNeutral);
-  }
-  for (const key of HIGHLIGHT_ADV_FIELDS) {
-    if (scheme[key]?.color) style[key] = { ...FONT_ADV_DEFAULTS(), ...(scheme[key] || {}) };
-    else setAdvColor(style, key, t.colorAccent);
-  }
-  for (const key of BOLD_ADV_FIELDS) {
-    if (scheme[key]?.color) style[key] = { ...FONT_ADV_DEFAULTS(), ...(scheme[key] || {}) };
-    else setAdvColor(style, key, t.colorNeutral);
+  // Advanced styling: Global → style per field (resolveAdv). Colour: the
+  // element's own colour if set, else the palette slot it belongs to.
+  const gAdv = ensureGlobalFontAdv();
+  for (const key of ADV_SCHEME_KEYS) {
+    if (D2_ADV_INHERIT[key] && scheme[key] == null) continue; // follows Display 1, below
+    style[key] = resolveAdv(scheme[key], gAdv[key]);
+    if (!scheme[key]?.color) {
+      style[key].color = normalizeHexColor(HIGHLIGHT_ADV_FIELDS.includes(key) ? t.colorAccent : t.colorNeutral);
+    }
   }
   // Display 2 (LED-wall prop) advanced styling inherits Display 1 when the
   // scheme leaves it null. The loops above already resolved the Display 1
@@ -3249,7 +3272,7 @@ function forkAdv(scheme, key) {
   const d1 = D2_ADV_INHERIT[key];
   scheme[key] = d1
     ? deepClone(styleForExport(scheme)[d1] || FONT_ADV_DEFAULTS())
-    : FONT_ADV_DEFAULTS();
+    : INHERIT_ADV();
   return scheme[key];
 }
 
@@ -3457,7 +3480,8 @@ function applySavedState(saved) {
         merged._needsTypographyMigration = !out.typography;
         // Merge nested fontAdv objects too
         for (const k of ['bodyFontAdv','propBodyFontAdv','boldFontAdv','propBoldFontAdv','notesBoldFontAdv','titleFontAdv','propTitleFontAdv','startEndFontAdv','notesFontAdv','liveFontAdv','queueFontAdv','pointFontAdv','propPointFontAdv','pointStackedFontAdv','rcBodyFontAdv','rcTitleFontAdv']) {
-          merged[k] = { ...FONT_ADV_DEFAULTS(), ...(out[k] || {}) };
+          // An explicit null on a Display 2 row means "follow Display 1" — keep it.
+          merged[k] = (out[k] === null && D2_ADV_INHERIT[k]) ? null : { ...FONT_ADV_DEFAULTS(), ...(out[k] || {}) };
         }
         // Seed slide-notes font fields for schemes saved before notes were customizable
         if (!out.notesFont)     merged.notesFont     = DEF.notesFont;
@@ -3490,12 +3514,14 @@ function applySavedState(saved) {
         if (out.rcTitleAutoGap === undefined) merged.rcTitleAutoGap = merged.titleAutoGap;
         // Seed prop title font split added in v3.40.0
         if (!out.propTitleFont)    merged.propTitleFont    = merged.titleFont;
-        if (!out.propTitleFontAdv) merged.propTitleFontAdv = JSON.parse(JSON.stringify(merged.titleFontAdv));
+        if (out.propTitleFontAdv === undefined) merged.propTitleFontAdv = JSON.parse(JSON.stringify(merged.titleFontAdv));
+        else if (out.propTitleFontAdv === null) merged.propTitleFontAdv = null;
         else                       merged.propTitleFontAdv = { ...FONT_ADV_DEFAULTS(), ...out.propTitleFontAdv };
         // boldFont / propBoldFont were removed (emphasis renders as plain \b on the
         // body font). Carry the bold *advanced* styling forward as an internal
         // fallback for point styling on schemes saved before the point-font split.
-        if (!out.propBoldFontAdv) merged.propBoldFontAdv = JSON.parse(JSON.stringify(merged.boldFontAdv));
+        if (out.propBoldFontAdv === undefined) merged.propBoldFontAdv = JSON.parse(JSON.stringify(merged.boldFontAdv));
+        else if (out.propBoldFontAdv === null) merged.propBoldFontAdv = null;
         else                      merged.propBoldFontAdv = { ...FONT_ADV_DEFAULTS(), ...out.propBoldFontAdv };
         // Seed the split point fonts from the old bold fonts for pre-split schemes
         // (preserves existing point-text styling — point used to share the bold font).
@@ -3503,12 +3529,15 @@ function applySavedState(saved) {
         if (!out.pointFontAdv)      merged.pointFontAdv      = JSON.parse(JSON.stringify(merged.boldFontAdv));
         else                        merged.pointFontAdv      = { ...FONT_ADV_DEFAULTS(), ...out.pointFontAdv };
         if (!out.propPointFont)     merged.propPointFont     = out.propBoldFont || out.boldFont || merged.propPointFont;
-        if (!out.propPointFontAdv)  merged.propPointFontAdv  = JSON.parse(JSON.stringify(merged.propBoldFontAdv));
-        else                        merged.propPointFontAdv  = { ...FONT_ADV_DEFAULTS(), ...out.propPointFontAdv };
-        if (!out.rcBodyFontAdv)     merged.rcBodyFontAdv     = JSON.parse(JSON.stringify(merged.bodyFontAdv));
-        else                        merged.rcBodyFontAdv     = { ...FONT_ADV_DEFAULTS(), ...out.rcBodyFontAdv };
-        if (!out.rcTitleFontAdv)    merged.rcTitleFontAdv    = JSON.parse(JSON.stringify(merged.titleFontAdv));
-        else                        merged.rcTitleFontAdv    = { ...FONT_ADV_DEFAULTS(), ...out.rcTitleFontAdv };
+        if (out.propPointFontAdv === undefined) merged.propPointFontAdv = JSON.parse(JSON.stringify(merged.propBoldFontAdv));
+        else if (out.propPointFontAdv === null) merged.propPointFontAdv = null;
+        else merged.propPointFontAdv = { ...FONT_ADV_DEFAULTS(), ...out.propPointFontAdv };
+        if (out.rcBodyFontAdv === undefined) merged.rcBodyFontAdv = JSON.parse(JSON.stringify(merged.bodyFontAdv));
+        else if (out.rcBodyFontAdv === null) merged.rcBodyFontAdv = null;
+        else merged.rcBodyFontAdv = { ...FONT_ADV_DEFAULTS(), ...out.rcBodyFontAdv };
+        if (out.rcTitleFontAdv === undefined) merged.rcTitleFontAdv = JSON.parse(JSON.stringify(merged.titleFontAdv));
+        else if (out.rcTitleFontAdv === null) merged.rcTitleFontAdv = null;
+        else merged.rcTitleFontAdv = { ...FONT_ADV_DEFAULTS(), ...out.rcTitleFontAdv };
         // Drop the removed orphan fields if an old scheme carried them.
         delete merged.titleText; delete merged.titleShadow;
         delete merged.boldFont;  delete merged.propBoldFont;
@@ -7733,10 +7762,62 @@ function layoutPreview(scheme, sel) {
     <p class="style-group-hint" style="margin-top:8px">Click a region to highlight its row below. Boxes are drawn from this scheme's positions; off-canvas elements (e.g. Live) may sit outside the frame.</p>`;
 }
 
-// ── Palette tab + Global view helpers ─────────────────────────────────────────
+// ── Styles → Style tab: the five shared slots, laid out like the Text tab ───
+// Live preview on top (every element the selected slot feeds is outlined),
+// slot list on the left, and an inspector showing the slot's layers:
+// Global → this style → elements that set their own value.
+const PALETTE_SLOTS = [
+  { key: 'font1',        kind: 'font',  name: 'Font 1',     desc: 'The everyday text font.' },
+  { key: 'font2',        kind: 'font',  name: 'Font 2',     desc: 'Titles — the scripture reference bar.' },
+  { key: 'boldFont',     kind: 'font',  name: 'Bold / ALT', desc: 'Bolded words inside body text and notes.' },
+  { key: 'colorNeutral', kind: 'color', name: 'Neutral',    desc: 'The main text colour.' },
+  { key: 'colorAccent',  kind: 'color', name: 'Accent',     desc: 'The title colour.' },
+];
+const _slotOfRow = (r, kind) => kind === 'font' ? FONT_FIELD_TO_TYPO_KEY[r.fontF] : ADV_FIELD_TO_TYPO_KEY[r.advK];
+
 function renderPaletteTab(rawScheme, t, dis) {
-  const fontSlot = (key, name, desc) => {
-    const val = t[key] || '';
+  const slot = PALETTE_SLOTS.find(x => x.key === _paletteSlot) || PALETTE_SLOTS[0];
+  _paletteSlot = slot.key;
+  const g = ensureGlobalTypography();
+  const own = rawScheme.typography?.[slot.key] != null;
+  const isColor = slot.kind === 'color';
+  const fontLabel = ps => { const p = parseFontPS(ps || ''); const fam = fontFamilyOf(ps) || p.family; return `${fam}${p.style && p.style !== 'Regular' ? ' ' + p.style : ''}`; };
+  const valueChip = v => isColor
+    ? `<span class="pt-swatch" style="background:${esc(normalizeHexColor(v))}"></span><code>${esc(normalizeHexColor(v))}</code>`
+    : `<span class="pt-fontname" style="font-family:'${esc(v)}', sans-serif">${esc(fontLabel(v))}</span>`;
+
+  // Which elements this slot feeds, and which of those set their own value.
+  const sv = applyTypographyToStyle(rawScheme);
+  const rows = TEXT_TAB_SECTIONS().flatMap(sec => sec.rows.map(r => ({ ...r, section: sec.label })))
+    .filter(r => _slotOfRow(r, slot.kind) === slot.key);
+  const status = r => {
+    if (!isColor) return rawScheme.fontFields?.[r.fontF] ? { own: true, val: rawScheme.fontFields[r.fontF] } : { own: false };
+    if (D2_ADV_INHERIT[r.advK] && rawScheme[r.advK] == null) return { follows: true };
+    return rawScheme[r.advK]?.color ? { own: true, val: rawScheme[r.advK].color } : { own: false };
+  };
+  const using = rows.filter(r => !status(r).own).map(r => r.id);
+  const ownCount = rows.length - using.length;
+
+  const list = ['font', 'color'].map(kind => `
+    <div class="tp-list-sec">${kind === 'font' ? 'Fonts' : 'Colours'}</div>
+    ${PALETTE_SLOTS.filter(x => x.kind === kind).map(x => {
+      const v = t[x.key];
+      return `<div role="button" tabindex="0" class="tp-list-item pt-slot${x.key === slot.key ? ' active' : ''}" data-slot="${x.key}">
+        <span class="pt-slot-name">${x.kind === 'color' ? `<span class="pt-swatch pt-swatch-sm" style="background:${esc(normalizeHexColor(v))}"></span>` : ''}${esc(x.name)}</span>
+        ${rawScheme.typography?.[x.key] != null ? '<span class="tp-dot" title="This style sets its own value"></span>' : ''}
+      </div>`;
+    }).join('')}`).join('');
+
+  // Control for "this style" — a font picker or a colour picker.
+  let control;
+  if (isColor) {
+    const val = normalizeHexColor(t[slot.key] || '#ffffff');
+    control = `<span class="pt-color-ctrl">
+      <input type="color" class="fav-color tp-color" id="palette-color-${slot.key}" value="${val}" ${dis}>
+      <input type="text" class="tp-input pt-hex fav-color-hex" id="palette-hex-${slot.key}" value="${val.replace(/^#/, '')}" maxlength="6" placeholder="ffffff" ${dis}>
+    </span>`;
+  } else {
+    const val = t[slot.key] || '';
     const curFam = fontFamilyOf(val);
     const families = _fontFamilyMap ? Object.keys(_fontFamilyMap).sort((a, b) => a.localeCompare(b)) : [];
     const famOpts = families.length
@@ -7746,38 +7827,109 @@ function renderPaletteTab(rawScheme, t, dis) {
     const styOpts = styArr.map(({ style, postscript }) =>
       `<option value="${esc(postscript)}"${postscript === val ? ' selected' : ''}>${esc(style)}</option>`
     ).join('') || `<option value="${esc(val)}">${esc(parseFontPS(val).style || 'Regular')}</option>`;
-    return `<div class="palette-slot">
-      <div class="palette-slot-info"><span class="palette-slot-name">${esc(name)}</span><span class="palette-slot-desc">${esc(desc)}</span></div>
-      <div class="palette-slot-ctrl">
-        <div class="inherit-ctrl-wrap">
-          <select class="sf-fam-select" id="palette-fam-${key}" ${dis}>${famOpts}</select>
-        </div>
-        <select class="sf-sty-select" id="palette-sty-${key}" ${dis}>${styOpts}</select>
-      </div>
-    </div>`;
-  };
-  const colorSlot = (key, name, desc) => {
-    const val = normalizeHexColor(t[key] || '#ffffff');
-    const pickerVal = val.startsWith('#') ? val : '#' + val;
-    return `<div class="palette-slot">
-      <div class="palette-slot-info"><span class="palette-slot-name">${esc(name)}</span><span class="palette-slot-desc">${esc(desc)}</span></div>
-      <span class="color-input-wrap">
-        <input type="color" class="fav-color" id="palette-color-${key}" value="${pickerVal}" ${dis}>
-        <input type="text" class="color-hex fav-color-hex" id="palette-hex-${key}" value="${(val||'').replace(/^#/,'')}" maxlength="6" placeholder="ffffff" ${dis}>
-        <button type="button" class="fav-color-clear palette-color-clear" data-key="${key}" title="Use global color" ${dis}>×</button>
+    control = `<span class="pt-font-ctrl">
+      <select class="sf-fam-select tp-select" id="palette-fam-${slot.key}" ${dis}>${famOpts}</select>
+      <select class="sf-sty-select tp-select pt-weight" id="palette-sty-${slot.key}" ${dis}>${styOpts}</select>
+    </span>`;
+  }
+
+  const elementRow = r => {
+    const st = status(r);
+    const d1 = st.follows ? TEXT_TAB_SECTIONS()[0].rows.find(x => x.advK === D2_ADV_INHERIT[r.advK]) : null;
+    const what = st.follows ? `follows ${esc(dn('mainScreen'))} ${esc(d1?.lbl || '')}`
+      : st.own ? `own ${isColor ? 'colour' : 'font'}: ${isColor ? valueChip(st.val) : `<span class="pt-fontname" style="font-family:'${esc(st.val)}', sans-serif">${esc(fontLabel(st.val))}</span>`}`
+      : `uses ${esc(slot.name)}`;
+    return `<div class="pt-el${st.own ? ' pt-el-own' : ''}">
+      <span class="pt-el-name"><span class="pt-el-sec">${esc(r.section)}</span> ${esc(r.lbl)}</span>
+      <span class="pt-el-what">${what}</span>
+      <span class="pt-el-actions">
+        ${st.own ? `<button type="button" class="btn-sm pt-use-slot" data-row="${r.id}" ${dis}>↺ Use ${esc(slot.name)}</button>` : ''}
+        <span role="button" tabindex="0" class="pt-edit" data-row="${r.id}" title="Open in the Text tab">Edit →</span>
       </span>
     </div>`;
   };
-  return `<p class="style-group-hint">The five style slots every scheme starts from. Fields in Text / Layout / Motion inherit from these unless they have their own override.</p>
-    <div class="tcard"><div class="tcard-hd">Fonts</div>
-      ${fontSlot('font1',    'Font 1',    'Body · Point · Utility · Notes · Queue · Live')}
-      ${fontSlot('font2',    'Font 2',    'Title · Response Card title')}
-      ${fontSlot('boldFont', 'Bold / ALT','Emphasis spans in body text')}
+
+  const inspector = `
+    <div class="tp-insp-hd">
+      <div><span class="tp-insp-sec">${isColor ? 'Colour' : 'Font'} slot</span><span class="tp-insp-name">${esc(slot.name)}</span></div>
+      <span class="tp-follow">${esc(slot.desc)}</span>
     </div>
-    <div class="tcard"><div class="tcard-hd">Colors</div>
-      ${colorSlot('colorNeutral', 'Neutral', 'Body · Point · Utility · Notes · Queue · Live · Bold')}
-      ${colorSlot('colorAccent',  'Accent',  'Title · Response Card title')}
+
+    <div class="tp-group">
+      <div class="tp-group-lbl">Layers <span class="tp-group-sub">the most specific one wins</span></div>
+      <div class="pt-layers">
+        <div class="pt-layer${own ? '' : ' pt-layer-active'}">
+          <span class="pt-layer-step">1</span>
+          <span class="pt-layer-name">Global<small>every style starts here</small></span>
+          <span class="pt-layer-val">${valueChip(g[slot.key])}</span>
+          <span class="pt-layer-state">${own ? 'overridden' : 'in use'}</span>
+        </div>
+        <div class="pt-layer${own ? ' pt-layer-active' : ' pt-layer-empty'}">
+          <span class="pt-layer-step">2</span>
+          <span class="pt-layer-name">This style<small>${own ? 'set here — beats Global' : 'not set — using Global'}</small></span>
+          <span class="pt-layer-val">${control}</span>
+          <span class="pt-layer-state">
+            ${own ? `<button type="button" class="btn-sm inherit-action" data-action="use-global" data-key="${slot.key}" ${dis}>↺ Use Global</button>
+                     <button type="button" class="btn-sm inherit-action" data-action="push-global" data-key="${slot.key}" ${dis}>↑ Make Global</button>` : ''}
+          </span>
+        </div>
+        <div class="pt-layer pt-layer-els">
+          <span class="pt-layer-step">3</span>
+          <span class="pt-layer-name">Elements<small>own value beats both</small></span>
+          <span class="pt-layer-val">${ownCount ? `<strong>${ownCount}</strong> of ${rows.length} set their own ${isColor ? 'colour' : 'font'}` : `none — all ${rows.length} use ${esc(slot.name)}`}</span>
+          <span class="pt-layer-state"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tp-group">
+      <div class="tp-group-lbl">Used by <span class="tp-group-sub">outlined in the preview</span></div>
+      <div class="pt-els">${rows.map(elementRow).join('')}</div>
     </div>`;
+
+  return `
+    <div class="tp-preview pt-preview" data-using="${esc(JSON.stringify(using))}">${renderTextPreview(styleForExport(rawScheme), _paletteScene, using, 'Outlined = uses this slot · click any text to see its slot', false)}</div>
+    <div class="tp-body">
+      <nav class="tp-list">${list}</nav>
+      <div class="tp-insp">${inspector}</div>
+    </div>`;
+}
+
+// Navigation for the Style tab (works when locked too — browsing isn't editing).
+function wirePaletteTab(root, getPv, rerender, gotoText) {
+  if (!root) return;
+  const refresh = () => {
+    const host = root.querySelector('.pt-preview');
+    if (!host) return;
+    host.innerHTML = renderTextPreview(getPv(), _paletteScene, JSON.parse(host.dataset.using || '[]'),
+      'Outlined = uses this slot · click any text to see its slot', false);
+    _tpLayout(host);
+  };
+  _tpLayout(root);
+  document.fonts?.ready.then(refresh);
+  let timer = 0;
+  root.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(refresh, 0); });
+  root.addEventListener('click', e => {
+    const slotEl = e.target.closest('.pt-slot');
+    if (slotEl) { _paletteSlot = slotEl.dataset.slot; rerender(); return; }
+    const sceneEl = e.target.closest('.tp-scene');
+    if (sceneEl) { _paletteScene = sceneEl.dataset.scene; rerender(); return; }
+    const edit = e.target.closest('.pt-edit');
+    if (edit) { gotoText(edit.dataset.row); return; }
+    const el = e.target.closest('.tp-el');
+    if (el) {
+      // Jump to the slot (of the kind you're looking at) that this text uses.
+      const kind = PALETTE_SLOTS.find(x => x.key === _paletteSlot)?.kind || 'font';
+      const row = TEXT_TAB_SECTIONS().flatMap(sec => sec.rows).find(r => r.id === el.dataset.row);
+      const next = row && _slotOfRow(row, kind);
+      if (next) { _paletteSlot = next; rerender(); }
+    }
+  });
+  root.addEventListener('keydown', e => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.pt-slot, .tp-scene, .pt-edit')) {
+      e.preventDefault(); e.target.click();
+    }
+  });
 }
 
 function renderGlobalPanel(panel, schemeOptionsHTML) {
@@ -8024,11 +8176,15 @@ function _tpEl(pv, cw, ch, o) {
       margin:${u(a.paragraphSpacingBefore)} 0 ${u(a.paragraphSpacingAfter)}">${inner}</div></div>`;
 }
 
-function renderTextPreview(pv, scene, selRow) {
+function renderTextPreview(pv, scene, selRow, hint, showStrip = true) {
+  // selRow: one row id, or a list of them (the Style tab highlights every
+  // element a slot feeds).
+  const selSet = new Set([].concat(selRow || []));
+  const isSel = o => selSet.has(o.row) || (o.alsoSel || []).some(r => selSet.has(r));
   const smp = _tpSamples();
   const mainW = pv.canvasW || 1920, mainH = pv.canvasH || 1080;
   const propW = pv.propCanvasW || 3200, propH = pv.propCanvasH || 1280;
-  const L = (o) => _tpEl(pv, propW, propH, { ...o, sel: o.row === selRow || (o.alsoSel || []).includes(selRow) });
+  const L = (o) => _tpEl(pv, propW, propH, { ...o, sel: isSel(o) });
   const bodySpans = smp.spans.map(sp => ({ text: sp.text, alt: !!sp.bold }));
   const box = (p, fb) => [pv[p + 'X'] ?? pv[fb + 'X'] ?? 0, pv[p + 'Y'] ?? pv[fb + 'Y'] ?? 0, pv[p + 'W'] ?? pv[fb + 'W'] ?? 0, pv[p + 'H'] ?? pv[fb + 'H'] ?? 0];
   const queueSpans = [{ text: [smp.reference, 'Point 1', 'Blank', 'Point 2', 'Response Card'].join('\n') }];
@@ -8051,7 +8207,6 @@ function renderTextPreview(pv, scene, selRow) {
       : '',
     showContent ? ({ row: 'live', box: box('live'), font: pv.liveFont, size: pv.liveSize, adv: pv.liveFontAdv, spans: [{ text: 'live' }] }) : '',
   ].filter(Boolean);
-  const isSel = o => o.row === selRow || (o.alsoSel || []).includes(selRow);
   const onMain  = mainEls.filter(o => o.box[1] < mainH);
   const offMain = mainEls.filter(o => o.box[1] >= mainH && o.box[2] && o.box[3]);
   const main = onMain.map(o => _tpEl(pv, mainW, mainH, { ...o, sel: isSel(o) })).join('');
@@ -8059,7 +8214,7 @@ function renderTextPreview(pv, scene, selRow) {
   // their own strip at true scale instead of spilling over the page — only
   // while one of them is being edited, since the strip can be tall.
   const stripH = offMain.length ? Math.max(...offMain.map(o => o.box[1] + o.box[3])) - mainH : 0;
-  const offStrip = offMain.some(isSel) ? `
+  const offStrip = showStrip && offMain.some(isSel) ? `
         <div class="lp-canvas-lbl tp-off-lbl">Below the screen · stage display only</div>
         <div class="tp-canvas tp-strip" style="aspect-ratio:${mainW} / ${Math.max(stripH, 1)}">
           ${offMain.map(o => _tpEl(pv, mainW, stripH, { ...o, box: [o.box[0], o.box[1] - mainH, o.box[2], o.box[3]], sel: isSel(o) })).join('')}
@@ -8082,7 +8237,7 @@ function renderTextPreview(pv, scene, selRow) {
     <div class="tp-canvas-block tp-notes-block">
       <div class="lp-canvas-lbl">${esc(dn('monitor'))} · slide notes</div>
       <div class="tp-canvas tp-notes" style="aspect-ratio:1920 / 360">
-        ${_tpEl(pv, 1920, 360, { row: 'notes', alsoSel: ['notesBold'], sel: selRow === 'notes' || selRow === 'notesBold', box: [40, 20, 1840, 320],
+        ${_tpEl(pv, 1920, 360, { row: 'notes', alsoSel: ['notesBold'], sel: selSet.has('notes') || selSet.has('notesBold'), box: [40, 20, 1840, 320],
           font: pv.notesFont, size: pv.notesSize, adv: pv.notesFontAdv, altFont: pv.notesBoldFont, altAdv: pv.notesBoldFontAdv,
           spans: [{ text: 'Read slowly. ' }, { text: 'Pause after "one and only Son".', alt: true }, { text: ' Then go to Point 1.' }] })}
       </div>
@@ -8091,7 +8246,7 @@ function renderTextPreview(pv, scene, selRow) {
   return `
     <div class="tp-scenes" role="tablist">
       ${TEXT_SCENES.map(([k, lbl]) => `<div role="tab" tabindex="0" class="tp-scene${k === scene ? ' active' : ''}" data-scene="${k}">${lbl}</div>`).join('')}
-      <span class="tp-hint">Live preview · click any text to edit it</span>
+      <span class="tp-hint">${esc(hint || 'Live preview · click any text to edit it')}</span>
     </div>
     <div class="tp-wrap">
       <div class="tp-canvas-block">
@@ -8144,8 +8299,7 @@ function renderSchemeGrid(sv, rs, dis, pv) {
       if (typeof def === 'boolean') return !!v !== def;
       return v !== def;
     }) : false;
-    const typoKey = FONT_FIELD_TO_TYPO_KEY[r.fontF];
-    const fontDiff = !!(rs.fontFields?.[r.fontF]) || (typoKey && rs.typography?.[typoKey] != null && rs.typography[typoKey] !== _globalTypo[typoKey]);
+    const fontDiff = !!(rs.fontFields?.[r.fontF]);
     const sizeDiff = r.sizeF && rs.typography?.[r.sizeF] != null && Number(rs.typography[r.sizeF]) !== Number(_globalTypo[r.sizeF]);
     return advDiff || fontDiff || sizeDiff;
   };
@@ -8166,7 +8320,6 @@ function renderSchemeGrid(sv, rs, dis, pv) {
   const ps     = sv[fontF] || '';
   const curFam = fontFamilyOf(ps);
   const adv    = sv[advK] || FONT_ADV_DEFAULTS();
-  const fontTypoKey = FONT_FIELD_TO_TYPO_KEY[fontF] || null;
   const advRaw = rs[advK];
   const _globalAdv = ensureGlobalFontAdv()[advK] || FONT_ADV_DEFAULTS();
   const advOv = (field) => {
@@ -8179,8 +8332,7 @@ function renderSchemeGrid(sv, rs, dis, pv) {
     if (typeof def === 'boolean') return !!v !== def;
     return v !== def;
   };
-  const fontOv = (fontTypoKey ? (rs.typography?.[fontTypoKey] != null && rs.typography?.[fontTypoKey] !== _globalTypo[fontTypoKey]) : false)
-    || !!(rs.fontFields?.[fontF]);
+  const fontOv = !!(rs.fontFields?.[fontF]);
   const sizeOv = sizeF ? (rs.typography?.[sizeF] != null && Number(rs.typography?.[sizeF]) !== Number(_globalTypo[sizeF])) : false;
   const sc = (ov) => ov ? ' sg-td-scheme' : '';
   const cell = (field, html, extra = '') =>
@@ -8223,8 +8375,8 @@ function renderSchemeGrid(sv, rs, dis, pv) {
     <div class="tp-group">
       <div class="tp-group-lbl">Font</div>
       <div class="tp-row">
-        <div class="sg-td tp-cell tp-grow${sc(fontOv)}" data-typokey="${fontTypoKey || ''}"><select class="sf-fam-select sg-fam tp-select" id="sf-fam-${fontF}" ${dis}>${famOptsFn(curFam)}</select></div>
-        <div class="sg-td tp-cell${sc(fontOv)}" data-typokey="${fontTypoKey || ''}"><select class="sf-sty-select sg-sty tp-select" id="sf-sty-${fontF}" ${dis}>${styOptsFn(curFam, ps)}</select></div>
+        <div class="sg-td tp-cell tp-grow${sc(fontOv)}" data-fontfield="${fontF}"><select class="sf-fam-select sg-fam tp-select" id="sf-fam-${fontF}" ${dis}>${famOptsFn(curFam)}</select></div>
+        <div class="sg-td tp-cell${sc(fontOv)}" data-fontfield="${fontF}"><select class="sf-sty-select sg-sty tp-select" id="sf-sty-${fontF}" ${dis}>${styOptsFn(curFam, ps)}</select></div>
       </div>
       <div class="tp-row">
         <div class="tp-num">Size
@@ -8675,6 +8827,7 @@ function renderStylePanel(panel) {
     for (const f of LAYOUT_FIELDS) p[f] = null;
     for (const f of MOTION_SCALAR_FIELDS) p[f] = null;
     for (const f of Object.keys(D2_ADV_INHERIT)) p[f] = null;   // Display 2 inherits Display 1
+    for (const f of ADV_SCHEME_KEYS) if (!D2_ADV_INHERIT[f]) p[f] = INHERIT_ADV(); // advanced styling follows Global
     p.buildOrders = null; p.macros = null; p.stageDisplays = null; p.rcElements = null;
     state.styleSchemes.push(p); state.activeSchemeId = p.id;
     saveState(); renderStylePanel(panel);
@@ -8746,8 +8899,25 @@ function renderStylePanel(panel) {
 
   // Text tab: element selection, scene switching, live preview (also when locked — browsing isn't editing)
   wireTextTab(document.getElementById('style-tab-text'), () => styleForExport(getScheme() || scheme), () => renderStylePanel(panel));
+  wirePaletteTab(document.getElementById('style-tab-palette'), () => styleForExport(getScheme() || scheme), () => renderStylePanel(panel), row => {
+    _styleTab = 'text'; _textRow = row; _textScene = null;
+    renderStylePanel(panel);
+  });
 
   if (locked) return; // no need to attach change handlers when locked
+
+  // Style tab: "Use <slot>" on an element that set its own font/colour.
+  panel.querySelectorAll('.pt-use-slot').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const s = getScheme(); if (!s) return;
+      const row = TEXT_TAB_SECTIONS().flatMap(sec => sec.rows).find(r => r.id === btn.dataset.row);
+      const kind = PALETTE_SLOTS.find(x => x.key === _paletteSlot)?.kind;
+      if (!row || !kind) return;
+      if (kind === 'font') { if (s.fontFields) delete s.fontFields[row.fontF]; }
+      else if (s[row.advK]) s[row.advK].color = '';
+      saveState(); renderStylePanel(panel);
+    });
+  });
 
   document.querySelectorAll('.inherit-action').forEach(btn => {
     btn.addEventListener('click', e => {
@@ -8761,7 +8931,8 @@ function renderStylePanel(panel) {
       if (btn.dataset.action === 'push-global') {
         const inheritCount = state.styleSchemes.filter(x => !(x.typography?.[key])).length;
         const customCount  = state.styleSchemes.filter(x =>  !!(x.typography?.[key])).length;
-        const msg = `Push "${key}" to Global?\n\n${inheritCount} scheme${inheritCount === 1 ? '' : 's'} will pick up this new default.${customCount ? `\n${customCount} scheme${customCount === 1 ? '' : 's'} with a custom value will not change.` : ''}`;
+        const label = PALETTE_SLOTS.find(x => x.key === key)?.name || key;
+        const msg = `Make this ${label} the Global default?\n\n${inheritCount} style${inheritCount === 1 ? '' : 's'} using Global will pick it up.${customCount ? `\n${customCount} style${customCount === 1 ? '' : 's'} with their own ${label} won't change.` : ''}`;
         if (!confirm(msg)) return;
         state.globalTypography[key] = COLOR_TYPO_KEYS.has(key) ? normalizeHexColor(resolved) : resolved;
       }
@@ -8995,9 +9166,11 @@ function renderStylePanel(panel) {
       const s = getScheme(); if (!s) return;
       const key   = lbl.dataset.scheme;
       const field = lbl.dataset.field;
+      // Flip what's actually showing — the raw field may be null (following Global).
+      const next = !styleForExport(s)[key]?.[field];
       forkAdv(s, key);
-      s[key][field] = !s[key][field];
-      lbl.classList.toggle('on', s[key][field]);
+      s[key][field] = next;
+      lbl.classList.toggle('on', next);
       saveState();
     });
   });
@@ -9279,10 +9452,15 @@ function renderStylePanel(panel) {
     const key     = _sgCtx.dataset.typokey;
     const advKey  = _sgCtx.dataset.scheme;
     const advFld  = _sgCtx.dataset.field;
+    const fontFld = _sgCtx.dataset.fontfield;
     if (lyField) {
       s[lyField] = null;
+    } else if (fontFld) {
+      // Drop this element's own font so it uses the Style tab's font slot again.
+      if (s.fontFields) delete s.fontFields[fontFld];
     } else if (advKey && advFld && s[advKey]) {
-      s[advKey][advFld] = (ensureGlobalFontAdv()[advKey] || FONT_ADV_DEFAULTS())[advFld];
+      // null = follow Global live; colour '' = follow the Style tab's colour slot.
+      s[advKey][advFld] = advFld === 'color' ? '' : null;
     } else {
       if (!key) return;
       ensureSchemeTypography(s);
@@ -9301,9 +9479,11 @@ function renderStylePanel(panel) {
       glb[lyField] = s[lyField] ?? glb[lyField];
       s[lyField] = null;
     } else if (advKey && advFld && s[advKey]) {
+      const val = styleForExport(s)[advKey][advFld];
       const glb = ensureGlobalFontAdv();
       if (!glb[advKey]) glb[advKey] = FONT_ADV_DEFAULTS();
-      glb[advKey][advFld] = s[advKey][advFld];
+      glb[advKey][advFld] = val;
+      s[advKey][advFld] = null; // now follows Global live
     } else {
       if (!key) return;
       ensureSchemeTypography(s); ensureGlobalTypography();
@@ -9339,7 +9519,9 @@ function renderStylePanel(panel) {
       const typoKey = td.dataset.typokey || '';
       const advKey  = td.dataset.scheme  || '';
       const advFld  = td.dataset.field   || '';
+      const fontFld = td.dataset.fontfield || '';
       _sgCtx.dataset.lyfield = '';
+      _sgCtx.dataset.fontfield = fontFld;
       _sgCtx.dataset.typokey = typoKey;
       _sgCtx.dataset.scheme  = advKey;
       _sgCtx.dataset.field   = advFld;
@@ -9358,12 +9540,15 @@ function renderStylePanel(panel) {
       const pushBtn     = document.getElementById('sg-ctx-push');
       const inheritBtn  = document.getElementById('sg-ctx-inherit-d1');
       const resetDefBtn = document.getElementById('sg-ctx-reset-def');
-      resetBtn.style.display    = (typoKey && isOvTypo) || (advKey && advFld && isOvAdv) ? '' : 'none';
-      pushBtn.style.display     = (typoKey || (advKey && advFld)) ? '' : 'none';
+      const isOvFont = !!(fontFld && s?.fontFields?.[fontFld]);
+      resetBtn.textContent = fontFld ? '↺ Use the Style tab font' : advFld === 'color' ? '↺ Use the Style tab colour' : '↺ Reset to global';
+      resetBtn.style.display    = (typoKey && isOvTypo) || (advKey && advFld && isOvAdv) || isOvFont ? '' : 'none';
+      // Fonts and colours are shared through the Style tab's slots, not pushed per element.
+      pushBtn.style.display     = (typoKey || (advKey && advFld && advFld !== 'color')) ? '' : 'none';
       // "Reset to Display 1" only for a Display 2 prop row that's currently overriding.
       inheritBtn.style.display  = (advKey && D2_ADV_INHERIT[advKey] && s?.[advKey] != null) ? '' : 'none';
       resetDefBtn.style.display = 'none';
-      const hasItems = typoKey || (advKey && advFld);
+      const hasItems = typoKey || (advKey && advFld) || isOvFont;
       if (!hasItems) return;
       _sgCtx.style.cssText = `display:block;position:fixed;left:${e.clientX}px;top:${e.clientY}px;`;
     });
@@ -12552,6 +12737,8 @@ let _layoutSel = null;          // selected region slug in the Layout visual pre
 let _textSel   = null;          // selected region slug in the Text visual preview
 let _textRow   = 'body1';       // selected element in the Text tab inspector
 let _textScene = null;          // Text preview scene override (null = follow the selected element)
+let _paletteSlot  = 'font1';     // selected slot in the Style tab
+let _paletteScene = 'scripture'; // Style tab preview scene
 
 function attachPdfHandlers() {
   const zone      = document.getElementById('pdf-drop-zone');
@@ -15583,16 +15770,17 @@ function helpSections() {
       <p>A <strong>style</strong> defines every visual aspect of the generated slides — fonts, sizes, colours, positions, animations, macros, stage layouts. Open the editor from <strong>···&nbsp;→&nbsp;Styles</strong>. Styling cascades through three tiers, broad to specific:</p>
       <ul>
         <li><strong>Global</strong> — the house-style baseline, shared by every style. Read-only here (shown as <strong>◈&nbsp;Global</strong> in the style picker); you change it by pushing a value up from a style.</li>
-        <li><strong>Style</strong> — base fonts and colours for this style, cascading to all its fields.</li>
-        <li><strong>Custom</strong> — per-field overrides on top (a specific size, colour, position, transition…).</li>
+        <li><strong>Style</strong> — the <strong>Style tab</strong>'s five slots (Font&nbsp;1, Font&nbsp;2, Bold/ALT, Neutral, Accent) feed every element that doesn't set its own.</li>
+        <li><strong>Element</strong> — a value set on one element in the Text tab (a specific font, size, colour, outline…). The most specific layer wins.</li>
       </ul>
+      <p>The <strong>Style tab</strong> shows this as a stack for the selected slot: what Global says, what this style says, and which elements set their own value (each with <em>↺ Use …</em> to hand it back to the slot, or <em>Edit →</em> to open it in the Text tab). The preview outlines every element the slot feeds. Advanced styling (bold/italic, caps, alignment, outline, shadow, spacing, margins) follows Global live too: <em>Reset to Global</em> re-links a field, <em>Push to Global</em> sends it up and keeps following it.</p>
 
       <h4>Reading the colours</h4>
       <p>Throughout the editor, <span class="help-pill help-pill-blue">blue</span> means a value is <strong>inheriting</strong> (from Global, or from Display&nbsp;1), and <span class="help-pill help-pill-orange">orange</span> means it's a <strong>custom override</strong>. Untouched fields inherit; the moment you change one it turns orange.</p>
 
       <h4>Managing values (right-click a cell)</h4>
       <ul>
-        <li><strong>Reset to Global</strong> — drop a custom override and inherit again.</li>
+        <li><strong>Reset to Global</strong> — drop a custom override and inherit again. On a font or colour this reads <em>Use the Style tab font/colour</em>.</li>
         <li><strong>Push to Global</strong> — send this value up so every inheriting style adopts it.</li>
         <li><strong>Reset to Display 1</strong> — hand an ${D2} row back to inheriting the main screen (see <em>LED Wall</em>).</li>
       </ul>

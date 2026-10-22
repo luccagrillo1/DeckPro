@@ -4640,7 +4640,7 @@ body.dark .g-tip-title { color: #ff8a4c; }
 .tp-tag { font-size: 10px; color: var(--muted); font-weight: 500; }
 .tp-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #f59e0b; flex: none; }
 
-.tp-insp { min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 4px 14px 10px; }
+.tp-insp { min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 4px 14px 10px; container-type: inline-size; }
 .tp-insp-hd {
   display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px;
   padding: 10px 0; border-bottom: 1px solid var(--border);
@@ -4684,4 +4684,56 @@ body.dark .g-tip-title { color: #ff8a4c; }
   .tp-wrap, .tp-body { grid-template-columns: minmax(0, 1fr); }
   .tp-list { position: static; flex-direction: row; flex-wrap: wrap; }
   .tp-notes-block { max-width: none; }
+}
+
+/* ── Styles → Style tab (slots), built on the Text tab's tp-* layout ────────── */
+.pt-slot-name { display: inline-flex; align-items: center; gap: 8px; }
+.pt-swatch { display: inline-block; width: 16px; height: 16px; border-radius: 4px; border: 1px solid rgba(127,127,127,.45); vertical-align: middle; flex: none; }
+.pt-swatch-sm { width: 12px; height: 12px; border-radius: 3px; }
+.pt-fontname { font-size: 14px; color: var(--text); }
+.pt-layers { display: flex; flex-direction: column; gap: 6px; }
+.pt-layer {
+  display: grid; grid-template-columns: 26px 150px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+}
+.pt-layer code { font-size: 12px; color: var(--muted); margin-left: 6px; }
+.pt-layer-step {
+  width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; background: rgba(127,127,127,.15); color: var(--muted);
+}
+.pt-layer-name { display: flex; flex-direction: column; font-size: 13px; font-weight: 600; }
+.pt-layer-name small { font-size: 11px; font-weight: 400; color: var(--muted); }
+.pt-layer-val { min-width: 0; display: flex; align-items: center; font-size: 13px; }
+.pt-layer-state { display: flex; gap: 6px; align-items: center; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.pt-layer-active { border-color: var(--blue); background: rgba(224,96,16,.08); }
+.pt-layer-active .pt-layer-step { background: var(--blue); color: #fff; }
+.pt-layer-empty .pt-layer-val { opacity: .75; }
+.pt-layer-els { border-style: dashed; }
+.pt-font-ctrl { display: flex; gap: 8px; flex-wrap: wrap; width: 100%; }
+.pt-font-ctrl .tp-select { flex: 1 1 160px; }
+.pt-font-ctrl .pt-weight { flex: 0 1 130px; min-width: 100px; }
+.pt-color-ctrl { display: inline-flex; gap: 8px; align-items: center; }
+.pt-hex { width: 84px; text-align: left; font-family: ui-monospace, Menlo, monospace; }
+.pt-els { display: flex; flex-direction: column; }
+.pt-el {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name act" "what act";
+  align-items: center; gap: 2px 10px; padding: 8px 4px; border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.pt-el-name { grid-area: name; }
+.pt-el-what { grid-area: what; }
+.pt-el-actions { grid-area: act; }
+.pt-el:last-child { border-bottom: none; }
+.pt-el-sec { font-size: 11px; color: var(--muted); margin-right: 4px; }
+.pt-el-what { color: var(--muted); min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+.pt-el-what .pt-fontname { font-size: 12px; }
+.pt-el-own .pt-el-what { color: #f59e0b; }
+.pt-el-own .pt-el-what code { color: inherit; margin-left: 0; }
+.pt-el-actions { display: flex; gap: 8px; align-items: center; }
+.pt-edit { font-size: 12px; color: var(--blue); cursor: pointer; user-select: none; white-space: nowrap; }
+.pt-edit:hover { text-decoration: underline; }
+.pt-edit:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 3px; }
+
+@container (max-width: 560px) {
+  .pt-layer { grid-template-columns: 26px minmax(0, 1fr); }
+  .pt-layer-val, .pt-layer-state { grid-column: 2; }
 }
