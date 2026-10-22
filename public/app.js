@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.36.0';
+const APP_VERSION = '4.36.1';
 
 const CHANGELOG = [
+  {
+    version: '4.36.1',
+    date: '2026-10-21',
+    changes: [
+      "Styles → Style tab simplified. The font or colour picker is now the first thing under the slot name, with one line saying whether it comes from Global or is set for this style (plus ↺ Use Global / ↑ Make Global). The numbered Layers box is gone. Elements that set their own font or colour get a short amber list (\"changes here won't reach them\") with ↺ Use …, and everything else that uses the slot is a row of chips you click to edit.",
+    ],
+  },
   {
     version: '4.36.0',
     date: '2026-10-21',
@@ -7796,7 +7803,6 @@ function renderPaletteTab(rawScheme, t, dis) {
     return rawScheme[r.advK]?.color ? { own: true, val: rawScheme[r.advK].color } : { own: false };
   };
   const using = rows.filter(r => !status(r).own).map(r => r.id);
-  const ownCount = rows.length - using.length;
 
   const list = ['font', 'color'].map(kind => `
     <div class="tp-list-sec">${kind === 'font' ? 'Fonts' : 'Colours'}</div>
@@ -7833,21 +7839,26 @@ function renderPaletteTab(rawScheme, t, dis) {
     </span>`;
   }
 
-  const elementRow = r => {
+  const ownRow = r => {
     const st = status(r);
-    const d1 = st.follows ? TEXT_TAB_SECTIONS()[0].rows.find(x => x.advK === D2_ADV_INHERIT[r.advK]) : null;
-    const what = st.follows ? `follows ${esc(dn('mainScreen'))} ${esc(d1?.lbl || '')}`
-      : st.own ? `own ${isColor ? 'colour' : 'font'}: ${isColor ? valueChip(st.val) : `<span class="pt-fontname" style="font-family:'${esc(st.val)}', sans-serif">${esc(fontLabel(st.val))}</span>`}`
-      : `uses ${esc(slot.name)}`;
-    return `<div class="pt-el${st.own ? ' pt-el-own' : ''}">
+    return `<div class="pt-el pt-el-own">
       <span class="pt-el-name"><span class="pt-el-sec">${esc(r.section)}</span> ${esc(r.lbl)}</span>
-      <span class="pt-el-what">${what}</span>
+      <span class="pt-el-what">${isColor ? valueChip(st.val) : `<span class="pt-fontname" style="font-family:'${esc(st.val)}', sans-serif">${esc(fontLabel(st.val))}</span>`}</span>
       <span class="pt-el-actions">
-        ${st.own ? `<button type="button" class="btn-sm pt-use-slot" data-row="${r.id}" ${dis}>↺ Use ${esc(slot.name)}</button>` : ''}
+        <button type="button" class="btn-sm pt-use-slot" data-row="${r.id}" ${dis}>↺ Use ${esc(slot.name)}</button>
         <span role="button" tabindex="0" class="pt-edit" data-row="${r.id}" title="Open in the Text tab">Edit →</span>
       </span>
     </div>`;
   };
+  const chip = r => {
+    const st = status(r);
+    const d1 = st.follows ? TEXT_TAB_SECTIONS()[0].rows.find(x => x.advK === D2_ADV_INHERIT[r.advK]) : null;
+    const tip = st.follows ? `Follows ${dn('mainScreen')} ${d1?.lbl || ''} — open in the Text tab` : 'Open in the Text tab';
+    return `<span role="button" tabindex="0" class="pt-edit pt-chip" data-row="${r.id}" title="${esc(tip)}"><span class="pt-el-sec">${esc(r.section)}</span>${esc(r.lbl)}${st.follows ? ' <span class="pt-chip-follow">↳</span>' : ''}</span>`;
+  };
+  const ownRows = rows.filter(r => status(r).own);
+  const usingRows = rows.filter(r => !status(r).own);
+  const noun = isColor ? 'colour' : 'font';
 
   const inspector = `
     <div class="tp-insp-hd">
@@ -7856,35 +7867,25 @@ function renderPaletteTab(rawScheme, t, dis) {
     </div>
 
     <div class="tp-group">
-      <div class="tp-group-lbl">Layers <span class="tp-group-sub">the most specific one wins</span></div>
-      <div class="pt-layers">
-        <div class="pt-layer${own ? '' : ' pt-layer-active'}">
-          <span class="pt-layer-step">1</span>
-          <span class="pt-layer-name">Global<small>every style starts here</small></span>
-          <span class="pt-layer-val">${valueChip(g[slot.key])}</span>
-          <span class="pt-layer-state">${own ? 'overridden' : 'in use'}</span>
-        </div>
-        <div class="pt-layer${own ? ' pt-layer-active' : ' pt-layer-empty'}">
-          <span class="pt-layer-step">2</span>
-          <span class="pt-layer-name">This style<small>${own ? 'set here — beats Global' : 'not set — using Global'}</small></span>
-          <span class="pt-layer-val">${control}</span>
-          <span class="pt-layer-state">
-            ${own ? `<button type="button" class="btn-sm inherit-action" data-action="use-global" data-key="${slot.key}" ${dis}>↺ Use Global</button>
-                     <button type="button" class="btn-sm inherit-action" data-action="push-global" data-key="${slot.key}" ${dis}>↑ Make Global</button>` : ''}
-          </span>
-        </div>
-        <div class="pt-layer pt-layer-els">
-          <span class="pt-layer-step">3</span>
-          <span class="pt-layer-name">Elements<small>own value beats both</small></span>
-          <span class="pt-layer-val">${ownCount ? `<strong>${ownCount}</strong> of ${rows.length} set their own ${isColor ? 'colour' : 'font'}` : `none — all ${rows.length} use ${esc(slot.name)}`}</span>
-          <span class="pt-layer-state"></span>
-        </div>
-      </div>
+      <div class="pt-pick">${control}</div>
+      <div class="pt-status">${own
+        ? `<span class="pt-status-txt">Set for this style <span class="pt-muted">· Global is ${valueChip(g[slot.key])}</span></span>
+           <span class="pt-status-btns">
+             <button type="button" class="btn-sm inherit-action" data-action="use-global" data-key="${slot.key}" ${dis}>↺ Use Global</button>
+             <button type="button" class="btn-sm inherit-action" data-action="push-global" data-key="${slot.key}" ${dis}>↑ Make Global</button>
+           </span>`
+        : `<span class="pt-status-txt pt-muted">From Global — change it to set it for this style only</span>`}</div>
     </div>
 
+    ${ownRows.length ? `
     <div class="tp-group">
-      <div class="tp-group-lbl">Used by <span class="tp-group-sub">outlined in the preview</span></div>
-      <div class="pt-els">${rows.map(elementRow).join('')}</div>
+      <div class="tp-group-lbl pt-own-lbl">${ownRows.length === 1 ? '1 element sets' : `${ownRows.length} elements set`} its own ${noun} <span class="tp-group-sub">so changes here won't reach ${ownRows.length === 1 ? 'it' : 'them'}</span></div>
+      <div class="pt-els">${ownRows.map(ownRow).join('')}</div>
+    </div>` : ''}
+
+    <div class="tp-group">
+      <div class="tp-group-lbl">Uses ${esc(slot.name)} <span class="tp-group-sub">${usingRows.length ? 'outlined in the preview · click to edit' : ''}</span></div>
+      <div class="pt-chips">${usingRows.length ? usingRows.map(chip).join('') : `<span class="pt-muted">Nothing — every element sets its own ${noun}.</span>`}</div>
     </div>`;
 
   return `
@@ -15773,7 +15774,7 @@ function helpSections() {
         <li><strong>Style</strong> — the <strong>Style tab</strong>'s five slots (Font&nbsp;1, Font&nbsp;2, Bold/ALT, Neutral, Accent) feed every element that doesn't set its own.</li>
         <li><strong>Element</strong> — a value set on one element in the Text tab (a specific font, size, colour, outline…). The most specific layer wins.</li>
       </ul>
-      <p>The <strong>Style tab</strong> shows this as a stack for the selected slot: what Global says, what this style says, and which elements set their own value (each with <em>↺ Use …</em> to hand it back to the slot, or <em>Edit →</em> to open it in the Text tab). The preview outlines every element the slot feeds. Advanced styling (bold/italic, caps, alignment, outline, shadow, spacing, margins) follows Global live too: <em>Reset to Global</em> re-links a field, <em>Push to Global</em> sends it up and keeps following it.</p>
+      <p>On the <strong>Style tab</strong>, pick a slot and change it right at the top; the line under the picker says whether it comes from Global or is set for this style (with <em>↺ Use Global</em> / <em>↑ Make Global</em>). Elements that set their own font or colour are listed in amber — changes to the slot won't reach them until you click <em>↺ Use …</em>. Everything else that uses the slot is outlined in the preview and listed as chips you can click to edit. Advanced styling (bold/italic, caps, alignment, outline, shadow, spacing, margins) follows Global live too: <em>Reset to Global</em> re-links a field, <em>Push to Global</em> sends it up and keeps following it.</p>
 
       <h4>Reading the colours</h4>
       <p>Throughout the editor, <span class="help-pill help-pill-blue">blue</span> means a value is <strong>inheriting</strong> (from Global, or from Display&nbsp;1), and <span class="help-pill help-pill-orange">orange</span> means it's a <strong>custom override</strong>. Untouched fields inherit; the moment you change one it turns orange.</p>
