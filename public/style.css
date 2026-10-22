@@ -4761,3 +4761,44 @@ body.dark .g-tip-title { color: #ff8a4c; }
 .mo-step .tp-select { min-width: 0; width: auto; }
 .mo-empty { font-size: 13px; color: var(--muted); margin: 0 0 10px; }
 .tp-scenes[hidden] { display: none; }
+
+/* ── Slide editor preview ────────────────────────────────────────────────── */
+.slp-preview { margin: 4px 0 16px; }
+.slp-toggle {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 0; margin-bottom: 6px;
+  background: none; border: none; color: var(--muted); font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .05em; cursor: pointer; text-align: left;
+}
+.slp-toggle:hover { color: var(--text); }
+.slp-style { margin-left: auto; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.slp-preview .tp-el { cursor: default; }
+.slp-preview .tp-el:hover { outline-color: transparent; }
+
+/* Questions marker editor */
+.qm-info { max-width: 640px; font-size: 13px; color: var(--text); }
+.qm-lead { margin: 6px 0 10px; }
+.qm-list { margin: 0 0 12px; padding-left: 18px; color: var(--muted); line-height: 1.55; }
+.qm-list li + li { margin-top: 6px; }
+.qm-list strong { color: var(--text); }
+.qm-state { color: var(--muted); }
+
+/* Preferences: bring the bare text fields and book-name pickers in line with
+   the rest of the app's inputs (they were rendering as browser defaults). */
+.folder-row input[type="text"],
+.settings-row input[type="text"],
+.bookname-select {
+  padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text); font-size: 13px; outline: none;
+  transition: border-color .15s;
+}
+.folder-row input[type="text"] { color: var(--muted); font-size: 12px; }
+.folder-row input[type="text"]:focus,
+.settings-row input[type="text"]:focus,
+.bookname-select:focus { border-color: var(--blue); }
+
+/* Status-line buttons (Use Global / Make Global) use the plain small-button
+   look; the older green .inherit-action styling was dark-mode-only. */
+.pt-status-btns .btn-sm {
+  background: var(--bg); color: var(--text); border-color: var(--border);
+}
+.pt-status-btns .btn-sm:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); }

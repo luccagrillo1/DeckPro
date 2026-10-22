@@ -2,9 +2,23 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.38.0';
+const APP_VERSION = '4.39.0';
 
 const CHANGELOG = [
+  {
+    version: '4.39.0',
+    date: '2026-10-22',
+    changes: [
+      "New: every Scripture, Point and Start/End slide shows a live preview under its name — the main screen and LED wall exactly as they'll export with your style, Fit Width box and line breaks. It updates as you type; click its label to collapse it (remembered).",
+      "Styles → Response Card is rebuilt like the other Styles tabs: a live LED-wall preview with this week's responses, a list of elements, and an inspector (object name, text, font, size, colour, alignment, position). Drag a box to move it or its corner to resize. Blank font/size/colour clearly says what it follows.",
+      "Fixed: the Response Card colour was a free-text box with no checking — a half-typed value saved a broken colour. It's a colour picker now, with ↺ to go back to the inherited colour.",
+      "Fixed: picking a font family landed on whichever weight sorted first (usually Bold). It now picks the family's Regular (or Book/Medium) face, everywhere fonts are chosen.",
+      "Macros and Stage tabs use the same \"From Global / Set for this style\" line as the rest of Styles (↺ Use Global / ↑ Make Global).",
+      "Preferences: the library/folder paths, Display names, speaker field and Bible book-name pickers were rendering as unstyled browser boxes; they now match the rest of the app.",
+      "Light mode: the Use Global / Make Global buttons were nearly invisible (dark-mode-only green); now readable in both themes.",
+      "Clearer copy: Prop Name says what it actually defaults to (reference / point text / slide name — not always \"reference\"); the blank's QR switch is labelled; the Questions marker explains itself in four short points and shows whether this deck's QR is on.",
+    ],
+  },
   {
     version: '4.38.0',
     date: '2026-10-21',
@@ -5311,6 +5325,86 @@ function onDrop(e) {
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
+// ── Slide editor preview ────────────────────────────────────────────────────
+// The slide being edited, drawn with the active style exactly as export will:
+// Fit Width's per-slide box and line breaks when it's on, else the style box.
+const _spanText = b => Array.isArray(b) ? b.map(x => x.text || '').join('') : String(b || '');
+function slidePreviewData(slide) {
+  const pv = styleForExport(activeStyleScheme());
+  const fit = !!slide.fitWidth, propFit = fit && !!slide.propFitWidth;
+  const orDash = t => (t && String(t).trim()) ? t : '—';
+  if (slide.type === 'scripture') {
+    const body = (slide.bodies || [slide.body || []])[0] || [];
+    const pick = sp => (sp && sp.length ? sp : body).map(x => ({ text: x.text || '', bold: !!x.bold }));
+    if (fit && slide.bodyW) { pv.bodyW = slide.bodyW; if (slide.bodyX != null) pv.bodyX = slide.bodyX; }
+    if (propFit && slide.propBodyW) { pv.propBodyW = slide.propBodyW; if (slide.propBodyX != null) pv.propBodyX = slide.propBodyX; }
+    const spans = pick(fit ? slide._fitBrokenSpans : null);
+    return { pv, scene: 'scripture', content: {
+      spans: spans.some(x => x.text.trim()) ? spans : [{ text: '—' }],
+      propSpans: pick(propFit ? slide._fitPropBrokenSpans : null),
+      reference: orDash(slide.reference || slide.label) } };
+  }
+  if (slide.type === 'point') {
+    if (fit && slide.bodyW) { pv.pointW = slide.bodyW; if (slide.bodyX != null) pv.pointX = slide.bodyX; }
+    if (propFit && slide.propBodyW) { pv.propPointW = slide.propBodyW; if (slide.propBodyX != null) pv.propPointX = slide.propBodyX; }
+    if (slide.mode === 'revealing') {
+      const bullets = (slide.bullets || []).map(_spanText).filter(t => t.trim());
+      return { pv, scene: 'stacked', content: { point: orDash(bullets[bullets.length - 1]), bullets: bullets.length ? bullets : ['—'] } };
+    }
+    const main = (fit && slide._fitBrokenText) || slide.bodyText;
+    const led = slide.mode === 'split' ? ((propFit && slide._fitPropBrokenText) || slide.propBodyText || slide.bodyText)
+                                       : ((propFit && slide._fitPropBrokenText) || slide.bodyText);
+    return { pv, scene: 'point', content: { point: orDash(main), propPoint: orDash(led) } };
+  }
+  if (slide.type === 'start' || slide.type === 'end') {
+    const dflt = slide.type === 'start' ? 'Start of Notes' : 'End of Notes';
+    return { pv, scene: 'utility', content: { seText: slide.text ?? slide.label ?? dflt } };
+  }
+  return null;
+}
+let _slidePreviewOpen = (() => { try { return localStorage.getItem('deckpro.slidePreview') !== '0'; } catch (_) { return true; } })();
+function slidePreviewHTML(slide) {
+  const d = slidePreviewData(slide);
+  if (!d) return '';
+  const caption = slide.type === 'scripture' && (slide.bodies || []).length > 1 ? `Preview · first of ${(slide.bodies || []).length} slides` : 'Preview';
+  return `<div class="slp-preview${_slidePreviewOpen ? '' : ' slp-closed'}">
+    <button type="button" class="slp-toggle" aria-expanded="${_slidePreviewOpen}">${_slidePreviewOpen ? '▾' : '▸'} ${caption}
+      <span class="slp-style">${esc(activeStyleScheme().name || '')}</span></button>
+    ${_slidePreviewOpen ? `<div class="slp-body">${renderTextPreview(d.pv, d.scene, [], '', false, false, d.content)}</div>` : ''}
+  </div>`;
+}
+// Insert the preview under the slide title and keep it in step with edits.
+function mountSlidePreview(panel, slide) {
+  const html = slidePreviewHTML(slide);
+  if (!html) return;
+  const h2 = panel.querySelector('.slide-form > h2');
+  if (!h2) return;
+  h2.insertAdjacentHTML('afterend', html);
+  _tpLayout(panel.querySelector('.slp-preview'));
+  if (panel._spWired) return;
+  panel._spWired = true;
+  let timer = 0;
+  const refresh = () => {
+    const host = panel.querySelector('.slp-preview');
+    const cur = state.slides.find(x => x.id === state.activeId);
+    if (!host || !cur) return;
+    host.outerHTML = slidePreviewHTML(cur);
+    _tpLayout(panel.querySelector('.slp-preview'));
+  };
+  const schedule = () => { clearTimeout(timer); timer = setTimeout(refresh, 150); };
+  panel.addEventListener('input', e => { if (!e.target.closest('.slp-preview')) schedule(); });
+  panel.addEventListener('change', e => { if (!e.target.closest('.slp-preview')) schedule(); });
+  panel.addEventListener('click', e => {
+    if (e.target.closest('.slp-toggle')) {
+      _slidePreviewOpen = !_slidePreviewOpen;
+      try { localStorage.setItem('deckpro.slidePreview', _slidePreviewOpen ? '1' : '0'); } catch (_) {}
+      refresh();
+      return;
+    }
+    if (panel.querySelector('.slp-preview')) schedule(); // Fit Width / mode buttons etc.
+  });
+}
+
 function renderMain() {
   const panel = document.getElementById('main-panel');
 
@@ -5331,6 +5425,7 @@ function renderMain() {
 
   if (slide.type === 'start' || slide.type === 'end') {
     panel.innerHTML = startEndForm(slide);
+    mountSlidePreview(panel, slide);
     attachStartEndHandlers(slide);
     return;
   }
@@ -5345,6 +5440,7 @@ function renderMain() {
     case 'qrmarker':  panel.innerHTML = qrMarkerForm(slide);  return; // no form fields to wire
     default:          panel.innerHTML = '<div class="panel-empty">Unknown type</div>'; return;
   }
+  mountSlidePreview(panel, slide);
   attachFormHandlers(slide);
 }
 
@@ -5971,11 +6067,11 @@ function attachSchemesMacrosTab(containerId) {
   function badgeHtml() {
     const s = getScheme();
     const inherit = !s || s.macros == null;
-    return `<div class="wf-row">
-      <span class="wf-badge ${inherit ? 'wf-inherit' : 'wf-custom'}">${inherit ? '● Using Global' : '● Custom'}</span>
-      ${inherit ? '' : `<button class="btn-sm wf-reset" type="button" id="smac-wf-reset">↺ Reset to Global</button>`}
-      <button class="btn-sm wf-push" type="button" id="smac-wf-push">↑ Push to Global</button>
-    </div>`;
+    return `<div class="pt-status">${inherit
+      ? '<span class="pt-status-txt pt-muted">From Global — change anything to set it for this style only</span>'
+      : `<span class="pt-status-txt">Set for this style</span><span class="pt-status-btns">
+          <button class="btn-sm" type="button" id="smac-wf-reset">↺ Use Global</button>
+          <button class="btn-sm" type="button" id="smac-wf-push">↑ Make Global</button></span>`}</div>`;
   }
 
   function rerender() {
@@ -6104,11 +6200,11 @@ function attachSchemesStageTab(containerId) {
   function badgeHtml() {
     const s = getScheme();
     const inherit = !s || s.stageDisplays == null;
-    return `<div class="wf-row">
-      <span class="wf-badge ${inherit ? 'wf-inherit' : 'wf-custom'}">${inherit ? '● Using Global' : '● Custom'}</span>
-      ${inherit ? '' : `<button class="btn-sm wf-reset" type="button" id="sstage-wf-reset">↺ Reset to Global</button>`}
-      <button class="btn-sm wf-push" type="button" id="sstage-wf-push">↑ Push to Global</button>
-    </div>`;
+    return `<div class="pt-status">${inherit
+      ? '<span class="pt-status-txt pt-muted">From Global — change anything to set it for this style only</span>'
+      : `<span class="pt-status-txt">Set for this style</span><span class="pt-status-btns">
+          <button class="btn-sm" type="button" id="sstage-wf-reset">↺ Use Global</button>
+          <button class="btn-sm" type="button" id="sstage-wf-push">↑ Make Global</button></span>`}</div>`;
   }
 
   const STAGE_ICON = `<svg style="width:10px;height:10px;vertical-align:middle;margin-right:3px" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="1.3" width="6" height="4.2" rx="0.6" stroke="currentColor" stroke-width="1.1"/><path d="M5 5.5v1.6M3.3 7.9h3.4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>`;
@@ -6243,147 +6339,217 @@ function attachSchemesResponseCardTab(containerId) {
   const ROLE_LABEL = { title: 'Title', r1: 'Response 1', r2: 'Response 2', r3: 'Response 3', r4: 'Response 4', custom: 'Custom' };
   const families = (typeof _fontFamilyMap === 'object' && _fontFamilyMap) ? Object.keys(_fontFamilyMap).sort((a, b) => a.localeCompare(b)) : [];
 
-  // Read-only: what to DISPLAY. Does not mutate — s.rcElements stays null
-  // (inheriting Global) until an actual edit forks it via fork() below.
-  function resolvedElements() {
-    const s = getScheme();
-    return s?.rcElements ?? ensureGlobalRcElements();
-  }
-  // Fork point: the first edit on an inheriting scheme materializes a copy of
-  // Global's current elements into the scheme, then detaches going forward.
+  // Read-only: what to DISPLAY. s.rcElements stays null (following Global)
+  // until an actual edit forks it via fork().
+  const resolvedElements = () => getScheme()?.rcElements ?? ensureGlobalRcElements();
   function fork() {
     const s = getScheme(); if (!s) return null;
     if (s.rcElements == null) s.rcElements = deepClone(ensureGlobalRcElements());
     return s;
   }
+  // What export falls back to for an empty font/size/colour (buildProp's
+  // makePropStyle): the LED wall's Title for the title element, Body otherwise.
+  const inherited = (pv, elObj) => {
+    const t = elObj.role === 'title';
+    return {
+      font: t ? pv.propTitleFont : pv.propBodyFont,
+      size: t ? pv.propTitleSize : pv.propBodySize,
+      color: ((t ? pv.propTitleFontAdv : pv.propBodyFontAdv) || {}).color || '#ffffff',
+      lbl: t ? `${dn('ledWall')} Title` : `${dn('ledWall')} Body`,
+    };
+  };
+  const textOf = elObj => FROM_DECK.includes(elObj.role)
+    ? ((state.config.responses || {})[elObj.role] || ROLE_LABEL[elObj.role])
+    : (elObj.text || elObj.name || '');
 
-  function card(elObj, idx) {
-    const fromDeck = FROM_DECK.includes(elObj.role);
-    const isCustom = elObj.role === 'custom';
-    const curFam = parseFontPS(elObj.font || '').family;
-    const famOpts = `<option value=""${!elObj.font ? ' selected' : ''}>(inherit)</option>` +
-      families.map(f => `<option value="${esc(f)}"${f === curFam ? ' selected' : ''}>${esc(f)}</option>`).join('');
-    const styles = (_fontFamilyMap && _fontFamilyMap[curFam]) || [];
-    const styOpts = elObj.font
-      ? styles.map(({ style, postscript }) => `<option value="${esc(postscript)}"${postscript === elObj.font ? ' selected' : ''}>${esc(style)}</option>`).join('')
-      : '<option value="">—</option>';
-    const num = (fld, val) => `<input type="number" class="rc-inp sz-input" data-idx="${idx}" data-fld="${fld}" value="${val ?? 0}" step="1">`;
-    return `
-      <div class="tcard rc-el-card" data-idx="${idx}">
-        <div class="rc-el-hd" style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-          <span class="rc-el-role" style="font-size:11px;color:var(--muted);min-width:74px">${esc(ROLE_LABEL[elObj.role] || 'Element')}</span>
-          <input type="text" class="rc-inp" data-idx="${idx}" data-fld="name" value="${esc(elObj.name || '')}" placeholder="Element name" style="flex:1">
-          ${isCustom ? `<button class="btn-custom-del rc-el-del" data-idx="${idx}" title="Remove">×</button>` : ''}
-        </div>
-        <div class="rc-el-text" style="margin-bottom:6px">
-          ${fromDeck
-            ? `<input type="text" class="rc-inp" value="" placeholder="Text comes from the Response Card item" disabled style="width:100%;opacity:.6">`
-            : `<input type="text" class="rc-inp" data-idx="${idx}" data-fld="text" value="${esc(elObj.text || '')}" placeholder="Text" style="width:100%">`}
-        </div>
-        <div class="rc-el-style" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
-          <select class="rc-sel" data-idx="${idx}" data-fld="fontFamily">${famOpts}</select>
-          <select class="rc-sel" data-idx="${idx}" data-fld="fontWeight" ${elObj.font ? '' : 'disabled'}>${styOpts}</select>
-          <input type="number" class="rc-inp sz-input" data-idx="${idx}" data-fld="size" value="${elObj.size || ''}" placeholder="auto" step="1" style="width:64px">
-          <input type="text" class="rc-inp color-hex" data-idx="${idx}" data-fld="color" value="${(elObj.color || '').replace(/^#/, '')}" placeholder="color" maxlength="6" style="width:74px">
-          <span class="segmented-control rc-align" data-idx="${idx}">
-            ${['left', 'center', 'right'].map(a => `<button data-idx="${idx}" data-align="${a}" class="${(elObj.align || 'center') === a ? 'active' : ''}">${a[0].toUpperCase()}</button>`).join('')}
-          </span>
-        </div>
-        <div class="rc-el-pos" style="display:flex;gap:6px;align-items:center">
-          <span style="font-size:11px;color:var(--muted)">X</span>${num('x', elObj.x)}
-          <span style="font-size:11px;color:var(--muted)">Y</span>${num('y', elObj.y)}
-          <span style="font-size:11px;color:var(--muted)">W</span>${num('w', elObj.w)}
-          <span style="font-size:11px;color:var(--muted)">H</span>${num('h', elObj.h)}
-        </div>
-      </div>`;
-  }
-
-  function badgeHtml() {
-    const s = getScheme();
-    const inherit = !s || s.rcElements == null;
-    return `<div class="wf-row">
-      <span class="wf-badge ${inherit ? 'wf-inherit' : 'wf-custom'}">${inherit ? '● Using Global' : '● Custom'}</span>
-      ${inherit ? '' : `<button class="btn-sm wf-reset" type="button" id="rc-wf-reset">↺ Reset to Global</button>`}
-      <button class="btn-sm wf-push" type="button" id="rc-wf-push">↑ Push to Global</button>
+  function preview(pv, els, sel) {
+    const cw = pv.propCanvasW || 3200, ch = pv.propCanvasH || 1280;
+    const boxes = els.map((e, i) => {
+      const inh = inherited(pv, e);
+      const adv = { ...FONT_ADV_DEFAULTS(), color: e.color || inh.color, alignment: e.align === 'left' ? '' : (e.align || 'center'), verticalAlignment: 'middle' };
+      return _tpEl(pv, cw, ch, { row: `rc${i}`, box: [e.x ?? 0, e.y ?? 0, e.w ?? 2600, e.h ?? 150], font: e.font || inh.font,
+        size: e.size || inh.size, adv, spans: [{ text: textOf(e) }], sel: i === sel });
+    }).join('');
+    return `<div class="tp-canvas-block">
+      <div class="lp-canvas-lbl">${esc(dn('ledWall'))} · Response Card · ${Math.round(cw)}×${Math.round(ch)}</div>
+      <div class="tp-canvas tp-led" data-cw="${cw}" style="aspect-ratio:${cw} / ${ch}">${boxes}</div>
     </div>`;
   }
 
-  function rerender() {
+  function render() {
+    const s = getScheme();
+    const pv = styleForExport(s);
     const els = resolvedElements();
-    el.querySelector('.rc-badge-wrap').innerHTML = badgeHtml();
-    el.querySelector('.rc-list').innerHTML = els.map((e, i) => card(e, i)).join('');
+    if (_rcSel >= els.length) _rcSel = 0;
+    const cur = els[_rcSel];
+    const own = s?.rcElements != null;
+    const inh = cur ? inherited(pv, cur) : null;
+    const curFam = cur?.font ? (fontFamilyOf(cur.font) || parseFontPS(cur.font).family) : '';
+    const famOpts = `<option value=""${!cur?.font ? ' selected' : ''}>Same as ${esc(inh?.lbl || '')}</option>` +
+      families.map(f => `<option value="${esc(f)}"${f === curFam ? ' selected' : ''}>${esc(f)}</option>`).join('');
+    const styles = (_fontFamilyMap && _fontFamilyMap[curFam]) || [];
+    const styOpts = cur?.font
+      ? (styles.map(({ style, postscript }) => `<option value="${esc(postscript)}"${postscript === cur.font ? ' selected' : ''}>${esc(style)}</option>`).join('') || `<option value="${esc(cur.font)}">${esc(parseFontPS(cur.font).style || 'Regular')}</option>`)
+      : '<option value="">—</option>';
+    const num = (fld, label) => `<div class="tp-num">${label}<span class="tp-cell"><input type="number" class="tp-input rc-num" data-fld="${fld}" value="${cur?.[fld] ?? 0}" step="1"><span class="tp-unit">px</span></span></div>`;
+
+    el.innerHTML = `
+      <div class="tp-preview rc-preview">${preview(pv, els, _rcSel)}
+        <p class="lt-note">Drag a box to move it, or its corner to resize. Responses 1–4 show this week's text from the Response Card item.</p>
+      </div>
+      <div class="tp-body">
+        <nav class="tp-list">
+          <div class="tp-list-sec">Elements</div>
+          ${els.map((e, i) => `<div role="button" tabindex="0" class="tp-list-item rc-item${i === _rcSel ? ' active' : ''}" data-idx="${i}"><span>${esc(e.name || ROLE_LABEL[e.role] || 'Element')}</span>${e.role === 'custom' ? '<span class="tp-tag">custom</span>' : ''}</div>`).join('')}
+          <button type="button" class="btn-sm rc-add" style="margin-top:8px">+ Add element</button>
+        </nav>
+        <div class="tp-insp">
+          ${cur ? `
+          <div class="tp-insp-hd">
+            <div><span class="tp-insp-sec">${esc(ROLE_LABEL[cur.role] || 'Element')}</span><span class="tp-insp-name">${esc(cur.name || '')}</span></div>
+            ${cur.role === 'custom' ? '<button type="button" class="btn-sm rc-del">Remove</button>' : ''}
+          </div>
+          <div class="tp-group">
+            <div class="pt-status">${own
+              ? `<span class="pt-status-txt">Set for this style</span><span class="pt-status-btns"><button type="button" class="btn-sm rc-use-global">↺ Use Global</button><button type="button" class="btn-sm rc-make-global">↑ Make Global</button></span>`
+              : '<span class="pt-status-txt pt-muted">From Global — change anything to set it for this style only</span>'}</div>
+          </div>
+          <div class="tp-group">
+            <div class="tp-group-lbl">Content</div>
+            <div class="tp-row">
+              <div class="tp-num tp-grow">Object name in ProPresenter<input type="text" class="tp-input rc-txt" data-fld="name" value="${esc(cur.name || '')}" style="width:100%;text-align:left"></div>
+            </div>
+            <div class="tp-row">
+              ${FROM_DECK.includes(cur.role)
+                ? `<div class="tp-num tp-grow">Text<span class="tp-na">From the Response Card item: “${esc((state.config.responses || {})[cur.role] || 'empty this week')}”</span></div>`
+                : `<div class="tp-num tp-grow">Text<input type="text" class="tp-input rc-txt" data-fld="text" value="${esc(cur.text || '')}" style="width:100%;text-align:left"></div>`}
+            </div>
+          </div>
+          <div class="tp-group">
+            <div class="tp-group-lbl">Text style <span class="tp-group-sub">blank = same as ${esc(inh.lbl)}</span></div>
+            <div class="tp-row">
+              <div class="tp-num tp-grow">Font<select class="tp-select rc-sel" data-fld="fontFamily">${famOpts}</select></div>
+              <div class="tp-num">Weight<select class="tp-select rc-sel" data-fld="fontWeight" ${cur.font ? '' : 'disabled'}>${styOpts}</select></div>
+            </div>
+            <div class="tp-row">
+              <div class="tp-num">Size<span class="tp-cell"><input type="number" class="tp-input rc-num${cur.size ? '' : ' lt-inherit'}" data-fld="size" value="${cur.size || ''}" placeholder="${inh.size}" step="1"><span class="tp-unit">pt</span></span></div>
+              <div class="tp-num">Colour<span class="tp-cell"><input type="color" class="tp-color rc-color" value="${normalizeHexColor(cur.color || inh.color)}">${cur.color ? '<button type="button" class="btn-sm rc-color-clear" title="Use the inherited colour">↺</button>' : ''}</span></div>
+              <div class="tp-num">Align<span class="tp-cell tp-seg">${['left', 'center', 'right'].map(a =>
+                `<button type="button" class="sg-align-cell tp-align rc-align${(cur.align || 'center') === a ? ' on' : ''}" data-align="${a}">${a[0].toUpperCase() + a.slice(1)}</button>`).join('')}</span></div>
+            </div>
+          </div>
+          <div class="tp-group">
+            <div class="tp-group-lbl">Position &amp; size</div>
+            <div class="tp-row">${num('x', 'X')}${num('y', 'Y')}${num('w', 'Width')}${num('h', 'Height')}</div>
+            <div class="tp-row"><button type="button" class="btn-sm rc-center">Center horizontally</button></div>
+          </div>` : '<p class="mo-empty">No elements.</p>'}
+        </div>
+      </div>`;
+    _tpLayout(el);
   }
 
-  el.innerHTML = `
-    <p style="color:var(--muted);font-size:12px;margin:0 0 10px">
-      Elements on the LED wall (display 2) response card. Response 1–4 text comes from the Response Card item in your deck; everything else is set here. Empty font/size/colour inherit your scheme's prop fonts.
-    </p>
-    <div class="rc-badge-wrap"></div>
-    <div class="rc-list"></div>
-    <div style="display:flex;justify-content:flex-end;margin-top:8px">
-      <button class="btn-sm" id="rc-add-btn">+ Add Element</button>
-    </div>
-  `;
-  rerender();
-
-  // Text/name/number/colour inputs — update in place (no re-render, keep focus)
-  el.addEventListener('input', e => {
-    const t = e.target;
-    if (!t.classList.contains('rc-inp')) return;
-    const idx = parseInt(t.dataset.idx, 10); const fld = t.dataset.fld;
-    const s = fork(); if (isNaN(idx) || !s?.rcElements?.[idx] || !fld) return;
-    if (['x', 'y', 'w', 'h', 'size'].includes(fld)) s.rcElements[idx][fld] = parseInt(t.value, 10) || 0;
-    else if (fld === 'color') s.rcElements[idx].color = t.value.trim() ? '#' + t.value.replace(/^#/, '') : '';
-    else s.rcElements[idx][fld] = t.value;
+  // Edit helper: fork from Global, change the selected element, save, redraw.
+  const edit = (fn, redraw = true) => {
+    const s = fork(); const e = s?.rcElements?.[_rcSel]; if (!e) return;
+    fn(e, s);
     saveState();
-    el.querySelector('.rc-badge-wrap').innerHTML = badgeHtml();
-  });
+    if (redraw) render();
+  };
 
-  // Font family/weight selects + align/add/remove — re-render
-  el.addEventListener('change', e => {
-    const t = e.target;
-    if (!t.classList.contains('rc-sel')) return;
-    const idx = parseInt(t.dataset.idx, 10); const s = fork();
-    if (isNaN(idx) || !s?.rcElements?.[idx]) return;
-    if (t.dataset.fld === 'fontFamily') {
-      const fam = t.value;
-      s.rcElements[idx].font = fam ? ((_fontFamilyMap?.[fam]?.[0]?.postscript) || fam) : '';
-    } else if (t.dataset.fld === 'fontWeight') {
-      s.rcElements[idx].font = t.value;
-    }
-    saveState(); rerender();
-  });
+  render();
 
   el.addEventListener('click', e => {
-    const align = e.target.closest('.rc-align button');
-    if (align) {
-      const idx = parseInt(align.dataset.idx, 10); const s = fork();
-      if (!isNaN(idx) && s?.rcElements?.[idx]) { s.rcElements[idx].align = align.dataset.align; saveState(); rerender(); }
+    const item = e.target.closest('.rc-item');
+    if (item) { _rcSel = Number(item.dataset.idx); render(); return; }
+    const box = e.target.closest('.tp-el');
+    if (box && !el._dragged) { _rcSel = Number(box.dataset.row.slice(2)); render(); return; }
+    if (e.target.closest('.rc-align')) { edit(x => { x.align = e.target.closest('.rc-align').dataset.align; }); return; }
+    if (e.target.closest('.rc-color-clear')) { edit(x => { x.color = ''; }); return; }
+    if (e.target.closest('.rc-center')) {
+      edit(x => { x.x = Math.round(((styleForExport(getScheme()).propCanvasW || 3200) - (x.w ?? 0)) / 2); });
       return;
     }
-    if (e.target.classList.contains('rc-el-del')) {
-      const idx = parseInt(e.target.dataset.idx, 10); const s = fork();
-      if (!isNaN(idx) && s?.rcElements) { s.rcElements.splice(idx, 1); saveState(); rerender(); }
-      return;
+    if (e.target.closest('.rc-del')) {
+      const s = fork(); if (!s) return;
+      s.rcElements.splice(_rcSel, 1); _rcSel = Math.max(0, _rcSel - 1);
+      saveState(); render(); return;
     }
-    if (e.target.id === 'rc-add-btn') {
+    if (e.target.closest('.rc-add')) {
       const s = fork(); if (!s) return;
       s.rcElements.push({ id: uid(), role: 'custom', name: `Custom ${s.rcElements.filter(x => x.role === 'custom').length + 1}`, text: '', x: 400, y: 1080, w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' });
-      saveState(); rerender();
-      return;
+      _rcSel = s.rcElements.length - 1;
+      saveState(); render(); return;
     }
-    if (e.target.id === 'rc-wf-reset') {
-      const s = getScheme(); if (!s) return;
-      s.rcElements = null;
-      saveState(); rerender();
-      return;
+    if (e.target.closest('.rc-use-global')) { const s = getScheme(); if (s) { s.rcElements = null; saveState(); render(); } return; }
+    if (e.target.closest('.rc-make-global')) {
+      if (!confirm('Make these Response Card elements the Global default?\n\nStyles that follow Global will use them too.')) return;
+      state.globalRcElements = deepClone(resolvedElements());
+      const s = getScheme(); if (s) s.rcElements = null;
+      saveState(); render();
+      toast('success', 'Made Global', 'Styles following Global now use these Response Card elements.');
     }
-    if (e.target.id === 'rc-wf-push') {
-      const els = deepClone(resolvedElements());
-      state.globalRcElements = els;
-      saveState(); rerender();
-      toast('success', 'Pushed to Global', 'Every style inheriting Response Card elements will now use this.');
+  });
+  el.addEventListener('keydown', e => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.rc-item')) { e.preventDefault(); e.target.click(); }
+  });
+  // Typing: save in place (keeps focus), refresh only the preview.
+  el.addEventListener('input', e => {
+    const t = e.target;
+    if (t.classList.contains('rc-txt')) {
+      edit(x => { x[t.dataset.fld] = t.value; }, false);
+    } else if (t.classList.contains('rc-num')) {
+      const v = parseInt(t.value, 10);
+      edit(x => { x[t.dataset.fld] = Number.isFinite(v) ? v : 0; }, false);
+    } else if (t.classList.contains('rc-color')) {
+      edit(x => { x.color = t.value; }, false);
+    } else return;
+    const host = el.querySelector('.rc-preview .tp-canvas-block');
+    if (host) { host.outerHTML = preview(styleForExport(getScheme()), resolvedElements(), _rcSel); _tpLayout(el); }
+  });
+  el.addEventListener('change', e => {
+    const t = e.target;
+    if (t.classList.contains('rc-sel')) {
+      edit(x => {
+        if (t.dataset.fld === 'fontFamily') x.font = t.value ? defaultFontStyle(t.value) : '';
+        else x.font = t.value;
+      });
+    } else if (t.classList.contains('rc-txt') || t.classList.contains('rc-num') || t.classList.contains('rc-color')) {
+      render(); // list names / status line catch up
     }
+  });
+
+  // Drag the selected box to move it, or its corner to resize.
+  el.addEventListener('pointerdown', e => {
+    const box = e.target.closest('.rc-preview .tp-el.sel');
+    if (!box || e.button !== 0) return;
+    const canvas = box.closest('.tp-canvas');
+    const rect = canvas.getBoundingClientRect();
+    const cw = Number(canvas.dataset.cw), scale = rect.width / cw, ch = rect.height / scale;
+    const er = box.getBoundingClientRect();
+    const resize = e.clientX > er.right - 14 && e.clientY > er.bottom - 14;
+    const cur = resolvedElements()[_rcSel];
+    const start = { x: cur.x ?? 0, y: cur.y ?? 0, w: cur.w ?? 0, h: cur.h ?? 0 };
+    const next = { ...start };
+    el._dragged = false;
+    box.setPointerCapture(e.pointerId);
+    const move = ev => {
+      const dx = (ev.clientX - e.clientX) / scale, dy = (ev.clientY - e.clientY) / scale;
+      if (Math.abs(dx) + Math.abs(dy) > 2) el._dragged = true;
+      if (resize) { next.w = Math.max(10, Math.round(start.w + dx)); next.h = Math.max(10, Math.round(start.h + dy)); }
+      else {
+        next.x = Math.round(start.x + dx); next.y = Math.round(start.y + dy);
+        if (Math.abs(next.x + next.w / 2 - cw / 2) < 8 / scale) next.x = Math.round((cw - next.w) / 2);
+      }
+      box.style.left = `${(next.x / cw * 100).toFixed(3)}%`; box.style.top = `${(next.y / ch * 100).toFixed(3)}%`;
+      box.style.width = `${(next.w / cw * 100).toFixed(3)}%`; box.style.height = `${(next.h / ch * 100).toFixed(3)}%`;
+      for (const f of ['x', 'y', 'w', 'h']) { const i = el.querySelector(`.rc-num[data-fld="${f}"]`); if (i) i.value = next[f]; }
+    };
+    const up = () => {
+      box.removeEventListener('pointermove', move); box.removeEventListener('pointerup', up); box.removeEventListener('pointercancel', up);
+      if (el._dragged) edit(x => Object.assign(x, next));
+      setTimeout(() => { el._dragged = false; }, 0);
+    };
+    box.addEventListener('pointermove', move); box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
   });
 }
 
@@ -8256,16 +8422,18 @@ function _tpEl(pv, cw, ch, o) {
       margin:${u(a.paragraphSpacingBefore)} 0 ${u(a.paragraphSpacingAfter)}">${inner}</div></div>`;
 }
 
-function renderTextPreview(pv, scene, selRow, hint, showStrip = true, showScenes = true) {
+function renderTextPreview(pv, scene, selRow, hint, showStrip = true, showScenes = true, content = null) {
   // selRow: one row id, or a list of them (the Style tab highlights every
   // element a slot feeds).
   const selSet = new Set([].concat(selRow || []));
   const isSel = o => selSet.has(o.row) || (o.alsoSel || []).some(r => selSet.has(r));
-  const smp = _tpSamples();
+  // content: a real slide's text (slide editor preview) instead of the samples.
+  const smp = { ..._tpSamples(), ...(content || {}) };
   const mainW = pv.canvasW || 1920, mainH = pv.canvasH || 1080;
   const propW = pv.propCanvasW || 3200, propH = pv.propCanvasH || 1280;
   const L = (o) => _tpEl(pv, propW, propH, { ...o, sel: isSel(o) });
   const bodySpans = smp.spans.map(sp => ({ text: sp.text, alt: !!sp.bold }));
+  const propBodySpans = (smp.propSpans || smp.spans).map(sp => ({ text: sp.text, alt: !!sp.bold }));
   const box = (p, fb) => [pv[p + 'X'] ?? pv[fb + 'X'] ?? 0, pv[p + 'Y'] ?? pv[fb + 'Y'] ?? 0, pv[p + 'W'] ?? pv[fb + 'W'] ?? 0, pv[p + 'H'] ?? pv[fb + 'H'] ?? 0];
   const queueSpans = [{ text: [smp.reference, 'Point 1', 'Blank', 'Point 2', 'Response Card'].join('\n') }];
 
@@ -8283,7 +8451,7 @@ function renderTextPreview(pv, scene, selRow, hint, showStrip = true, showScenes
       ? ({ row: 'point1', box: box('point', 'body'), font: pv.pointFont, size: pv.pointSize, adv: pv.pointFontAdv, spans: [{ text: smp.point }] })
       : '',
     scene === 'utility'
-      ? ({ row: 'se', box: box('startEnd'), font: pv.startEndFont, size: pv.startEndSize, adv: pv.startEndFontAdv, spans: [{ text: 'Start of Notes' }] })
+      ? ({ row: 'se', box: box('startEnd'), font: pv.startEndFont, size: pv.startEndSize, adv: pv.startEndFontAdv, spans: [{ text: smp.seText || 'Start of Notes' }] })
       : '',
     showContent ? ({ row: 'live', box: box('live'), font: pv.liveFont, size: pv.liveSize, adv: pv.liveFontAdv, spans: [{ text: 'live' }] }) : '',
   ].filter(Boolean);
@@ -8303,11 +8471,11 @@ function renderTextPreview(pv, scene, selRow, hint, showStrip = true, showScenes
   let led = '';
   if (scene === 'scripture' || scene === 'notes') {
     led = L({ row: 'body2', alsoSel: ['bold2'], anchor: true, box: box('propBody'), font: pv.propBodyFont, size: pv.propBodySize, adv: pv.propBodyFontAdv,
-              spans: bodySpans, altFont: pv.propBoldFont, altAdv: pv.propBoldFontAdv })
+              spans: propBodySpans, altFont: pv.propBoldFont, altAdv: pv.propBoldFontAdv })
         + L({ row: 'title2', box: box('propTitle'), font: pv.propTitleFont, size: pv.propTitleSize, adv: pv.propTitleFontAdv,
               spans: [{ text: smp.reference }], fill: pv.fillEnabled ? pv.titleFill : null, autoGap: pv.propAutoTitleY ? (pv.propTitleAutoGap ?? 16) : null });
   } else if (scene === 'point') {
-    led = L({ row: 'point2', box: box('propPoint', 'propBody'), font: pv.propPointFont, size: pv.propPointSize, adv: pv.propPointFontAdv, spans: [{ text: smp.point }] });
+    led = L({ row: 'point2', box: box('propPoint', 'propBody'), font: pv.propPointFont, size: pv.propPointSize, adv: pv.propPointFontAdv, spans: [{ text: smp.propPoint ?? smp.point }] });
   } else if (scene === 'stacked') {
     led = L({ row: 'pointStacked', box: box('propPoint', 'propBody'), font: pv.pointStackedFont, size: pv.pointStackedSize, adv: pv.pointStackedFontAdv,
               spans: [{ text: smp.bullets.join('\n') }] });
@@ -8967,6 +9135,7 @@ function renderStylePanel(panel) {
       stySel.innerHTML = styles.map(({ style, postscript }) =>
         `<option value="${esc(postscript)}">${esc(style)}</option>`
       ).join('') || `<option value="${esc(fam)}">${esc('Regular')}</option>`;
+      if (styles.length) stySel.value = defaultFontStyle(fam);
       if (!s.fontFields) s.fontFields = {};
       s.fontFields[field] = stySel.value;
       applyPreview();
@@ -8998,6 +9167,7 @@ function renderStylePanel(panel) {
       stySel.innerHTML = styles.map(({ style, postscript }) =>
         `<option value="${esc(postscript)}">${esc(style)}</option>`
       ).join('') || `<option value="${esc(fam)}">${esc('Regular')}</option>`;
+      if (styles.length) stySel.value = defaultFontStyle(fam);
       ensureSchemeTypography(s);
       s.typography[key] = stySel.value;
       applyPreview(); saveState(); renderStylePanel(panel);
@@ -9291,7 +9461,7 @@ function renderStylePanel(panel) {
       const key = sel.dataset.typokey;
       const fam = e.target.value;
       const styles = _fontFamilyMap?.[fam] || [];
-      const firstPS = styles[0]?.postscript || fam;
+      const firstPS = styles.length ? defaultFontStyle(fam) : fam;
       ensureSchemeTypography(s);
       s.typography[key] = firstPS;
       saveState();
@@ -9775,7 +9945,7 @@ function propSection(slide, features, { showTransition = true, idPrefix = 'fp', 
     parts.push(`
       <div class="field">
         <label data-tip-key="prop-name">Prop Name</label>
-        <input type="text" id="f-propName" spellcheck="false" value="${esc(propVal)}" placeholder="Auto-set from reference">
+        <input type="text" id="f-propName" spellcheck="false" value="${esc(propVal)}" placeholder="${slide.type === 'scripture' ? 'Uses the reference' : slide.type === 'point' ? 'Uses the point text' : 'Uses the slide name'}">
       </div>
     `);
   }
@@ -9851,7 +10021,7 @@ function blankForm(slide) {
       </h2>
       <div class="blank-qr-row" id="blank-qr-row">
         <div class="toggle qr-toggle-inline${effectiveQR(slide) ? ' on' : ''}" id="blank-qr-toggle" data-tip-key="qr-toggle"></div>
-        <label data-tip-key="qr-toggle" class="qr-toggle-label">QR</label>
+        <label data-tip-key="qr-toggle" class="qr-toggle-label">Show the QR code on this blank</label>
       </div>
       ${F.confidenceMonitor ? `
         ${customConfidenceMonitorSection('f-body', slide.spans || [])}
@@ -9949,15 +10119,16 @@ function qrMarkerForm(slide) {
   return `
     <div class="slide-form">
       <h2>Questions</h2>
-      <p style="color:var(--muted);font-size:13px;margin-top:4px">
-        A boundary: when this deck's QR toggle (Decks → edit this deck) is on,
-        blanks before this marker default to showing the QR macro, and blanks at or after it default to not.
-        With QR on it exports a "Questions" slide that fires the QR macro (nothing with QR off). With External Content
-        on (Styles → QR Code tab), that slide gets its own blank and fires the External Content start macro, and the
-        next slide fires the end macro.
-        Drag it anywhere in the deck to move the boundary. Any blank you've manually toggled with its own QR
-        switch keeps that choice regardless of where this marker is.
-      </p>
+      <div class="qm-info">
+        <p class="qm-lead">Marks where Questions starts. Drag it in the sidebar to move it.</p>
+        <ul class="qm-list">
+          <li><strong>Before this marker</strong>, blanks show the QR code by default; <strong>after it</strong>, they don't.</li>
+          <li>With this deck's QR on (Decks → edit this deck), it exports a <em>Questions</em> slide that fires the QR macro. With QR off it exports nothing.</li>
+          <li>With External Content on (Styles → QR Code), Questions also gets its own blank and fires the start macro; the next slide fires the end macro.</li>
+          <li>A blank whose QR switch you've set by hand keeps your choice wherever the marker is.</li>
+        </ul>
+        <p class="qm-state">This deck's QR is <strong>${state.config.qrCode ? 'on' : 'off'}</strong>.</p>
+      </div>
     </div>
   `;
 }
@@ -12695,6 +12866,7 @@ let _textSel   = null;          // selected region slug in the Text visual previ
 let _textRow   = 'body1';       // selected element in the Text tab inspector
 let _textScene = null;          // Text preview scene override (null = follow the selected element)
 let _paletteSlot  = 'font1';     // selected slot in the Style tab
+let _rcSel = 0;                  // selected element in Styles → Response Card
 let _paletteScene = 'scripture'; // Style tab preview scene
 
 function attachPdfHandlers() {
@@ -14636,6 +14808,17 @@ function buildFontFamilyMap() {
   _fontFamilyMap = map;
 }
 
+// The weight to land on when someone picks a font family: the family's plain
+// face, not whichever style sorts first alphabetically (usually "Bold").
+function defaultFontStyle(fam) {
+  const styles = _fontFamilyMap?.[fam] || [];
+  for (const want of ['regular', 'roman', 'book', 'medium', 'normal']) {
+    const hit = styles.find(x => (x.style || '').toLowerCase() === want);
+    if (hit) return hit.postscript;
+  }
+  return styles.find(x => !/italic|oblique/i.test(x.style || ''))?.postscript || styles[0]?.postscript || fam;
+}
+
 function parseFontPS(psName) {
   if (!psName) return { family: '', style: 'Regular' };
   const idx = psName.lastIndexOf('-');
@@ -15584,7 +15767,7 @@ function helpSections() {
     label: 'Scripture Slides',
     html: `
       <h3>Scripture</h3>
-      <p>A verse or passage slide. Enter the reference and body text by hand, or use <strong>Bible Lookup</strong> to fetch it. Each scripture slide also generates a matching prop for the ${D2}, and embeds the full verse text into its <strong>Slide Notes</strong> so it appears on the ${D3} in Pro7.</p>
+      <p>A verse or passage slide. Enter the reference and body text by hand, or use <strong>Bible Lookup</strong> to fetch it. A <strong>preview</strong> under the slide name shows this slide on the main screen and ${D2} with your style and Fit Width applied, and updates as you type (click its label to collapse it). Point and Start/End slides have one too. Each scripture slide also generates a matching prop for the ${D2}, and embeds the full verse text into its <strong>Slide Notes</strong> so it appears on the ${D3} in Pro7.</p>
 
       <h4>Bible Lookup</h4>
       <ol class="help-steps">
@@ -15832,7 +16015,7 @@ function helpSections() {
       </ul>
 
       <h3>Response Card tab</h3>
-      <p>Defines the elements on the ${D2} response card (Display&nbsp;2): a Title and Response 1–4, plus any custom elements. Each has an editable name (its Pro7 object name), text, position (X/Y/W/H) and style. The Response 1–4 <em>text</em> comes from the deck's Response Card item; everything else is set here.</p>
+      <p>Defines the elements on the ${D2} response card (Display&nbsp;2): a Title and Response 1–4, plus any custom elements. Like the Text and Layout tabs, it shows a live preview (with this week's responses), a list of elements, and an inspector for the one you pick: its Pro7 object name, text, font, size, colour, alignment and position. Drag a box in the preview to move it, or its corner to resize. A blank font, size or colour follows the ${D2} Title (for the title) or Body (for everything else). The Response 1–4 <em>text</em> comes from the deck's Response Card item; everything else is set here.</p>
       <p class="help-muted">Existing styles keep their current ${D2} look untouched — only new styles start out inheriting. Point Stacked (the dimmed revealed bullets) has no main-screen twin, so it stays independent.</p>
     `,
   },
