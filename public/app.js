@@ -2,9 +2,21 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.36.1';
+const APP_VERSION = '4.37.0';
 
 const CHANGELOG = [
+  {
+    version: '4.37.0',
+    date: '2026-10-21',
+    changes: [
+      "Styles → Layout is rebuilt like the Text and Style tabs. The table is replaced by a live preview with every box outlined, a list of boxes (Canvas, Body, Point, Title, Start / End, Live, Queue on each screen), and an inspector for the selected one: X / Y, Width / Height, snap-to-canvas buttons, and Auto Title Y with its gap.",
+      "New: drag a box in the preview to move it (it snaps to the canvas centre), or drag its corner to resize. It works in the below-the-screen strip too.",
+      "Whole-box ↺ Use Global / ↑ Make Global, and emptying a number now hands it back to Global (grey numbers come from Global).",
+      "Fixed: the centre / right / middle / bottom snap buttons treated a size the style takes from Global as 0, so centring Body on a new style put it half off the screen.",
+      "Fixed: clearing a Layout number saved it as NaN.",
+      "Fixed: clicking a box in the Layout preview no longer highlighted its row (the link between them had broken).",
+    ],
+  },
   {
     version: '4.36.1',
     date: '2026-10-21',
@@ -7427,211 +7439,6 @@ function fontAdvPanel(schemeKey, label, scheme, locked, extraColorFields = []) {
 }
 
 // Compact layout table for the Advanced section
-function lyRows() {
-  return [
-    { label: dn('mainScreen'), type: 'head' },
-    { label: 'Canvas',       cols: ['—','—','canvasW','canvasH'] },
-    { label: 'Body',         cols: ['bodyX','bodyY','bodyW','bodyH'], region: 'body' },
-    { label: 'Point',        cols: ['pointX','pointY','pointW','pointH'], region: 'point' },
-    { label: 'Title',        cols: ['titleX','titleY','titleW','titleH'], autoY: { field: 'autoTitleY', gapField: 'titleAutoGap' }, region: 'header' },
-    { label: 'Utility',      cols: ['startEndX','startEndY','startEndW','startEndH'], region: 'startEnd' },
-    { label: 'Live',         cols: ['liveX','liveY','liveW','liveH'], region: 'live' },
-    { label: 'Queue',        cols: ['queueX','queueY','queueW','queueH'], region: 'queue' },
-    { label: dn('ledWall'),  type: 'head', head: 'prop' },
-    { label: 'Canvas',       cols: [null,null,'propCanvasW','propCanvasH'] },
-    { label: 'Prop body',    cols: ['propBodyX','propBodyY','propBodyW','propBodyH'], region: 'propBody' },
-    { label: 'Prop point',   cols: ['propPointX','propPointY','propPointW','propPointH'], region: 'propPoint' },
-    { label: 'Prop title',   cols: ['propTitleX','propTitleY','propTitleW','propTitleH'], autoY: { field: 'propAutoTitleY', gapField: 'propTitleAutoGap' }, region: 'propHeader' },
-  ];
-}
-
-function lyTable(rows, scheme, dis) {
-  const glb = !dis ? ensureGlobalLayout() : ensureGlobalLayout();
-  const ov = (f) => {
-    if (!f || f === '—' || dis) return false;
-    const v = scheme[f];
-    if (v === undefined || v === null) return false;
-    const g = glb[f];
-    if (g === undefined) return false;
-    if (typeof g === 'number') return Math.abs(Number(v) - g) > 0.01;
-    return v !== g;
-  };
-  // Resolve: null scheme field falls back to global
-  const rv = (f) => (f && f !== '—') ? (scheme[f] ?? glb[f] ?? '') : '';
-
-  const numTd = (f) => {
-    if (!f || f === '—') return `<td class="sg-td"><span class="sg-na">—</span></td>`;
-    const o = ov(f) ? ' sg-td-scheme' : '';
-    return `<td class="sg-td${o}" data-ly-field="${f}">` +
-      `<input type="number" class="sg-num layout-num" id="ly-${f}" value="${rv(f)}" step="0.01" ${dis}></td>`;
-  };
-
-  let inProp = false;
-
-  const bodyRows = rows.map(row => {
-    if (row.type === 'head') {
-      if (row.head === 'prop') inProp = true;
-      return `<tr class="sg-section-hd"><th colspan="8">${esc(row.label)}</th></tr>`;
-    }
-    const [c0, c1, c2, c3] = row.cols;
-    const hasX = c0 && c0 !== '—';
-    const hasY = c1 && c1 !== '—';
-    const hasW = c2 && c2 !== '—';
-    const hasH = c3 && c3 !== '—';
-    const prop = inProp;
-
-    // Y cell — dimmed when auto-Y is on
-    const yDimmed = row.autoY && (scheme[row.autoY.field] ?? glb[row.autoY.field]);
-    const yTd = !hasY
-      ? `<td class="sg-td"><span class="sg-na">—</span></td>`
-      : `<td class="sg-td${ov(c1) ? ' sg-td-scheme' : ''}${yDimmed ? ' ly-y-dimmed' : ''}" data-ly-field="${c1}">` +
-        `<input type="number" class="sg-num layout-num" id="ly-${c1}" value="${rv(c1)}" step="0.01" ${dis}></td>`;
-
-    // Alignment buttons
-    const canAlign = (hasX || hasY) && !dis;
-    const near = (a, b) => Math.abs((a ?? NaN) - b) < 0.6;
-    const cW = prop ? (rv('propCanvasW') || 3200) : (rv('canvasW') || 1920);
-    const cH = prop ? (rv('propCanvasH') || 1280) : (rv('canvasH') || 1080);
-    const curX = rv(c0) || null, curW = rv(c2) || null;
-    const curY = rv(c1) || null, curH = rv(c3) || null;
-    const hActive = new Set();
-    if (hasX && hasW && curX !== null && curW !== null) {
-      if (near(curX, (cW - curW) / 2)) hActive.add('h-center');
-      else if (near(curX, 0))           hActive.add('h-left');
-      else if (near(curX, cW - curW))   hActive.add('h-right');
-    }
-    const vActive = new Set();
-    if (hasY && hasH && curY !== null && curH !== null) {
-      if (near(curY, (cH - curH) / 2)) vActive.add('v-middle');
-      else if (near(curY, 0))           vActive.add('v-top');
-      else if (near(curY, cH - curH))   vActive.add('v-bottom');
-    }
-    const ab = (align) => `class="ly-align-btn${hActive.has(align) || vActive.has(align) ? ' active' : ''}"`;
-
-    const alignCell = canAlign ? `<td class="sg-td" style="padding:2px 4px;white-space:nowrap">
-      <div class="ly-align-group">
-        ${hasX && hasW ? `
-          <button ${ab('h-left')}   data-align="h-left"   data-xf="${c0}" data-wf="${c2}" data-prop="${prop}" title="Align left"><svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="1" width="1.5" height="10" fill="currentColor" rx=".5"/><rect x="3" y="3" width="7" height="2.5" fill="currentColor" rx=".5"/><rect x="3" y="6.5" width="5" height="2.5" fill="currentColor" rx=".5"/></svg></button>
-          <button ${ab('h-center')} data-align="h-center" data-xf="${c0}" data-wf="${c2}" data-prop="${prop}" title="Center horizontally"><svg width="12" height="12" viewBox="0 0 12 12"><rect x="5.25" y="1" width="1.5" height="10" fill="currentColor" rx=".5"/><rect x="2" y="3" width="8" height="2.5" fill="currentColor" rx=".5"/><rect x="3" y="6.5" width="6" height="2.5" fill="currentColor" rx=".5"/></svg></button>
-          <button ${ab('h-right')}  data-align="h-right"  data-xf="${c0}" data-wf="${c2}" data-prop="${prop}" title="Align right"><svg width="12" height="12" viewBox="0 0 12 12"><rect x="9.5" y="1" width="1.5" height="10" fill="currentColor" rx=".5"/><rect x="2" y="3" width="7" height="2.5" fill="currentColor" rx=".5"/><rect x="4" y="6.5" width="5" height="2.5" fill="currentColor" rx=".5"/></svg></button>
-        ` : '<button class="ly-align-btn" style="visibility:hidden"></button><button class="ly-align-btn" style="visibility:hidden"></button><button class="ly-align-btn" style="visibility:hidden"></button>'}
-        ${hasY && hasH ? `
-          <button ${ab('v-top')}    data-align="v-top"    data-yf="${c1}" data-hf="${c3}" data-prop="${prop}" title="Align top"><svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="1.5" fill="currentColor" rx=".5"/><rect x="3" y="3" width="2.5" height="7" fill="currentColor" rx=".5"/><rect x="6.5" y="3" width="2.5" height="5" fill="currentColor" rx=".5"/></svg></button>
-          <button ${ab('v-middle')} data-align="v-middle" data-yf="${c1}" data-hf="${c3}" data-prop="${prop}" title="Center vertically"><svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="5.25" width="10" height="1.5" fill="currentColor" rx=".5"/><rect x="3" y="2" width="2.5" height="8" fill="currentColor" rx=".5"/><rect x="6.5" y="3" width="2.5" height="6" fill="currentColor" rx=".5"/></svg></button>
-          <button ${ab('v-bottom')} data-align="v-bottom" data-yf="${c1}" data-hf="${c3}" data-prop="${prop}" title="Align bottom"><svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="9.5" width="10" height="1.5" fill="currentColor" rx=".5"/><rect x="3" y="2" width="2.5" height="7" fill="currentColor" rx=".5"/><rect x="6.5" y="4" width="2.5" height="5" fill="currentColor" rx=".5"/></svg></button>
-        ` : '<button class="ly-align-btn" style="visibility:hidden"></button><button class="ly-align-btn" style="visibility:hidden"></button><button class="ly-align-btn" style="visibility:hidden"></button>'}
-      </div>
-    </td>` : `<td class="sg-td"></td>`;
-
-    // Auto Y + Gap — always emit 2 cells for consistent column count
-    let autoTds = `<td class="sg-td"></td><td class="sg-td"></td>`;
-    if (row.autoY) {
-      const { field, gapField } = row.autoY;
-      const checked = (scheme[field] ?? glb[field]) ? 'checked' : '';
-      const gapOv = ov(gapField) ? ' sg-td-scheme' : '';
-      autoTds = `<td class="sg-td">
-          <label class="ly-auto-y-chk-lbl">
-            <input type="checkbox" class="ly-auto-y-chk" id="ly-${field}" ${checked} ${dis}>
-            Auto
-          </label>
-        </td>
-        <td class="sg-td${gapOv}" data-ly-field="${gapField}">
-          <input type="number" class="sg-num layout-num" id="ly-${gapField}" value="${rv(gapField) || 16}" step="1" ${dis}>
-        </td>`;
-    }
-
-    return `<tr class="sg-row"${row.region ? ` data-region="${row.region}"` : ''}>
-      <td class="sg-row-lbl${row.region ? ' ly-row-name-click' : ''}">${esc(row.label)}</td>
-      ${numTd(c0)}
-      ${yTd}
-      ${numTd(c2)}
-      ${numTd(c3)}
-      ${alignCell}
-      ${autoTds}
-    </tr>`;
-  }).join('');
-
-  return `<table class="sg-table">
-    <thead>
-      <tr class="sg-grp-row">
-        <th rowspan="2" class="sg-corner"></th>
-        <th colspan="2" class="sg-grp">Position</th>
-        <th colspan="2" class="sg-grp">Size</th>
-        <th rowspan="2" class="sg-hd-solo">Align</th>
-        <th rowspan="2" class="sg-hd-solo">Auto Y</th>
-        <th rowspan="2" class="sg-hd-solo">Gap</th>
-      </tr>
-      <tr class="sg-col-row">
-        <th class="sg-col">X</th>
-        <th class="sg-col">Y</th>
-        <th class="sg-col">W</th>
-        <th class="sg-col">H</th>
-      </tr>
-    </thead>
-    <tbody>${bodyRows}</tbody>
-  </table>`;
-}
-
-function refreshAlignBtns(panel, scheme) {
-  const near = (a, b) => Math.abs((a ?? NaN) - b) < 0.6;
-  panel.querySelectorAll('.ly-align-btn[data-align]').forEach(btn => {
-    const align  = btn.dataset.align;
-    const isProp = btn.dataset.prop === 'true';
-    const cW = isProp ? (scheme.propCanvasW ?? 3200) : (scheme.canvasW ?? 1920);
-    const cH = isProp ? (scheme.propCanvasH ?? 1280) : (scheme.canvasH ?? 1080);
-    let active = false;
-    if (align === 'h-center') {
-      const x = scheme[btn.dataset.xf] ?? null, w = scheme[btn.dataset.wf] ?? null;
-      if (x !== null && w !== null) active = near(x, (cW - w) / 2);
-    } else if (align === 'h-left') {
-      const x = scheme[btn.dataset.xf] ?? null, w = scheme[btn.dataset.wf] ?? null;
-      if (x !== null && w !== null) active = near(x, 0) && !near(x, (cW - w) / 2);
-    } else if (align === 'h-right') {
-      const x = scheme[btn.dataset.xf] ?? null, w = scheme[btn.dataset.wf] ?? null;
-      if (x !== null && w !== null) active = near(x, cW - w) && !near(x, (cW - w) / 2);
-    } else if (align === 'v-middle') {
-      const y = scheme[btn.dataset.yf] ?? null, h = scheme[btn.dataset.hf] ?? null;
-      if (y !== null && h !== null) active = near(y, (cH - h) / 2);
-    } else if (align === 'v-top') {
-      const y = scheme[btn.dataset.yf] ?? null, h = scheme[btn.dataset.hf] ?? null;
-      if (y !== null && h !== null) active = near(y, 0) && !near(y, (cH - h) / 2);
-    } else if (align === 'v-bottom') {
-      const y = scheme[btn.dataset.yf] ?? null, h = scheme[btn.dataset.hf] ?? null;
-      if (y !== null && h !== null) active = near(y, cH - h) && !near(y, (cH - h) / 2);
-    }
-    btn.classList.toggle('active', active);
-  });
-}
-
-function refreshSchemePreviews(panel, scheme) {
-  const sv = styleForExport(scheme);
-  const mainW = sv.canvasW || 1920, mainH = sv.canvasH || 1080;
-  const propW = sv.propCanvasW || 3200, propH = sv.propCanvasH || 1280;
-  const pct = (v, d) => (v / d * 100).toFixed(2) + '%';
-  const REGION = {
-    queue:     [sv.queueX??0, sv.queueY??0, sv.queueW??0, sv.queueH??0, mainW, mainH],
-    body:      [sv.bodyX??0, sv.bodyY??0, sv.bodyW??0, sv.bodyH??0, mainW, mainH],
-    point:     [sv.pointX??sv.bodyX??0, sv.pointY??sv.bodyY??0, sv.pointW??sv.bodyW??0, sv.pointH??sv.bodyH??0, mainW, mainH],
-    header:    [sv.titleX??0, sv.titleY??0, sv.titleW??0, sv.titleH??0, mainW, mainH],
-    startEnd:  [sv.startEndX??0, sv.startEndY??0, sv.startEndW??0, sv.startEndH??0, mainW, mainH],
-    live:      [sv.liveX??0, sv.liveY??0, sv.liveW??0, sv.liveH??0, mainW, mainH],
-    propBody:  [sv.propBodyX??0, sv.propBodyY??0, sv.propBodyW??0, sv.propBodyH??0, propW, propH],
-    propPoint: [sv.propPointX??sv.propBodyX??0, sv.propPointY??sv.propBodyY??0, sv.propPointW??sv.propBodyW??0, sv.propPointH??sv.propBodyH??0, propW, propH],
-    propHeader:[sv.propTitleX??0, sv.propTitleY??0, sv.propTitleW??0, sv.propTitleH??0, propW, propH],
-  };
-  panel.querySelectorAll('.lp-region[data-region]').forEach(el => {
-    const d = REGION[el.dataset.region];
-    if (!d) return;
-    const [x, y, w, h, cw, ch] = d;
-    if (!w || !h) { el.style.display = 'none'; return; }
-    el.style.display = '';
-    el.style.left = pct(x, cw); el.style.top = pct(y, ch);
-    el.style.width = pct(w, cw); el.style.height = pct(h, ch);
-  });
-  panel.querySelectorAll('.lp-canvas[data-canvas="main"]').forEach(el => el.style.aspectRatio = `${mainW} / ${mainH}`);
-  panel.querySelectorAll('.lp-canvas[data-canvas="prop"]').forEach(el => el.style.aspectRatio = `${propW} / ${propH}`);
-}
-
 // ── Text-tab building blocks ────────────────────────────────────────────────
 // Renders the Font / Weight / Size / Color quick-controls for one text role.
 // Element IDs/classes match the originals so existing change handlers bind.
@@ -7730,44 +7537,6 @@ function schemePreviewPanel(scheme) {
 
 // Visual Layout preview — scaled Main + Prop canvases with clickable region boxes
 // linked to the layout table rows. (Phase 2; drag/resize is deferred — Phase 3.)
-function layoutPreview(scheme, sel) {
-  const sv = styleForExport(scheme);
-  const mainW = sv.canvasW || 1920, mainH = sv.canvasH || 1080;
-  const propW = sv.propCanvasW || 3200, propH = sv.propCanvasH || 1280;
-  // [slug, label, x, y, w, h] — drawn back-to-front so small boxes sit on top
-  const mainRegions = [
-    ['queue',     'Queue',        sv.queueX ?? 0,    sv.queueY ?? 0,    sv.queueW ?? 0,     sv.queueH ?? 0],
-    ['body',      'Body',         sv.bodyX ?? 0,     sv.bodyY ?? 0,     sv.bodyW ?? 0,      sv.bodyH ?? 0],
-    ['point',     'Point',        sv.pointX ?? sv.bodyX ?? 0, sv.pointY ?? sv.bodyY ?? 0, sv.pointW ?? sv.bodyW ?? 0, sv.pointH ?? sv.bodyH ?? 0],
-    ['header',    'Title',        sv.titleX ?? 0,    sv.titleY ?? 0,    sv.titleW ?? 0,     sv.titleH ?? 0],
-    ['startEnd',  'Utility',      sv.startEndX ?? 0, sv.startEndY ?? 0, sv.startEndW ?? 0,  sv.startEndH ?? 0],
-    ['live',      'Live',         sv.liveX ?? 0,     sv.liveY ?? 0,     sv.liveW ?? 0,      sv.liveH ?? 0],
-  ];
-  const propRegions = [
-    ['propBody',   'Prop body',   sv.propBodyX ?? 0, sv.propBodyY ?? 0, sv.propBodyW ?? 0,  sv.propBodyH ?? 0],
-    ['propPoint',  'Prop point',  sv.propPointX ?? sv.propBodyX ?? 0, sv.propPointY ?? sv.propBodyY ?? 0, sv.propPointW ?? sv.propBodyW ?? 0, sv.propPointH ?? sv.propBodyH ?? 0],
-    ['propHeader', 'Prop title',  sv.propTitleX ?? 0, sv.propTitleY ?? 0, sv.propTitleW ?? 0, sv.propTitleH ?? 0],
-  ];
-  const box = (cw, ch) => ([slug, lbl, x, y, w, h]) => {
-    if (!w || !h) return '';
-    const pct = (v, d) => (v / d) * 100;
-    return `<div class="lp-region lp-region-${slug}${sel === slug ? ' sel' : ''}" data-region="${slug}"
-      style="left:${pct(x, cw).toFixed(2)}%;top:${pct(y, ch).toFixed(2)}%;width:${pct(w, cw).toFixed(2)}%;height:${pct(h, ch).toFixed(2)}%"
-      title="${esc(lbl)}"><span class="lp-region-lbl">${esc(lbl)}</span></div>`;
-  };
-  return `
-    <div class="lp-wrap">
-      <div class="lp-canvas-block">
-        <div class="lp-canvas-lbl">${dn('mainScreen')} · ${Math.round(mainW)}×${Math.round(mainH)}</div>
-        <div class="lp-canvas" data-canvas="main" style="aspect-ratio:${mainW} / ${mainH}">${mainRegions.map(box(mainW, mainH)).join('')}</div>
-      </div>
-      <div class="lp-canvas-block">
-        <div class="lp-canvas-lbl">${dn('ledWall')} · ${Math.round(propW)}×${Math.round(propH)}</div>
-        <div class="lp-canvas" data-canvas="prop" style="aspect-ratio:${propW} / ${propH}">${propRegions.map(box(propW, propH)).join('')}</div>
-      </div>
-    </div>
-    <p class="style-group-hint" style="margin-top:8px">Click a region to highlight its row below. Boxes are drawn from this scheme's positions; off-canvas elements (e.g. Live) may sit outside the frame.</p>`;
-}
 
 // ── Styles → Style tab: the five shared slots, laid out like the Text tab ───
 // Live preview on top (every element the selected slot feeds is outlined),
@@ -7933,6 +7702,205 @@ function wirePaletteTab(root, getPv, rerender, gotoText) {
   });
 }
 
+// ── Styles → Layout tab: same preview / list / inspector shape as Text ──────
+// Positions are Pro7 canvas pixels. A null field follows Global live
+// (styleForExport fills it), so every read here goes through the resolved
+// style, and clearing a box hands the field back to Global.
+const LAYOUT_ELS = () => [
+  { id: 'canvas',     disp: 'main', lbl: 'Canvas',      canvas: ['canvasW', 'canvasH'] },
+  { id: 'body',       disp: 'main', lbl: 'Body',        p: 'body',     row: 'body1', scene: 'scripture', fit: true },
+  { id: 'point',      disp: 'main', lbl: 'Point',       p: 'point',    row: 'point1', scene: 'point', fit: true },
+  { id: 'title',      disp: 'main', lbl: 'Title',       p: 'title',    row: 'title1', scene: 'scripture', auto: ['autoTitleY', 'titleAutoGap'] },
+  { id: 'startEnd',   disp: 'main', lbl: 'Start / End', p: 'startEnd', row: 'se', scene: 'utility' },
+  { id: 'live',       disp: 'main', lbl: 'Live Badge',  p: 'live',     row: 'live', scene: 'scripture' },
+  { id: 'queue',      disp: 'main', lbl: 'Queue',       p: 'queue',    row: 'queue', scene: 'scripture' },
+  { id: 'propCanvas', disp: 'led',  lbl: 'Canvas',      canvas: ['propCanvasW', 'propCanvasH'] },
+  { id: 'propBody',   disp: 'led',  lbl: 'Body',        p: 'propBody',  row: 'body2', scene: 'scripture', fit: true },
+  { id: 'propPoint',  disp: 'led',  lbl: 'Point',       p: 'propPoint', row: 'point2', scene: 'point', fit: true, note: 'Stacked points use this box too.' },
+  { id: 'propTitle',  disp: 'led',  lbl: 'Title',       p: 'propTitle', row: 'title2', scene: 'scripture', auto: ['propAutoTitleY', 'propTitleAutoGap'] },
+];
+// Preview text → the layout box it sits in.
+const LAYOUT_ROW_TO_EL = {
+  body1: 'body', bold1: 'body', point1: 'point', title1: 'title', se: 'startEnd', live: 'live', queue: 'queue',
+  body2: 'propBody', bold2: 'propBody', point2: 'propPoint', pointStacked: 'propPoint', title2: 'propTitle',
+};
+const _lyFields = el => el.canvas ? el.canvas : ['X', 'Y', 'W', 'H'].map(k => el.p + k);
+
+function renderLayoutTab(rs, dis, pv) {
+  const els = LAYOUT_ELS();
+  const cur = els.find(e => e.id === _layoutEl) || els[1];
+  _layoutEl = cur.id;
+  const glb = ensureGlobalLayout();
+  const own = f => rs[f] != null && !(typeof glb[f] === 'number' && Math.abs(Number(rs[f]) - glb[f]) <= 0.01);
+  const elOwn = el => _lyFields(el).concat(el.auto || []).some(own);
+  const scene = _layoutScene || cur.scene || 'scripture';
+
+  const list = [['main', dn('mainScreen')], ['led', dn('ledWall')]].map(([d, lbl]) => `
+    <div class="tp-list-sec">${esc(lbl)}</div>
+    ${els.filter(e => e.disp === d).map(e => `
+      <div role="button" tabindex="0" class="tp-list-item lt-item${e.id === cur.id ? ' active' : ''}" data-el="${e.id}">
+        <span>${esc(e.lbl)}</span>
+        ${elOwn(e) ? '<span class="tp-dot" title="This style sets its own position or size here"></span>' : ''}
+      </div>`).join('')}`).join('');
+
+  const cw = cur.disp === 'led' ? (pv.propCanvasW || 3200) : (pv.canvasW || 1920);
+  const ch = cur.disp === 'led' ? (pv.propCanvasH || 1280) : (pv.canvasH || 1080);
+  const autoOn = cur.auto ? !!pv[cur.auto[0]] : false;
+  const num = (f, label, note = '') => `
+    <div class="tp-num">${label}
+      <div class="sg-td tp-cell${own(f) ? ' sg-td-scheme' : ''}" data-ly-field="${f}">
+        <input type="number" class="tp-input lt-num${rs[f] == null ? ' lt-inherit' : ''}" data-f="${f}" value="${Math.round((pv[f] ?? 0) * 100) / 100}" step="1" ${dis}${note ? ` title="${esc(note)}"` : ''}><span class="tp-unit">px</span>
+      </div>
+    </div>`;
+  const near = (a, b) => Math.abs(a - b) < 0.6;
+  const alignBtn = (a, title, svg) => {
+    const [x, y, w, h] = cur.p ? _lyFields(cur).map(f => Number(pv[f]) || 0) : [0, 0, 0, 0];
+    const on = { left: near(x, 0), center: near(x, (cw - w) / 2), right: near(x, cw - w),
+                 top: near(y, 0), middle: near(y, (ch - h) / 2), bottom: near(y, ch - h) }[a];
+    const blocked = autoOn && ['top', 'middle', 'bottom'].includes(a);
+    return `<button type="button" class="sg-align-cell tp-align lt-align${on ? ' on' : ''}" data-align="${a}" title="${title}" ${dis || (blocked ? 'disabled' : '')}>${svg}</button>`;
+  };
+  const I = {
+    left:   '<svg width="14" height="12" viewBox="0 0 14 12"><rect x="1" y="1" width="1.5" height="10" fill="currentColor"/><rect x="3.5" y="3" width="8" height="2.5" fill="currentColor"/><rect x="3.5" y="6.5" width="5" height="2.5" fill="currentColor"/></svg>',
+    center: '<svg width="14" height="12" viewBox="0 0 14 12"><rect x="6.25" y="1" width="1.5" height="10" fill="currentColor"/><rect x="2.5" y="3" width="9" height="2.5" fill="currentColor"/><rect x="4" y="6.5" width="6" height="2.5" fill="currentColor"/></svg>',
+    right:  '<svg width="14" height="12" viewBox="0 0 14 12"><rect x="11.5" y="1" width="1.5" height="10" fill="currentColor"/><rect x="2.5" y="3" width="8" height="2.5" fill="currentColor"/><rect x="5.5" y="6.5" width="5" height="2.5" fill="currentColor"/></svg>',
+    top:    '<svg width="14" height="12" viewBox="0 0 14 12"><rect x="1" y="1" width="12" height="1.5" fill="currentColor"/><rect x="3" y="3.5" width="2.5" height="7" fill="currentColor"/><rect x="7" y="3.5" width="2.5" height="4.5" fill="currentColor"/></svg>',
+    middle: '<svg width="14" height="12" viewBox="0 0 14 12"><rect x="1" y="5.25" width="12" height="1.5" fill="currentColor"/><rect x="3" y="1.5" width="2.5" height="9" fill="currentColor"/><rect x="7" y="3" width="2.5" height="6" fill="currentColor"/></svg>',
+    bottom: '<svg width="14" height="12" viewBox="0 0 14 12"><rect x="1" y="9.5" width="12" height="1.5" fill="currentColor"/><rect x="3" y="2" width="2.5" height="7" fill="currentColor"/><rect x="7" y="4.5" width="2.5" height="4.5" fill="currentColor"/></svg>',
+  };
+
+  const [fx, fy, fw, fh] = _lyFields(cur);
+  const inspector = cur.canvas ? `
+    <div class="tp-insp-hd">
+      <div><span class="tp-insp-sec">${esc(cur.disp === 'led' ? dn('ledWall') : dn('mainScreen'))}</span><span class="tp-insp-name">Canvas</span></div>
+      ${elOwn(cur) ? `<button type="button" class="btn-sm lt-use-global" ${dis}>↺ Use Global</button>` : ''}
+    </div>
+    <div class="tp-group">
+      <div class="tp-group-lbl">Size <span class="tp-group-sub">the output resolution ProPresenter draws at</span></div>
+      <div class="tp-row">${num(cur.canvas[0], 'Width')}${num(cur.canvas[1], 'Height')}</div>
+    </div>` : `
+    <div class="tp-insp-hd">
+      <div><span class="tp-insp-sec">${esc(cur.disp === 'led' ? dn('ledWall') : dn('mainScreen'))}</span><span class="tp-insp-name">${esc(cur.lbl)}</span></div>
+      ${elOwn(cur) ? `<span class="pt-status-btns">
+        <button type="button" class="btn-sm lt-use-global" ${dis}>↺ Use Global</button>
+        <button type="button" class="btn-sm lt-make-global" ${dis}>↑ Make Global</button></span>` : '<span class="tp-follow">From Global</span>'}
+    </div>
+    <div class="tp-group">
+      <div class="tp-group-lbl">Position <span class="tp-group-sub">drag the box in the preview, or type</span></div>
+      <div class="tp-row">
+        ${num(fx, 'X')}
+        ${autoOn ? `<div class="tp-num">Y<div class="tp-na lt-auto-note">set by Auto Title Y</div></div>` : num(fy, 'Y')}
+      </div>
+      <div class="tp-row">
+        <div class="tp-num">Snap to canvas<div class="tp-cell tp-seg">${alignBtn('left', 'Left edge', I.left)}${alignBtn('center', 'Center', I.center)}${alignBtn('right', 'Right edge', I.right)}</div></div>
+        <div class="tp-num">&nbsp;<div class="tp-cell tp-seg">${alignBtn('top', 'Top edge', I.top)}${alignBtn('middle', 'Middle', I.middle)}${alignBtn('bottom', 'Bottom edge', I.bottom)}</div></div>
+      </div>
+    </div>
+    <div class="tp-group">
+      <div class="tp-group-lbl">Size <span class="tp-group-sub">drag the corner handle, or type</span></div>
+      <div class="tp-row">${num(fw, 'Width')}${num(fh, 'Height')}</div>
+      ${cur.fit ? `<p class="lt-note">With Fit Width on, each slide's box shrinks to fit its text — this width is the most it can be.${cur.note ? ' ' + esc(cur.note) : ''}</p>` : cur.note ? `<p class="lt-note">${esc(cur.note)}</p>` : ''}
+    </div>
+    ${cur.auto ? `
+    <div class="tp-group">
+      <div class="tp-group-lbl">Auto Title Y</div>
+      <div class="tp-row">
+        <label class="lt-switch"><input type="checkbox" class="lt-auto" data-f="${cur.auto[0]}" ${autoOn ? 'checked' : ''} ${dis}> Sit just above the body text</label>
+        ${autoOn ? num(cur.auto[1], 'Gap above body') : ''}
+      </div>
+      <p class="lt-note">${autoOn ? 'Each slide moves the title to the top of its own verse, so the Y above is ignored.' : 'Off: the title always sits at the Y above.'}</p>
+    </div>` : ''}
+    <p class="tp-legend"><span class="tp-dot"></span> set by this style · right-click a box to reset it or push it to Global · empty a box to follow Global</p>`;
+
+  const sel = Object.entries(LAYOUT_ROW_TO_EL).filter(([, e]) => e === cur.id).map(([r]) => r);
+  return `
+    <div class="tp-preview lt-preview${dis ? '' : ' lt-draggable'}">${renderTextPreview(pv, scene, sel, 'Drag a box to move it · drag its corner to resize · click to select')}</div>
+    <div class="tp-body">
+      <nav class="tp-list">${list}</nav>
+      <div class="tp-insp">${inspector}</div>
+    </div>`;
+}
+
+// Selection, scene switching and drag-to-move / drag-to-resize for the Layout
+// tab. `save(fields)` writes {field: value|null} to the style and re-renders.
+function wireLayoutTab(root, getPv, rerender, save) {
+  if (!root) return;
+  _tpLayout(root);
+  document.fonts?.ready.then(() => _tpLayout(root));
+  const cur = () => LAYOUT_ELS().find(e => e.id === _layoutEl);
+
+  root.addEventListener('click', e => {
+    const item = e.target.closest('.lt-item');
+    if (item) { _layoutEl = item.dataset.el; _layoutScene = null; rerender(); return; }
+    const sc = e.target.closest('.tp-scene');
+    if (sc) { _layoutScene = sc.dataset.scene; rerender(); return; }
+    const el = e.target.closest('.tp-el');
+    if (el && !root._dragged && LAYOUT_ROW_TO_EL[el.dataset.row] && LAYOUT_ROW_TO_EL[el.dataset.row] !== _layoutEl) {
+      _layoutEl = LAYOUT_ROW_TO_EL[el.dataset.row]; rerender();
+    }
+  });
+  root.addEventListener('keydown', e => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.lt-item, .tp-scene')) { e.preventDefault(); e.target.click(); }
+  });
+  if (!save) return; // read-only (locked style / Global view)
+
+  root.addEventListener('pointerdown', e => {
+    const el = e.target.closest('.lt-draggable .tp-el.sel');
+    const c = cur();
+    if (!el || !c?.p || LAYOUT_ROW_TO_EL[el.dataset.row] !== c.id || e.button !== 0) return;
+    const canvas = el.closest('.tp-canvas');
+    const cw = Number(canvas.dataset.cw), yoff = Number(canvas.dataset.yoff || 0);
+    const rect = canvas.getBoundingClientRect();
+    const scale = rect.width / cw;
+    const er = el.getBoundingClientRect();
+    const resize = e.clientX > er.right - 14 && e.clientY > er.bottom - 14;
+    const pv = getPv();
+    const [fx, fy, fw, fh] = _lyFields(c);
+    const start = { x: Number(pv[fx]) || 0, y: Number(pv[fy]) || 0, w: Number(pv[fw]) || 0, h: Number(pv[fh]) || 0 };
+    const lockY = c.auto && pv[c.auto[0]];
+    const canvasW = c.disp === 'led' ? (pv.propCanvasW || 3200) : (pv.canvasW || 1920);
+    const ch = rect.height / scale; // this canvas's height in Pro7 px (strip-aware)
+    let next = { ...start };
+    root._dragged = false;
+    el.setPointerCapture(e.pointerId);
+    const move = ev => {
+      const dx = (ev.clientX - e.clientX) / scale, dy = (ev.clientY - e.clientY) / scale;
+      if (Math.abs(dx) + Math.abs(dy) > 2) root._dragged = true;
+      if (resize) {
+        next.w = Math.max(10, Math.round(start.w + dx));
+        next.h = Math.max(10, Math.round(start.h + dy));
+      } else {
+        next.x = Math.round(start.x + dx);
+        if (!lockY) next.y = Math.round(start.y + dy);
+        // Snap the box's center to the canvas center line.
+        if (Math.abs(next.x + next.w / 2 - canvasW / 2) < 8 / scale) next.x = Math.round((canvasW - next.w) / 2 * 100) / 100;
+      }
+      el.style.left = `${(next.x / cw * 100).toFixed(3)}%`;
+      if (!lockY) el.style.top = `${((next.y - yoff) / ch * 100).toFixed(3)}%`; // Auto Title Y owns the title's top
+      el.style.width = `${(next.w / cw * 100).toFixed(3)}%`;
+      el.style.height = `${(next.h / ch * 100).toFixed(3)}%`;
+      const set = (f, v) => { const i = root.querySelector(`.lt-num[data-f="${f}"]`); if (i) i.value = v; };
+      set(fx, next.x); set(fy, next.y); set(fw, next.w); set(fh, next.h);
+    };
+    const up = () => {
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+      if (!root._dragged) return;
+      const out = {};
+      if (next.x !== start.x) out[fx] = next.x;
+      if (next.y !== start.y) out[fy] = next.y;
+      if (next.w !== start.w) out[fw] = next.w;
+      if (next.h !== start.h) out[fh] = next.h;
+      save(out);
+      setTimeout(() => { root._dragged = false; }, 0);
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  });
+}
+
 function renderGlobalPanel(panel, schemeOptionsHTML) {
   ensureGlobalTypography();
   ensureGlobalLayout();
@@ -7979,9 +7947,7 @@ function renderGlobalPanel(panel, schemeOptionsHTML) {
         ${renderSchemeGrid(sv, rs, 'disabled', styleForExport(gScheme))}
       </div>
       <div class="style-tab-body" id="g-tab-layout" ${_gTab !== 'layout' ? 'style="display:none"' : ''}>
-        ${layoutPreview(gScheme, null)}
-        <p class="style-group-hint">Default element bounds (read-only).</p>
-        ${lyTable(lyRows(), gScheme, 'disabled')}
+        ${renderLayoutTab(gScheme, 'disabled', styleForExport(gScheme))}
       </div>
       <div class="style-tab-body" id="g-tab-motion" ${_gTab !== 'motion' ? 'style="display:none"' : ''}>
         <div class="trans-cols">
@@ -8052,6 +8018,7 @@ function renderGlobalPanel(panel, schemeOptionsHTML) {
     });
   });
   wireTextTab(document.getElementById('g-tab-text'), () => styleForExport(gScheme), () => renderGlobalPanel(panel, schemeOptionsHTML));
+  wireLayoutTab(document.getElementById('g-tab-layout'), () => styleForExport(gScheme), () => renderGlobalPanel(panel, schemeOptionsHTML), null);
 }
 
 // Spreadsheet-style data grid for Text tab — one row per element, one column per property.
@@ -8217,7 +8184,7 @@ function renderTextPreview(pv, scene, selRow, hint, showStrip = true) {
   const stripH = offMain.length ? Math.max(...offMain.map(o => o.box[1] + o.box[3])) - mainH : 0;
   const offStrip = showStrip && offMain.some(isSel) ? `
         <div class="lp-canvas-lbl tp-off-lbl">Below the screen · stage display only</div>
-        <div class="tp-canvas tp-strip" style="aspect-ratio:${mainW} / ${Math.max(stripH, 1)}">
+        <div class="tp-canvas tp-strip" data-cw="${mainW}" data-yoff="${mainH}" style="aspect-ratio:${mainW} / ${Math.max(stripH, 1)}">
           ${offMain.map(o => _tpEl(pv, mainW, stripH, { ...o, box: [o.box[0], o.box[1] - mainH, o.box[2], o.box[3]], sel: isSel(o) })).join('')}
         </div>` : '';
 
@@ -8724,9 +8691,7 @@ function renderStylePanel(panel) {
 
       <!-- LAYOUT tab -->
       <div class="style-tab-body" id="style-tab-layout" ${_styleTab !== 'layout' ? 'style="display:none"' : ''}>
-        ${layoutPreview(scheme, _layoutSel)}
-        <p class="style-group-hint">X/Y/W/H in pixels; use the align buttons for quick centering.</p>
-        ${lyTable(lyRows(), scheme, dis)}
+        ${renderLayoutTab(scheme, dis, styleForExport(scheme))}
       </div>
 
       </fieldset>
@@ -8785,21 +8750,6 @@ function renderStylePanel(panel) {
     });
   });
 
-  // Layout visual preview ↔ table row linking (works whether or not the scheme is locked)
-  const applyRegionSel = (slug, scroll) => {
-    panel.querySelectorAll('#style-tab-layout .lp-region').forEach(b => b.classList.toggle('sel', b.dataset.region === slug));
-    panel.querySelectorAll('.ly-table tbody tr[data-region]').forEach(tr => {
-      const on = tr.dataset.region === slug;
-      tr.classList.toggle('ly-row-selected', on);
-      if (on && scroll) tr.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    });
-  };
-  const selectRegion = (slug) => { _layoutSel = slug; applyRegionSel(slug, true); };
-  panel.querySelectorAll('#style-tab-layout .lp-region').forEach(b => b.addEventListener('click', () => selectRegion(b.dataset.region)));
-  panel.querySelectorAll('.ly-row-name-click').forEach(c => c.addEventListener('click', () => {
-    const tr = c.closest('tr'); if (tr?.dataset.region) selectRegion(tr.dataset.region);
-  }));
-  if (_layoutSel) applyRegionSel(_layoutSel, false);
 
 
   // Locked-scheme banner actions
@@ -8900,6 +8850,12 @@ function renderStylePanel(panel) {
 
   // Text tab: element selection, scene switching, live preview (also when locked — browsing isn't editing)
   wireTextTab(document.getElementById('style-tab-text'), () => styleForExport(getScheme() || scheme), () => renderStylePanel(panel));
+  wireLayoutTab(document.getElementById('style-tab-layout'), () => styleForExport(getScheme() || scheme), () => renderStylePanel(panel),
+    locked ? null : fields => {
+      const s = getScheme(); if (!s) return;
+      Object.assign(s, fields);
+      saveState(); renderStylePanel(panel);
+    });
   wirePaletteTab(document.getElementById('style-tab-palette'), () => styleForExport(getScheme() || scheme), () => renderStylePanel(panel), row => {
     _styleTab = 'text'; _textRow = row; _textScene = null;
     renderStylePanel(panel);
@@ -9576,85 +9532,62 @@ function renderStylePanel(panel) {
     });
   });
 
-  // Layout numeric inputs — update value + refresh alignment button states in-place
-  document.querySelectorAll('.layout-num').forEach(inp => {
+  // Layout tab: typed values (empty = follow Global), snap buttons, Auto Title Y,
+  // whole-element Use Global / Make Global.
+  const layoutEl = () => LAYOUT_ELS().find(e => e.id === _layoutEl);
+  panel.querySelectorAll('#style-tab-layout .lt-num').forEach(inp => {
     inp.addEventListener('input', () => {
       const s = getScheme(); if (!s) return;
-      const field = inp.id.replace('ly-', '');
-      s[field] = parseFloat(inp.value) ?? 0;
+      const v = parseFloat(inp.value);
+      s[inp.dataset.f] = Number.isFinite(v) ? v : null;
       saveState();
-      refreshAlignBtns(panel, s);
-      refreshSchemePreviews(panel, s);
-      // Update override highlight live
-      const td = inp.closest('.sg-td[data-ly-field]');
-      if (td) {
-        const glb = ensureGlobalLayout();
-        const g = glb[field], v = s[field];
-        const isOv = g !== undefined && v !== null && (
-          typeof g === 'number' ? Math.abs(Number(v) - g) > 0.01 : v !== g
-        );
-        td.classList.toggle('sg-td-scheme', isOv);
+      const host = panel.querySelector('#style-tab-layout .lt-preview');
+      if (host) {
+        const sel = Object.entries(LAYOUT_ROW_TO_EL).filter(([, e]) => e === _layoutEl).map(([r]) => r);
+        host.innerHTML = renderTextPreview(styleForExport(s), _layoutScene || layoutEl()?.scene || 'scripture', sel,
+          'Drag a box to move it · drag its corner to resize · click to select');
+        _tpLayout(host);
       }
     });
+    inp.addEventListener('change', () => renderStylePanel(panel));
   });
-
-  // Alignment buttons
-  panel.querySelectorAll('.ly-align-btn').forEach(btn => {
+  panel.querySelectorAll('#style-tab-layout .lt-align').forEach(btn => {
     btn.addEventListener('click', () => {
-      const s = getScheme(); if (!s) return;
-      const isProp  = btn.dataset.prop === 'true';
-      const glb = ensureGlobalLayout();
-      const cW = isProp ? (s.propCanvasW ?? glb.propCanvasW ?? 3200) : (s.canvasW ?? glb.canvasW ?? 1920);
-      const cH = isProp ? (s.propCanvasH ?? glb.propCanvasH ?? 1280) : (s.canvasH ?? glb.canvasH ?? 1080);
-      const align = btn.dataset.align;
-
-      if (align === 'h-left') {
-        const xf = btn.dataset.xf;
-        s[xf] = 0;
-        const el = document.getElementById(`ly-${xf}`); if (el) el.value = 0;
-      } else if (align === 'h-center') {
-        const xf = btn.dataset.xf, wf = btn.dataset.wf;
-        const w = parseFloat(s[wf] ?? 0);
-        const x = Math.round((cW - w) / 2 * 100) / 100;
-        s[xf] = x;
-        const el = document.getElementById(`ly-${xf}`); if (el) el.value = x;
-      } else if (align === 'h-right') {
-        const xf = btn.dataset.xf, wf = btn.dataset.wf;
-        const w = parseFloat(s[wf] ?? 0);
-        const x = Math.round((cW - w) * 100) / 100;
-        s[xf] = x;
-        const el = document.getElementById(`ly-${xf}`); if (el) el.value = x;
-      } else if (align === 'v-top') {
-        const yf = btn.dataset.yf;
-        s[yf] = 0;
-        const el = document.getElementById(`ly-${yf}`); if (el) el.value = 0;
-      } else if (align === 'v-middle') {
-        const yf = btn.dataset.yf, hf = btn.dataset.hf;
-        const h = parseFloat(s[hf] ?? 0);
-        const y = Math.round((cH - h) / 2 * 100) / 100;
-        s[yf] = y;
-        const el = document.getElementById(`ly-${yf}`); if (el) el.value = y;
-      } else if (align === 'v-bottom') {
-        const yf = btn.dataset.yf, hf = btn.dataset.hf;
-        const h = parseFloat(s[hf] ?? 0);
-        const y = Math.round((cH - h) * 100) / 100;
-        s[yf] = y;
-        const el = document.getElementById(`ly-${yf}`); if (el) el.value = y;
-      }
-      saveState();
-      renderStylePanel(panel);
+      const s = getScheme(); const el = layoutEl(); if (!s || !el?.p) return;
+      const pv = styleForExport(s);
+      const [fx, fy, fw, fh] = _lyFields(el);
+      const cw = el.disp === 'led' ? (pv.propCanvasW || 3200) : (pv.canvasW || 1920);
+      const ch = el.disp === 'led' ? (pv.propCanvasH || 1280) : (pv.canvasH || 1080);
+      const w = Number(pv[fw]) || 0, h = Number(pv[fh]) || 0;
+      const r2 = v => Math.round(v * 100) / 100;
+      const a = btn.dataset.align;
+      if (a === 'left')   s[fx] = 0;
+      if (a === 'center') s[fx] = r2((cw - w) / 2);
+      if (a === 'right')  s[fx] = r2(cw - w);
+      if (a === 'top')    s[fy] = 0;
+      if (a === 'middle') s[fy] = r2((ch - h) / 2);
+      if (a === 'bottom') s[fy] = r2(ch - h);
+      saveState(); renderStylePanel(panel);
     });
   });
-
-  // Auto Title Y toggles (Header + Prop header)
-  panel.querySelectorAll('.ly-auto-y-chk').forEach(chk => {
+  panel.querySelectorAll('#style-tab-layout .lt-auto').forEach(chk => {
     chk.addEventListener('change', () => {
       const s = getScheme(); if (!s) return;
-      const field = chk.id.replace('ly-', '');
-      s[field] = chk.checked;
-      saveState();
-      renderStylePanel(panel);
+      s[chk.dataset.f] = chk.checked;
+      saveState(); renderStylePanel(panel);
     });
+  });
+  panel.querySelector('#style-tab-layout .lt-use-global')?.addEventListener('click', () => {
+    const s = getScheme(); const el = layoutEl(); if (!s || !el) return;
+    for (const f of _lyFields(el).concat(el.auto || [])) s[f] = null;
+    saveState(); renderStylePanel(panel);
+  });
+  panel.querySelector('#style-tab-layout .lt-make-global')?.addEventListener('click', () => {
+    const s = getScheme(); const el = layoutEl(); if (!s || !el) return;
+    if (!confirm(`Make this ${el.lbl} position and size the Global default?\n\nStyles that follow Global will move it too.`)) return;
+    const pv = styleForExport(s); const glb = ensureGlobalLayout();
+    for (const f of _lyFields(el).concat(el.auto || [])) { glb[f] = pv[f]; s[f] = null; }
+    saveState(); renderStylePanel(panel);
   });
 
 }
@@ -12734,7 +12667,8 @@ function clearNotesPanelView() {
 
 let _styleTab = 'text';      // Text | Layout | Motion | Preview
 let _motionTab = 'transitions'; // within Motion: transitions | build
-let _layoutSel = null;          // selected region slug in the Layout visual preview
+let _layoutEl    = 'body';      // selected element in the Layout tab
+let _layoutScene = null;        // Layout preview scene override (null = follow the element)
 let _textSel   = null;          // selected region slug in the Text visual preview
 let _textRow   = 'body1';       // selected element in the Text tab inspector
 let _textScene = null;          // Text preview scene override (null = follow the selected element)
@@ -15813,10 +15747,13 @@ function helpSections() {
       <p class="help-muted">Right-click any control for Reset / Push to Global. An amber dot in the list (or amber ring on a control) means this style overrides Global there; LED-wall rows marked “follows D1” track their main-screen row until you change them.</p>
 
       <h3>Layout tab</h3>
-      <p>The X / Y / W / H bounds of every element, on both canvases — the main <strong>1920×1080</strong> screen and the <strong>${D2}</strong> prop canvas (3200×1280).</p>
+      <p>Where every text box sits, on both canvases — the main <strong>1920×1080</strong> screen and the <strong>${D2}</strong> prop canvas (3200×1280). Same shape as the Text tab: a live preview with every box outlined, a list of boxes, and an inspector for the one you pick.</p>
       <ul>
-        <li><strong>Alignment buttons</strong> — six per row (left/center/right, top/middle/bottom). Click one to snap X or Y to that canvas position; the active one lights orange. Full-width elements show “center” active.</li>
-        <li><strong>Auto&nbsp;Y</strong> — on the Title and Prop Title rows, calculates Y automatically to sit just above the body box (body&nbsp;Y − title&nbsp;H − gap). Uncheck for a fixed Y.</li>
+        <li><strong>Drag in the preview</strong> to move the selected box (it snaps to the canvas centre), or drag its corner handle to resize. Queue and Live, which sit below the screen, get their own strip when selected.</li>
+        <li><strong>Type</strong> X / Y / Width / Height in pixels. Empty a box to follow Global again; grey numbers are coming from Global.</li>
+        <li><strong>Snap to canvas</strong> — left / centre / right and top / middle / bottom; the one that matches lights up.</li>
+        <li><strong>Auto Title Y</strong> — on both Titles, each slide moves the title to sit just above its own verse (with the gap you set), so the fixed Y is ignored. Turn it off for a fixed Y.</li>
+        <li><strong>↺ Use Global / ↑ Make Global</strong> — for the whole box at once; right-click a single number for just that one.</li>
       </ul>
       <div class="help-callout">
         <strong>Fit Width interacts with Layout.</strong> On scripture and point slides, DeckPro can shrink the body box to fit the text — but never wider than the Body width you set here. That width is the ceiling. See <em>Fit Width</em>.

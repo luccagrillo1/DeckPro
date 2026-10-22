@@ -4731,3 +4731,17 @@ body.dark .g-tip-title { color: #ff8a4c; }
 .pt-edit:hover { text-decoration: underline; }
 .pt-edit:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 3px; }
 
+
+/* ── Styles → Layout tab ─────────────────────────────────────────────────── */
+.lt-preview .tp-el { outline: 1px dashed rgba(255,255,255,.28); outline-offset: -1px; }
+.lt-preview .tp-el.sel { outline: 2px solid var(--blue); }
+.lt-draggable .tp-el.sel { cursor: move; touch-action: none; }
+.lt-draggable .tp-el.sel::after {
+  content: ''; position: absolute; right: -1px; bottom: -1px; width: 10px; height: 10px;
+  background: var(--blue); border: 1px solid #fff; border-radius: 2px; cursor: nwse-resize;
+}
+.tp-input.lt-inherit { color: var(--muted); }
+.lt-note { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+.lt-auto-note { font-size: 12px; }
+.lt-switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; height: 30px; cursor: pointer; }
+.tp-align.lt-align:disabled { opacity: .35; cursor: not-allowed; }
