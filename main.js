@@ -177,17 +177,14 @@ function buildMenu() {
         {
           label: 'Undo',
           accelerator: 'CmdOrCtrl+Z',
-          click: () => {
-            // Try app-level undo first; fall back to native
-            if (win?.webContents.isFocused()) {
-              renderer(`typeof applyUndo === 'function' && applyUndo()`);
-            }
-          },
+          // In a text field, ⌘Z undoes typing there (like any Mac app);
+          // anywhere else it's the deck-level Undo.
+          click: () => renderer(`typeof editMenuUndo === 'function' ? editMenuUndo(false) : (typeof applyUndo === 'function' && applyUndo())`),
         },
         {
           label: 'Redo',
           accelerator: 'Shift+CmdOrCtrl+Z',
-          click: () => renderer(`typeof applyRedo === 'function' && applyRedo()`),
+          click: () => renderer(`typeof editMenuUndo === 'function' ? editMenuUndo(true) : (typeof applyRedo === 'function' && applyRedo())`),
         },
         { type: 'separator' },
         { role: 'cut' },
@@ -228,7 +225,7 @@ function buildMenu() {
           `),
         },
         {
-          label: 'Schemes',
+          label: 'Styles',
           click: () => renderer(`
             state.activeId = state.activeId === 'style' ? null : 'style';
             render();

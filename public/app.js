@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.0-beta.6';
+const APP_VERSION = '4.41.0-beta.7';
 
 const CHANGELOG = [
+  {
+    version: '4.41.0-beta.7',
+    date: '2026-10-23',
+    changes: [
+      "⌘Z / ⇧⌘Z while typing in a text field now undo your typing in that field (like any Mac app); outside a field they still undo deck changes. Before, the menu shortcut always undid the whole deck change, even mid-sentence.",
+      "View menu says \"Styles\" (it still said \"Schemes\").",
+    ],
+  },
   {
     version: '4.41.0-beta.6',
     date: '2026-10-23',
@@ -3468,6 +3476,17 @@ function updateUndoButtons() {
   const r = document.getElementById('btn-redo');
   if (u) u.disabled = _undoStack.length === 0;
   if (r) r.disabled = _redoStack.length === 0;
+}
+
+// Edit menu ⌘Z / ⇧⌘Z: native text undo while typing in a field, deck-level
+// undo everywhere else. (The menu accelerator used to always run the deck
+// undo, yanking state out from under whatever field you were typing in.)
+function editMenuUndo(redo) {
+  const el = document.activeElement;
+  const typing = el && (el.isContentEditable || el.tagName === 'TEXTAREA' ||
+    (el.tagName === 'INPUT' && !/^(checkbox|radio|button|color|range|file)$/i.test(el.type)));
+  if (typing) { document.execCommand(redo ? 'redo' : 'undo'); return; }
+  if (redo) applyRedo(); else applyUndo();
 }
 
 function applyUndo() {
