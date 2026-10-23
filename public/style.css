@@ -5013,3 +5013,6 @@ details.slide-overrides[open] .slide-overrides-body { padding: 2px 0 14px; borde
   .tp-list-item, .tp-align, .tp-tog, .pt-chip, .btn-deck-load, .btn-new-deck, .deck-filter-btn, .help-nav-btn,
   .style-tab, .setup-modal button, .gen-modal button, .update-banner-install { transform: none !important; }
 }
+
+/* Empty-state watermark: the black wordmark vanishes on dark — use the white one */
+body.dark .panel-brand-logo { content: url("assets/deckpro_wordmark_white.png"); opacity: .12; }

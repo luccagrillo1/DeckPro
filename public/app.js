@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.0-beta.4';
+const APP_VERSION = '4.41.0-beta.5';
 
 const CHANGELOG = [
+  {
+    version: '4.41.0-beta.5',
+    date: '2026-10-23',
+    changes: [
+      "Fixed: in dark mode the DeckPro watermark (shown when no slide is selected) was the black logo on a dark background — it uses the white one now.",
+      "The export plumbing audit (npm run plumbing-audit) runs again and passes 39/39 — it checks that every style value reaches the exact ProPresenter object. It had stopped running when Auto Title Y started requiring real font measurements, and its title-position expectations still used the pre-4.28.1 formula.",
+    ],
+  },
   {
     version: '4.41.0-beta.4',
     date: '2026-10-23',

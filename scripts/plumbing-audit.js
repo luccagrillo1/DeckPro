@@ -243,7 +243,12 @@ function buildSpec() {
         bodies: [scriptureSpans], propName: S.propName, blankBefore: true, qrOn: true,
         stripNewlines: true,
         bodyW: S.fitBodyW, bodyX: S.fitBodyX, bodyLines: S.fitBodyLines,
-        propBodyW: S.fitPropBodyW, propBodyX: S.fitPropBodyX, propBodyLines: S.fitPropBodyLines },
+        propBodyW: S.fitPropBodyW, propBodyX: S.fitPropBodyX, propBodyLines: S.fitPropBodyLines,
+        // Auto Title Y is strict: export needs the client's real font metrics
+        // (measured in the browser at Fit Width time). These are the same
+        // live-measured Montserrat values fitwidth.test.js uses.
+        ascent: 43, descent: 11, capAscent: 30.8, titleAscent: 58, titleDescent: 15,
+        propAscent: 77, propDescent: 20, propCapAscent: 56, propTitleAscent: 106, propTitleDescent: 28 },
       // per-slide overrides on the point slide: transition + macro override.
       { type: 'point', mode: 'single', label: 'Pt', bodyText: S.pointText,
         propName: 'PLUMBING_POINT_PROP', blankBefore: false,
@@ -326,13 +331,16 @@ async function main() {
     check('P1', 'text', 'Reference text in title', rtf.includes(S.reference), S.reference);
 
     // Auto Title Y (Display 1): must use the REAL known line count from Fit
-    // Width (S.fitBodyLines), not re-derive it via a char-width heuristic that
-    // routinely disagreed with what Fit Width actually rendered. Mirrors
-    // estimateTitleY's formula (builder.js) with its fallback constants —
-    // gap=16, marginBottom=60 — and DEFAULT_STYLE's bodyY=729.98/bodyH=350.02/
-    // titleH=50.51 (unset by the sentinel style, so those fallbacks apply).
-    const lineH = S.bodySize * 1.3;
-    const expectedTitleY = Math.round(729.98 + 350.02 - 60 - S.fitBodyLines * lineH - 16 - 50.51);
+    // Width (S.fitBodyLines) and the client's measured font metrics, not a
+    // char-width re-guess. Mirrors estimateTitleY's metric formula
+    // (builder.js, v4.28.1+): bottom-anchored body of N real line boxes, ink
+    // top = block top + (ascent − capAscent), title centred in titleH with the
+    // default shrink-to-fit clamp; gap 16, DEFAULT_STYLE bodyY=729.98 /
+    // bodyH=350.02 / titleH=50.51 (the sentinel style leaves those unset).
+    const m1 = { ascent: 43, descent: 11, capAscent: 30.8, titleAscent: 58, titleDescent: 15 };
+    const th1 = 50.51, t1LineH = Math.min(m1.titleAscent + m1.titleDescent, th1);
+    const inkTop1 = (729.98 + 350.02) - S.fitBodyLines * (m1.ascent + m1.descent) + (m1.ascent - m1.capAscent);
+    const expectedTitleY = Math.round(inkTop1 - 16 - (th1 + t1LineH) / 2);
     const titleY = titleEl.bounds && titleEl.bounds.origin && titleEl.bounds.origin.y;
     check('P0', 'layout', `Auto Title Y (Display 1) uses the known line count (${S.fitBodyLines})`,
       Number(titleY) === expectedTitleY, `bounds.origin.y → ${titleY} (expected ${expectedTitleY})`);
@@ -414,10 +422,13 @@ async function main() {
     // making every line-height estimate 2x too tall and pushing the reference
     // bar hundreds of pixels too high above the body on any multi-line verse.
     const propTitleEl = scrPropCue && findElInPropCue(scrPropCue, 'reference');
-    const propLineH = S.propBodySize * 1.3; // NOT doubled — real canvas pixels
-    // buildProp.js has its own default bounds (853/427/60), distinct from the
-    // main-screen ones (729.98/350.02/50.51) — see DEFAULT_STYLE in buildProp.js.
-    const expectedPropTitleY = Math.round(853 + 427 - 60 - S.fitPropBodyLines * propLineH - 16 - 60);
+    // Same metric formula as estimatePropTitleY (buildProp.js), Display 2's own
+    // metrics, and buildProp.js's own default bounds (853/427/60) — distinct
+    // from the main screen's (729.98/350.02/50.51).
+    const m2 = { ascent: 77, descent: 20, capAscent: 56, titleAscent: 106, titleDescent: 28 };
+    const th2 = 60, t2LineH = Math.min(m2.titleAscent + m2.titleDescent, th2);
+    const inkTop2 = (853 + 427) - S.fitPropBodyLines * (m2.ascent + m2.descent) + (m2.ascent - m2.capAscent);
+    const expectedPropTitleY = Math.round(inkTop2 - 16 - (th2 + t2LineH) / 2);
     const propTitleY = propTitleEl && propTitleEl.bounds && propTitleEl.bounds.origin && propTitleEl.bounds.origin.y;
     check('P0', 'layout', `Auto Title Y (Display 2) uses the known line count (${S.fitPropBodyLines}), not doubled`,
       Number(propTitleY) === expectedPropTitleY, `bounds.origin.y → ${propTitleY} (expected ${expectedPropTitleY})`);
