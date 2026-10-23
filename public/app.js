@@ -13,6 +13,7 @@ const CHANGELOG = [
       "Fixed: the Layout tab's right-click menu could show a leftover label from the Text tab (\"Use the Style tab font\").",
       "The right-click menu, Speaker Notes Manual / Intelligent switch, and the sidebar's Slot 1/2 and QR toggles now use the same tinted look as the rest of the app, and the right-click menu follows light/dark mode.",
       "New Deck form says \"Style\" (it still said \"Scheme\"). Help's explanation of overrides matches what the app now shows.",
+      "Small motion polish: buttons, chips and list items give a subtle press; modals and right-click menus ease in quickly (under 0.2 s) instead of popping. All of it switches off when macOS \"Reduce motion\" is on.",
     ],
   },
   {

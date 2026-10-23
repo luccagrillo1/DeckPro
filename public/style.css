@@ -1463,7 +1463,7 @@ body.dark .slide-macro-chip {
   font-size: 12px;
   cursor: pointer;
   text-align: center;
-  transition: all .1s;
+  transition: border-color .1s ease, color .1s ease, background-color .1s ease;
   color: var(--muted);
 }
 .point-option:hover { border-color: var(--blue); color: var(--blue); }
@@ -4962,3 +4962,54 @@ details.slide-overrides[open] .slide-overrides-body { padding: 2px 0 14px; borde
 .btn-deck-qr.active { background: rgba(224, 96, 16, .18); border-color: rgba(224, 96, 16, .6); color: var(--blue); }
 .btn-deck-qr.active:hover { background: rgba(224, 96, 16, .26); border-color: var(--blue); color: var(--blue); }
 .new-deck-scheme-label { text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 600; color: var(--text); }
+
+/* ═══ Motion polish ═══════════════════════════════════════════════════════════
+   Press feedback on everything pressable, quick origin-aware entrances for
+   modals and menus. Kept under 200ms with a strong ease-out so the app feels
+   responsive rather than animated; all of it is off under reduced motion. */
+:root { --ease-out: cubic-bezier(0.23, 1, 0.32, 1); }
+
+.btn-sm, .btn-browse, .btn-add, #btn-generate, #btn-decks, .btn-more,
+.segmented-control button, .tp-scene, .tp-list-item, .tp-align, .tp-tog, .pt-chip,
+.btn-deck-load, .btn-new-deck, .deck-filter-btn, .help-nav-btn, .style-tab,
+.setup-modal button, .gen-modal button, .update-banner-install {
+  transition-property: transform, background-color, border-color, color, box-shadow;
+  transition-duration: 140ms;
+  transition-timing-function: var(--ease-out);
+}
+.btn-sm:active:not(:disabled), .btn-browse:active:not(:disabled), .btn-add:active, #btn-generate:active:not(:disabled),
+#btn-decks:active, .btn-more:active, .segmented-control button:active:not(:disabled), .tp-scene:active,
+.tp-list-item:active, .tp-align:active:not(:disabled), .tp-tog:active:not(:disabled), .pt-chip:active,
+.btn-deck-load:active, .btn-new-deck:active, .deck-filter-btn:active, .help-nav-btn:active, .style-tab:active,
+.setup-modal button:active:not(:disabled), .gen-modal button:active, .update-banner-install:active {
+  transform: scale(0.97);
+}
+
+/* Modals: content eases in from slightly smaller; backdrops fade */
+.decks-modal-inner, .help-modal-inner, .changelog-modal-inner, .gen-modal-inner, .setup-modal {
+  transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
+}
+@starting-style {
+  .decks-modal.open .decks-modal-inner, .help-modal.open .help-modal-inner,
+  .changelog-modal.open .changelog-modal-inner, .gen-modal.open .gen-modal-inner, .setup-modal {
+    opacity: 0; transform: scale(0.97) translateY(4px);
+  }
+  .decks-modal.open, .help-modal.open, .changelog-modal.open, .gen-modal.open { background-color: rgba(0, 0, 0, 0); }
+}
+.decks-modal, .help-modal, .changelog-modal, .gen-modal { transition: background-color 180ms ease; }
+
+/* Right-click menus grow from the pointer */
+#sg-ctx-menu, #slide-ctx-menu { transform-origin: top left; transition: opacity 120ms var(--ease-out), transform 120ms var(--ease-out); }
+@starting-style {
+  #sg-ctx-menu, #slide-ctx-menu.open { opacity: 0; transform: scale(0.96); }
+}
+
+/* Reduced motion: no scaling or sliding (spinners and colour fades stay —
+   a frozen spinner reads as a hang). */
+@media (prefers-reduced-motion: reduce) {
+  .decks-modal-inner, .help-modal-inner, .changelog-modal-inner, .gen-modal-inner, .setup-modal,
+  #sg-ctx-menu, #slide-ctx-menu { transition: none !important; transform: none !important; }
+  .btn-sm, .btn-browse, .btn-add, #btn-generate, #btn-decks, .btn-more, .segmented-control button, .tp-scene,
+  .tp-list-item, .tp-align, .tp-tog, .pt-chip, .btn-deck-load, .btn-new-deck, .deck-filter-btn, .help-nav-btn,
+  .style-tab, .setup-modal button, .gen-modal button, .update-banner-install { transform: none !important; }
+}
