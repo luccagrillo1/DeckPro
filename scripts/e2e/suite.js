@@ -502,6 +502,32 @@ async function deckproE2E(opts) {
     expect(state.slides.find(x => x.id === s0.id).label === 'Keyboard test', '⇧⌘Z did not redo');
   });
 
+  await step('speaker notes: select text → Add as Point, and drag a paragraph', async () => {
+    showNotesDoc({ id: 'e2e', styleText: '', bodyHtml: '<h2>Point one</h2><p>Love is patient and love is kind</p><p>John 13:35 says they will know</p>' }, 'E2E Notes');
+    state.config.notesMode = 'manual'; saveState();
+    const body = $('#notes-doc-body');
+    const p = await waitFor(() => [...body.querySelectorAll('[data-notes-block]')].find(e => /patient/.test(e.textContent)), 3000);
+    expect(p, 'notes doc blocks not indexed');
+    expect(getComputedStyle(p).userSelect !== 'none', 'notes text is not selectable');
+    const r = document.createRange(); r.selectNodeContents(p); getSelection().removeAllRanges(); getSelection().addRange(r);
+    showNotesSelectionMenu(); await sleep(50);
+    expect($('#notes-sel-menu').style.display === 'flex', 'selection menu did not appear');
+    const n = state.slides.length;
+    await click($('#notes-sel-menu [data-role="point"]')); await sleep(200);
+    expect(state.slides.length === n + 1 && /patient/.test(active().bodyText || ''), 'Add as Point did not create the slide');
+    p.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); await sleep(50);
+    const grip = $('.notes-block-grip.show');
+    expect(grip, 'no drag grip on hover');
+    const dt = new DataTransfer();
+    grip.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+    const q = $('#slide-queue'), qr = q.getBoundingClientRect();
+    q.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: qr.left + 20, clientY: qr.top + 30 }));
+    q.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: qr.left + 20, clientY: qr.top + 30 }));
+    grip.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
+    await sleep(200);
+    expect(state.slides.length === n + 2, `grip drag to sidebar: ${n + 1} → ${state.slides.length}`);
+  });
+
   await step('export: QR on + paired export writes both files', async () => {
     Object.assign(state.config, { qrCode: true, qrExportPair: true });
     saveState();

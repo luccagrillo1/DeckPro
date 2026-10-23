@@ -4939,3 +4939,12 @@ details.slide-overrides[open] .slide-overrides-body { padding: 2px 0 14px; borde
   .tp-row { gap: 8px 10px; }
   .tp-select { min-width: 0; }
 }
+
+/* Notes doc: floating grip for dragging a whole paragraph (text stays selectable) */
+.notes-block-grip {
+  position: absolute; z-index: 3; width: 14px; height: 20px; display: flex; align-items: center; justify-content: center;
+  color: #94a3b8; border-radius: 4px; cursor: grab; opacity: 0; pointer-events: none; transition: opacity .12s;
+}
+.notes-block-grip.show { opacity: 1; pointer-events: auto; }
+.notes-block-grip:hover { background: rgba(15, 23, 42, .08); color: #475569; }
+.notes-block-grip:active { cursor: grabbing; }

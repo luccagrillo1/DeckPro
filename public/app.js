@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.0-beta.2';
+const APP_VERSION = '4.41.0-beta.3';
 
 const CHANGELOG = [
+  {
+    version: '4.41.0-beta.3',
+    date: '2026-10-23',
+    changes: [
+      "Fixed Speaker Notes: you couldn't select text in a loaded Google Doc, so \"select text → Add as Scripture / Point\" never appeared and you couldn't drag part of a paragraph. (Every paragraph was set up as a drag handle, and a draggable paragraph can't be selected.) Text selects normally again; to drag a whole paragraph, use the small grip that appears beside it on hover.",
+    ],
+  },
   {
     version: '4.41.0-beta.2',
     date: '2026-10-23',
@@ -13364,23 +13371,53 @@ function extractNotesBlocks() {
     const idx = blocks.length;
     blocks.push({ tag: el.tagName.toLowerCase(), text, bg, idx, boldPhrases: extractBoldPhrases(el), highlightedText: extractHighlightedText(el) });
     el.dataset.notesBlock = idx;
-    // Whole-block drag: click-drag the block itself, no text selection first
-    // (that's the OTHER drag source, initNotesFieldDragDrop's selection-based
-    // one, still available for dragging part of a block). stopPropagation
-    // keeps docBody's own dragstart from also firing and, finding no active
-    // selection, clobbering the payload this sets.
-    el.draggable = true;
-    el.addEventListener('dragstart', e => {
-      e.stopPropagation();
-      _draggedNotesText = { plain: el.textContent, html: boldWalkToHtml([...el.childNodes], _isBoldWeight(getComputedStyle(el).fontWeight)) };
-      _draggedNotesBlockIdx = idx;
-      e.dataTransfer.effectAllowed = 'copy';
-      e.dataTransfer.setData('text/plain', el.textContent);
-    });
-    el.addEventListener('dragend', () => { _draggedNotesText = null; _draggedNotesBlockIdx = null; });
   });
   _notesDoc.blocks  = blocks;
   _notesDoc.colors  = [...colorSet];
+  mountNotesBlockGrip(bodyEl);
+}
+
+// Whole-block drag lives on one floating grip that follows the hovered block.
+// Making the blocks themselves draggable (the old way) also made them
+// unselectable — Chromium won't select text inside a draggable element — which
+// silently broke select-to-assign and dragging part of a block.
+function mountNotesBlockGrip(bodyEl) {
+  const scroll = bodyEl.closest('.notes-doc-scroll');
+  if (!scroll) return;
+  let grip = scroll.querySelector('.notes-block-grip');
+  if (!grip) {
+    grip = document.createElement('div');
+    grip.className = 'notes-block-grip';
+    grip.draggable = true;
+    grip.title = 'Drag this paragraph onto a slide or the sidebar';
+    grip.innerHTML = '<svg width="8" height="14" viewBox="0 0 8 14" fill="currentColor"><circle cx="2" cy="2" r="1.3"/><circle cx="6" cy="2" r="1.3"/><circle cx="2" cy="7" r="1.3"/><circle cx="6" cy="7" r="1.3"/><circle cx="2" cy="12" r="1.3"/><circle cx="6" cy="12" r="1.3"/></svg>';
+    scroll.appendChild(grip);
+    grip.addEventListener('dragstart', e => {
+      const el = grip._block;
+      if (!el) { e.preventDefault(); return; }
+      // stopPropagation keeps the doc's own selection-drag handler from
+      // clobbering this payload.
+      e.stopPropagation();
+      _draggedNotesText = { plain: el.textContent, html: boldWalkToHtml([...el.childNodes], _isBoldWeight(getComputedStyle(el).fontWeight)) };
+      _draggedNotesBlockIdx = Number(el.dataset.notesBlock);
+      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.setData('text/plain', el.textContent);
+      e.dataTransfer.setDragImage(el, 0, 0);
+    });
+    grip.addEventListener('dragend', () => { _draggedNotesText = null; _draggedNotesBlockIdx = null; });
+  }
+  if (bodyEl._gripWired) return;
+  bodyEl._gripWired = true;
+  bodyEl.addEventListener('mouseover', e => {
+    const el = e.target.closest('[data-notes-block]');
+    if (!el || !bodyEl.contains(el)) return;
+    const sr = scroll.getBoundingClientRect(), er = el.getBoundingClientRect();
+    grip._block = el;
+    grip.style.top = `${er.top - sr.top + scroll.scrollTop + 2}px`;
+    grip.style.left = `${Math.max(2, er.left - sr.left + scroll.scrollLeft - 16)}px`;
+    grip.classList.add('show');
+  });
+  scroll.addEventListener('mouseleave', () => grip.classList.remove('show'));
 }
 
 // Resolve a block's role from the Style Map: highlight color wins over heading
