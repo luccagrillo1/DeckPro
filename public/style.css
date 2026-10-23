@@ -5016,3 +5016,10 @@ details.slide-overrides[open] .slide-overrides-body { padding: 2px 0 14px; borde
 
 /* Empty-state watermark: the black wordmark vanishes on dark — use the white one */
 body.dark .panel-brand-logo { content: url("assets/deckpro_wordmark_white.png"); opacity: .12; }
+
+/* Styles tab bar: one look for every tab (the separators already group them).
+   Drops the old green "Style" pill and the italic deck-wide tabs. */
+.style-tab-palette { color: var(--muted) !important; background: none !important; font-size: 12px; letter-spacing: 0; }
+.style-tab-palette:hover { color: var(--text) !important; }
+.style-tab-palette.active { color: var(--blue) !important; background: none !important; border-bottom-color: var(--blue); }
+.style-tab-global, .style-tab-global.active { font-style: normal; }

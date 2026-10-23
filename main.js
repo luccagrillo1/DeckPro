@@ -106,7 +106,7 @@ function buildMenu() {
         {
           label: 'New Deck',
           accelerator: 'CmdOrCtrl+N',
-          click: () => renderer(`document.getElementById('btn-new-deck')?.click()`),
+          click: () => renderer(`typeof openNewDeckForm === 'function' ? openNewDeckForm() : document.getElementById('btn-new-deck')?.click()`),
         },
         {
           label: 'Deck Library…',

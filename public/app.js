@@ -2,9 +2,18 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.0-beta.5';
+const APP_VERSION = '4.41.0-beta.6';
 
 const CHANGELOG = [
+  {
+    version: '4.41.0-beta.6',
+    date: '2026-10-23',
+    changes: [
+      "Fixed: ⌘N (File → New Deck) did nothing unless the Deck Library was already open. It now opens the library with the New Deck form ready to type into.",
+      "Styles tab bar: every tab looks the same now (the old green \"Style\" pill and italic Macros / Stage / Response Card / QR Code tabs are gone; the dividers still group them).",
+      "Help wording matches the app everywhere (Use Global / Make Global, amber dots, \"right-click a control\").",
+    ],
+  },
   {
     version: '4.41.0-beta.5',
     date: '2026-10-23',
@@ -15546,6 +15555,16 @@ function initDecks() {
   });
 
   // New Deck form
+  // ⌘N / File → New Deck: open the Deck Library with the New Deck form showing
+  // (clicking the in-modal button alone did nothing while the library was closed).
+  window.openNewDeckForm = () => {
+    const m = document.getElementById('decks-modal');
+    if (!m?.classList.contains('open')) document.getElementById('btn-decks')?.click();
+    const form = document.getElementById('new-deck-form');
+    if (form?.classList.contains('hidden')) document.getElementById('btn-new-deck')?.click();
+    setTimeout(() => document.getElementById('nd-series')?.focus(), 50);
+  };
+
   document.getElementById('btn-new-deck')?.addEventListener('click', () => {
     const form = document.getElementById('new-deck-form');
     form?.classList.toggle('hidden');
@@ -16063,12 +16082,12 @@ function helpSections() {
         <li><strong>Style</strong> — the <strong>Style tab</strong>'s five slots (Font&nbsp;1, Font&nbsp;2, Bold/ALT, Neutral, Accent) feed every element that doesn't set its own.</li>
         <li><strong>Element</strong> — a value set on one element in the Text tab (a specific font, size, colour, outline…). The most specific layer wins.</li>
       </ul>
-      <p>On the <strong>Style tab</strong>, pick a slot and change it right at the top; the line under the picker says whether it comes from Global or is set for this style (with <em>↺ Use Global</em> / <em>↑ Make Global</em>). Elements that set their own font or colour are listed in amber — changes to the slot won't reach them until you click <em>↺ Use …</em>. Everything else that uses the slot is outlined in the preview and listed as chips you can click to edit. Advanced styling (bold/italic, caps, alignment, outline, shadow, spacing, margins) follows Global live too: <em>Reset to Global</em> re-links a field, <em>Push to Global</em> sends it up and keeps following it.</p>
+      <p>On the <strong>Style tab</strong>, pick a slot and change it right at the top; the line under the picker says whether it comes from Global or is set for this style (with <em>↺ Use Global</em> / <em>↑ Make Global</em>). Elements that set their own font or colour are listed in amber — changes to the slot won't reach them until you click <em>↺ Use …</em>. Everything else that uses the slot is outlined in the preview and listed as chips you can click to edit. Advanced styling (bold/italic, caps, alignment, outline, shadow, spacing, margins) follows Global live too: <em>Use Global</em> re-links a field, <em>Make Global</em> sends it up and keeps following it.</p>
 
       <h4>Reading the colours</h4>
       <p>Untouched values follow the layer below. Where a style or element sets its own value you'll see an <strong>amber dot</strong> in the list (or an amber ring on the control), and status lines read <em>From Global</em> or <em>Set for this style</em>. Grey numbers in Layout are coming from Global.</p>
 
-      <h4>Managing values (right-click a cell)</h4>
+      <h4>Managing values (right-click a control)</h4>
       <ul>
         <li><strong>Use Global</strong> — drop this value and follow Global again (live). On a font or colour it reads <em>Use the Style tab font/colour</em>.</li>
         <li><strong>Make Global</strong> — send this value up so every style following Global uses it, and keep following it.</li>
@@ -16099,7 +16118,7 @@ function helpSections() {
         <li><strong>${D3}:</strong> Slide Notes, Notes Alt.</li>
         <li><strong>Utility:</strong> Start/End banner, Live badge, Queue sidebar.</li>
       </ul>
-      <p class="help-muted">Right-click any control for Reset / Push to Global. An amber dot in the list (or amber ring on a control) means this style overrides Global there; LED-wall rows marked “follows D1” track their main-screen row until you change them.</p>
+      <p class="help-muted">Right-click any control for Use Global / Make Global. An amber dot in the list (or amber ring on a control) means this style overrides Global there; LED-wall rows marked “follows D1” track their main-screen row until you change them.</p>
 
       <h3>Layout tab</h3>
       <p>Where every text box sits, on both canvases — the main <strong>1920×1080</strong> screen and the <strong>${D2}</strong> prop canvas (3200×1280). Same shape as the Text tab: a live preview with every box outlined, a list of boxes, and an inspector for the one you pick.</p>
@@ -16159,7 +16178,7 @@ function helpSections() {
       <h3>${D2} inherits ${D1}</h3>
       <p>By default the ${D2} (Display&nbsp;2) follows the main screen. Every ${D2} text style — Body, Bold, Title, Point — plus the <strong>Response Card</strong> text (RC Body → Body, RC Title → Title) starts out <strong>inheriting its main-screen counterpart, live</strong>. Style the main screen and the LED wall follows automatically.</p>
       <ul>
-        <li>Change any ${D2} cell and it becomes its own <strong>override</strong> (orange) — keeping whatever it was inheriting as the starting point, so nothing jumps.</li>
+        <li>Change anything on an ${D2} element and it gets its own value (an amber dot in the list) — keeping whatever it was following as the starting point, so nothing jumps.</li>
         <li>Right-click an overridden ${D2} row → <strong>Follow Display 1</strong> (or use the inspector's “Follow Main Screen … again” button) to hand it back to inheriting.</li>
         <li>Fonts and sizes already inherited when left blank; this covers the advanced styling too (colour, italic/underline, alignment, margins, stroke, shadow).</li>
       </ul>

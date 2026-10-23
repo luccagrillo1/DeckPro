@@ -86,6 +86,16 @@ async function deckproE2E(opts) {
     return `${state.slides.length} slides`;
   });
 
+  await step('menu ⌘N: opens the library with the New Deck form', async () => {
+    $('#decks-modal')?.classList.remove('open');
+    $('#new-deck-form')?.classList.add('hidden');
+    openNewDeckForm(); await sleep(200);
+    expect($('#decks-modal.open'), 'Deck Library did not open');
+    expect(!$('#new-deck-form').classList.contains('hidden'), 'New Deck form not shown');
+    await click('#btn-nd-cancel');
+    $('#decks-modal')?.classList.remove('open');
+  });
+
   // ── Add one of every item ───────────────────────────────────────────────
   await step('sidebar: add every item type', async () => {
     for (const t of ['scripture', 'point', 'scripture', 'point', 'blank', 'image', 'custom', 'qrmarker']) {
