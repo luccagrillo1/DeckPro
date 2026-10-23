@@ -4802,3 +4802,9 @@ body.dark .g-tip-title { color: #ff8a4c; }
   background: var(--bg); color: var(--text); border-color: var(--border);
 }
 .pt-status-btns .btn-sm:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); }
+
+.update-beta-tag {
+  display: inline-block; padding: 1px 6px; margin-left: 4px; border-radius: 999px;
+  background: rgba(245,158,11,.18); color: #f59e0b; font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em; vertical-align: 1px;
+}

@@ -1,7 +1,8 @@
 #!/bin/bash
 # Publish the current version as a GitHub release.
-# Usage: npm run release                       (public: prompts all users via self-updater)
-#        bash scripts/release.sh --prerelease   (beta: not 'latest', no auto-prompt)
+# Usage: npm run release        (stable: every user is offered it)
+#        npm run release:beta   (pre-release: only users on the Beta channel see it;
+#                                version must look like 4.41.0-beta.1)
 set -e
 cd "$(dirname "$0")/.."
 
@@ -15,6 +16,16 @@ node scripts/release-preflight.js || exit 1
 
 VERSION=$(node -p "require('./package.json').version")
 TAG="v$VERSION"
+
+# A version like 4.41.0-beta.1 must go out as a pre-release (Beta channel
+# only), and a plain version must not — otherwise a beta would reach every
+# Stable user, or a stable release would hide from them.
+if [[ "$VERSION" == *-* && -z "$PRERELEASE_FLAG" ]]; then
+  echo "v$VERSION is a beta version — publish it with: npm run release:beta"; exit 1
+fi
+if [[ "$VERSION" != *-* && -n "$PRERELEASE_FLAG" ]]; then
+  echo "v$VERSION has no -beta suffix — bump to e.g. $VERSION-beta.1 for a beta, or use: npm run release"; exit 1
+fi
 
 if gh release view "$TAG" > /dev/null 2>&1; then
   echo "Release $TAG already exists — bump the version first."

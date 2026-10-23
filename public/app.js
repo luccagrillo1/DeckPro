@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.39.0';
+const APP_VERSION = '4.40.0';
 
 const CHANGELOG = [
+  {
+    version: '4.40.0',
+    date: '2026-10-23',
+    changes: [
+      "New: Update channel (Preferences → Updates). Stable only offers full releases; Beta also offers test builds as soon as they're published (marked \"beta\" in the update banner). Set per computer. Switching back to Stable keeps the version you're on until a newer stable one comes out.",
+      "Update checks now compare beta version numbers correctly (4.41.0-beta.2 is newer than -beta.1, and 4.41.0 is newer than both).",
+    ],
+  },
   {
     version: '4.39.0',
     date: '2026-10-22',
@@ -6650,6 +6658,21 @@ function renderConfigPanel(panel) {
       </h2>
 
       <div class="settings-section">
+        <h3>Updates</h3>
+        <div class="settings-row" style="align-items:center">
+          <label style="min-width:100px;font-size:13px;color:var(--muted)">Channel</label>
+          <div class="segmented-control" id="cfg-update-channel">
+            <button type="button" data-val="stable" class="${(cfg.updateChannel || 'stable') === 'stable' ? 'active' : ''}">Stable</button>
+            <button type="button" data-val="beta" class="${cfg.updateChannel === 'beta' ? 'active' : ''}">Beta</button>
+          </div>
+          <button class="btn-browse" id="btn-check-updates-now">Check now</button>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
+          <strong>Stable</strong> only offers full releases. <strong>Beta</strong> also offers test builds as soon as they're published — newer, but less tried. You're on v${esc(APP_VERSION)}${/-/.test(APP_VERSION) ? ' (a beta)' : ''}. Switching back to Stable keeps this version until a newer stable one comes out.
+        </div>
+      </div>
+
+      <div class="settings-section">
         <h3>Deck Library</h3>
         <div class="settings-row">
           <label>Location</label>
@@ -6930,6 +6953,17 @@ function renderConfigPanel(panel) {
   });
 
   // iCloud sync toggle
+  // Update channel (per computer — see PERSISTENT_CONFIG_FIELDS)
+  document.querySelectorAll('#cfg-update-channel button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.config.updateChannel = btn.dataset.val;
+      document.querySelectorAll('#cfg-update-channel button').forEach(b => b.classList.toggle('active', b === btn));
+      saveState();
+      checkForUpdates(true);
+    });
+  });
+  document.getElementById('btn-check-updates-now')?.addEventListener('click', () => checkForUpdates(true));
+
   const syncToggle = document.getElementById('sync-toggle');
   if (syncToggle) {
     syncToggle.addEventListener('click', () => {
@@ -15039,7 +15073,7 @@ const PERSISTENT_CONFIG_FIELDS = [
   'pro7Port', 'pro7Password', 'pro7RootFolder', 'pro7LibraryFolder',
   'autoManagePro7', 'outputFolder', 'setupComplete', 'stageScreen',
   'qrMacro', 'qrExportPair', 'gradientMacro', 'gradientMacroQr', 'icloudSync', 'theme',
-  'externalContent', 'externalStartMacro', 'externalEndMacro',
+  'externalContent', 'externalStartMacro', 'externalEndMacro', 'updateChannel',
   // Bible lookup
   'bibleApiKey', 'bibleId', 'bibleName', 'bibleList', 'verseNumbers', 'verseSuper',
   // App-wide preferences (mirrors SYNC_SECTIONS()'s portable-vs-deck split)
@@ -15574,7 +15608,7 @@ let _updateInfo = null;
 async function checkForUpdates(manual = false) {
   let data = null;
   try {
-    data = await fetch('/api/update/check').then(r => r.json());
+    data = await fetch(`/api/update/check?channel=${state.config.updateChannel === 'beta' ? 'beta' : 'stable'}`).then(r => r.json());
   } catch (_) { data = { ok: false, error: 'offline' }; }
 
   if (!data.ok) {
@@ -15609,7 +15643,7 @@ function showUpdateBanner(info) {
   banner.className = 'update-banner';
   banner.innerHTML = `
     <span class="update-banner-text">
-      <strong>DeckPro v${esc(info.latest)}</strong> is available
+      <strong>DeckPro v${esc(info.latest)}</strong>${info.prerelease ? ' <span class="update-beta-tag">beta</span>' : ''} is available
       <span class="update-banner-sub">you have v${esc(info.current)}</span>
     </span>
     ${notesHtml ? `<div class="update-banner-notes">${notesHtml}</div>` : ''}
@@ -15638,7 +15672,10 @@ async function installUpdate() {
   });
   updateDeliveryStep(0, false);
   try {
-    const r = await fetch('/api/update/install', { method: 'POST' }).then(x => x.json());
+    const r = await fetch('/api/update/install', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel: state.config.updateChannel === 'beta' ? 'beta' : 'stable' }),
+    }).then(x => x.json());
     if (r.ok) {
       updateDeliveryStep(0, true);
       updateDeliveryStep(1, true);

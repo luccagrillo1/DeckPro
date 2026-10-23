@@ -932,11 +932,26 @@ function repoSlug() {
   return m ? m[1] : null;
 }
 
+// Semver-ish compare that understands pre-releases: 4.41.0-beta.2 sorts
+// after 4.41.0-beta.1 and before 4.41.0 (a release beats its own betas).
 function cmpVer(a, b) {
-  const pa = String(a).split('.').map(Number);
-  const pb = String(b).split('.').map(Number);
+  const parse = v => {
+    const [core, pre = ''] = String(v).replace(/^v/, '').split('-');
+    return { core: core.split('.').map(n => Number(n) || 0), pre: pre ? pre.split('.') : [] };
+  };
+  const A = parse(a), B = parse(b);
   for (let i = 0; i < 3; i++) {
-    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+    if ((A.core[i] || 0) !== (B.core[i] || 0)) return (A.core[i] || 0) - (B.core[i] || 0);
+  }
+  if (!A.pre.length || !B.pre.length) return B.pre.length - A.pre.length; // release > pre-release
+  for (let i = 0; i < Math.max(A.pre.length, B.pre.length); i++) {
+    const x = A.pre[i], y = B.pre[i];
+    if (x === undefined) return -1;
+    if (y === undefined) return 1;
+    const nx = /^\d+$/.test(x), ny = /^\d+$/.test(y);
+    if (nx && ny && Number(x) !== Number(y)) return Number(x) - Number(y);
+    if (nx !== ny) return nx ? -1 : 1;
+    if (!nx && x !== y) return x < y ? -1 : 1;
   }
   return 0;
 }
@@ -983,21 +998,37 @@ function downloadFile(url, dest, redirects = 0) {
   });
 }
 
-async function fetchLatestRelease() {
+// channel 'stable' → GitHub's latest full release (never a pre-release).
+// channel 'beta'   → the newest release of any kind, betas included, so a
+// beta tester also gets a stable that's newer than their beta.
+async function fetchLatestRelease(channel = 'stable') {
   const slug = repoSlug();
   if (!slug) throw new Error('No repository configured');
-  const rel    = await httpsGetJson(`https://api.github.com/repos/${slug}/releases/latest`);
+  const arch    = process.arch === 'arm64' ? 'arm64' : 'x64';
+  const assetOf = r => (r.assets || []).find(a => a.name.includes(`-${arch}`) && a.name.endsWith('.zip'));
+  let rel;
+  if (channel === 'beta') {
+    const list = await httpsGetJson(`https://api.github.com/repos/${slug}/releases?per_page=30`);
+    rel = (Array.isArray(list) ? list : [])
+      .filter(r => !r.draft && assetOf(r))
+      .sort((x, y) => cmpVer(y.tag_name, x.tag_name))[0];
+    if (!rel) throw new Error('No releases found');
+  } else {
+    rel = await httpsGetJson(`https://api.github.com/repos/${slug}/releases/latest`);
+  }
   const latest = (rel.tag_name || '').replace(/^v/, '');
-  const arch   = process.arch === 'arm64' ? 'arm64' : 'x64';
-  const asset  = (rel.assets || []).find(a => a.name.includes(`-${arch}`) && a.name.endsWith('.zip'));
-  return { rel, latest, asset };
+  return { rel, latest, asset: assetOf(rel) };
 }
+const updateChannel = req => ((req.query?.channel || req.body?.channel) === 'beta' ? 'beta' : 'stable');
 
 app.get('/api/update/check', async (req, res) => {
   try {
-    const { rel, latest, asset } = await fetchLatestRelease();
+    const channel = updateChannel(req);
+    const { rel, latest, asset } = await fetchLatestRelease(channel);
     res.json({
       ok: true,
+      channel,
+      prerelease: !!rel.prerelease,
       current: pkg.version,
       latest,
       updateAvailable: cmpVer(latest, pkg.version) > 0 && !!asset,
@@ -1038,7 +1069,7 @@ app.post('/api/update/install', async (req, res) => {
     const appName        = path.basename(appBundlePath, '.app'); // "DeckPro"
     const installDir     = path.dirname(appBundlePath);          // wherever it actually lives
 
-    const { latest, asset } = await fetchLatestRelease();
+    const { latest, asset } = await fetchLatestRelease(updateChannel(req));
     if (cmpVer(latest, pkg.version) <= 0 || !asset) {
       return res.json({ ok: false, error: 'Already up to date' });
     }
