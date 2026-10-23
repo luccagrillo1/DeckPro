@@ -2,9 +2,21 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.0-beta.7';
+const APP_VERSION = '4.41.0-beta.8';
 
 const CHANGELOG = [
+  {
+    version: '4.41.0-beta.8',
+    date: '2026-10-23',
+    changes: [
+      "Calmer, more native-looking chrome: neutral header and title bar, outline header buttons with one solid orange Export, the orange wordmark logo.",
+      "Sidebar: Add Item is now labelled buttons (Scripture, Point, Blank, Image, Custom, Questions) instead of colour-coded letter tiles; the selected slide is a soft tint with an orange edge; Blank rows and the Questions marker are quiet labelled dividers.",
+      "Slide header macro tags are neutral pills with the macro's Pro7 colour as a small dot; Speaker Notes suggestion types are tinted text tags instead of solid blue/green blocks.",
+      "Deck Library: the open deck is marked with a small \"Current\" tag beside its name (no more orange OPEN badge); Open buttons are neutral.",
+      "Preferences: flat sections divided by hairlines instead of stacked cards, with every setting's label in one aligned column.",
+      "Fixed: deck export times in the Deck Library showed \"NaNd ago\".",
+    ],
+  },
   {
     version: '4.41.0-beta.7',
     date: '2026-10-23',
@@ -5059,7 +5071,7 @@ function macroChipsHTML(...triggerKeys) {
   const macros = activeStyleScheme().macros || [];
   return macros
     .filter(m => triggerKeys.some(k => (m.triggers || []).includes(k)))
-    .map(m => `<span class="slide-macro-chip" style="${m.color ? `border-color:${m.color}` : ''}" title="${esc(m.name)}">${esc(m.name)}</span>`)
+    .map(m => `<span class="slide-macro-chip" style="${m.color ? `--mc:${m.color}` : ''}" title="${esc(m.name)}">${esc(m.name)}</span>`)
     .join('');
 }
 
@@ -5192,8 +5204,7 @@ function renderSidebar() {
       marker.className = `slide-item qr-marker-item${slide.id === state.activeId ? ' active' : ''}`;
       marker.dataset.id = slide.id;
       marker.draggable = true;
-      const tickSvg = `<svg class="qr-marker-ticks" width="20" height="12" viewBox="0 0 20 12" fill="none" xmlns="http://www.w3.org/2000/svg"><line x1="2" y1="10" x2="6" y2="2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="10" x2="12" y2="2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="14" y1="10" x2="18" y2="2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
-      marker.innerHTML = `${tickSvg}<span class="qr-marker-label">QUESTIONS</span>${tickSvg}`;
+      marker.innerHTML = `<span class="qr-marker-label">Questions</span>`;
       marker.addEventListener('click', () => selectSlide(slide.id));
       marker.addEventListener('contextmenu', e => {
         e.preventDefault();
@@ -15320,9 +15331,14 @@ function deckDateLabel(raw) {
   return new Date(raw + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function relTime(iso) {
-  if (!iso) return '';
-  const ms = Date.now() - new Date(iso).getTime();
+// Accepts an ISO string or a ms timestamp. (There used to be a second
+// relTime(ts) further down that silently replaced this one, so every ISO
+// date — e.g. a deck's last export — rendered as "NaNd ago".)
+function relTime(when) {
+  if (!when) return '';
+  const t = new Date(when).getTime();
+  if (!Number.isFinite(t)) return '';
+  const ms = Date.now() - t;
   const m = Math.floor(ms / 60000);
   if (m < 1)  return 'just now';
   if (m < 60) return `${m}m ago`;
@@ -15330,7 +15346,7 @@ function relTime(iso) {
   if (h < 24) return `${h}h ago`;
   const d = Math.floor(h / 24);
   if (d < 30) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
+  return new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
 function deckEditFormHtml(deck) {
@@ -15377,7 +15393,7 @@ function deckRowHtml(deck) {
   }
 
   const badges = [
-    isCurrent ? '<span class="deck-current-badge">Open</span>' : '',
+    isCurrent ? '<span class="deck-current-badge">Current</span>' : '',
     deck.is_template ? '<span class="deck-template-badge">Template</span>' : '',
     (isCurrent ? state.config.propCollection : deck.prop_collection) === 2
       ? '<span class="deck-slot-badge" title="Exports into the DeckPro Slot 2 prop collection">Slot 2</span>' : '',
@@ -15399,12 +15415,12 @@ function deckRowHtml(deck) {
   return `
     <div class="deck-item${isCurrent ? ' deck-item--current' : ''}" data-id="${deck.id}">
       <div class="deck-item-info">
-        ${badges}
         <div class="deck-item-name">
           ${series ? `<span class="deck-item-series">${esc(series)}</span>` : ''}
           ${series && title ? '<span class="deck-item-sep">—</span>' : ''}
           ${title  ? `<span class="deck-item-title">${esc(title)}</span>`  : ''}
           ${!series && !title ? '<span class="deck-item-untitled">Untitled</span>' : ''}
+          ${badges}
         </div>
         <div class="deck-item-meta">${metaBits}${metaBits ? ' · ' : ''}${exportLine}</div>
       </div>
@@ -16872,18 +16888,6 @@ async function syncCycle(reason) {
 }
 
 function setSyncStatus(s) { _syncStatus = { state: s, at: Date.now() }; updateSyncStatusUI(); }
-
-function relTime(ts) {
-  if (!ts) return '';
-  const s = Math.round((Date.now() - ts) / 1000);
-  if (s < 5)   return 'just now';
-  if (s < 60)  return `${s}s ago`;
-  const m = Math.round(s / 60);
-  if (m < 60)  return `${m}m ago`;
-  const h = Math.round(m / 60);
-  if (h < 24)  return `${h}h ago`;
-  return `${Math.round(h / 24)}d ago`;
-}
 
 function updateSyncStatusUI() {
   const el = document.getElementById('sync-status');
