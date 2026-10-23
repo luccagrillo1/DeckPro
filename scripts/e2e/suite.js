@@ -271,6 +271,26 @@ async function deckproE2E(opts) {
     expect(styleForExport(styleScheme()).titleSize === 72, 'size not applied');
   });
 
+  await step('styles/text: right-click menu never opens empty, labels match', async () => {
+    await openStyles('text');
+    await click('#style-tab-text .tp-list-item[data-row="body1"]');
+    const menu = () => $('#sg-ctx-menu');
+    const open = async sel => {
+      const td = $(sel); const r = td.getBoundingClientRect();
+      td.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 5, clientY: r.top + 5 }));
+      await sleep(50);
+      return menu() && menu().style.display === 'block' ? [...menu().querySelectorAll('button')].filter(b => b.style.display !== 'none').map(b => b.textContent) : null;
+    };
+    // A colour that follows the Style tab: nothing to reset, and colours aren't pushed — no menu.
+    styleScheme().bodyFontAdv && (styleScheme().bodyFontAdv.color = '');
+    render(); await sleep(100); await click('#style-tab-text .tp-list-item[data-row="body1"]');
+    const none = await open('#style-tab-text .tp-insp .sg-td[data-field="color"]');
+    expect(!none || none.length, 'empty right-click menu opened');
+    const items = await open('#style-tab-text .tp-insp .sg-td[data-field="italic"]');
+    expect(items && items.includes('↑ Make Global'), 'Make Global missing: ' + JSON.stringify(items));
+    menu().style.display = 'none';
+  });
+
   await step('styles/style: slot font + colour', async () => {
     await openStyles('palette');
     await click('.pt-slot[data-slot="colorNeutral"]');

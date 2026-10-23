@@ -4948,3 +4948,17 @@ details.slide-overrides[open] .slide-overrides-body { padding: 2px 0 14px; borde
 .notes-block-grip.show { opacity: 1; pointer-events: auto; }
 .notes-block-grip:hover { background: rgba(15, 23, 42, .08); color: #475569; }
 .notes-block-grip:active { cursor: grabbing; }
+
+/* Right-click menu follows the theme, like the slide context menu */
+#sg-ctx-menu { background: var(--surface); border-color: var(--border); box-shadow: 0 6px 18px rgba(0,0,0,.25); }
+#sg-ctx-menu button { color: var(--text); }
+#sg-ctx-menu button:hover { background: rgba(224, 96, 16, .12); color: var(--blue); }
+
+/* Speaker Notes Manual / Intelligent switch: tinted active state */
+.notes-mode-btn.active { background: rgba(224, 96, 16, .16); color: var(--blue); font-weight: 600; }
+
+/* Sidebar deck toggles: tinted active state like every other switch now */
+.deck-slot-seg button.active { background: rgba(224, 96, 16, .18); color: var(--blue); font-weight: 700; }
+.btn-deck-qr.active { background: rgba(224, 96, 16, .18); border-color: rgba(224, 96, 16, .6); color: var(--blue); }
+.btn-deck-qr.active:hover { background: rgba(224, 96, 16, .26); border-color: var(--blue); color: var(--blue); }
+.new-deck-scheme-label { text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 600; color: var(--text); }

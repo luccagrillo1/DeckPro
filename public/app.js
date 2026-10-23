@@ -2,9 +2,19 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.0-beta.3';
+const APP_VERSION = '4.41.0-beta.4';
 
 const CHANGELOG = [
+  {
+    version: '4.41.0-beta.4',
+    date: '2026-10-23',
+    changes: [
+      "Fixed: right-clicking a control in Styles could open an empty menu (e.g. on a colour that just follows the Style tab). The menu now only opens when there's something to do, and reads \"Use Global / Make Global / Follow Display 1\" like the rest of Styles.",
+      "Fixed: the Layout tab's right-click menu could show a leftover label from the Text tab (\"Use the Style tab font\").",
+      "The right-click menu, Speaker Notes Manual / Intelligent switch, and the sidebar's Slot 1/2 and QR toggles now use the same tinted look as the rest of the app, and the right-click menu follows light/dark mode.",
+      "New Deck form says \"Style\" (it still said \"Scheme\"). Help's explanation of overrides matches what the app now shows.",
+    ],
+  },
   {
     version: '4.41.0-beta.3',
     date: '2026-10-23',
@@ -9678,9 +9688,9 @@ function renderStylePanel(panel) {
     const m = document.createElement('div');
     m.id = 'sg-ctx-menu';
     m.innerHTML =
-      `<button id="sg-ctx-reset" type="button">↺ Reset to global</button>` +
-      `<button id="sg-ctx-push" type="button">↑ Push to global</button>` +
-      `<button id="sg-ctx-inherit-d1" type="button">↺ Reset to Display 1</button>` +
+      `<button id="sg-ctx-reset" type="button">↺ Use Global</button>` +
+      `<button id="sg-ctx-push" type="button">↑ Make Global</button>` +
+      `<button id="sg-ctx-inherit-d1" type="button">↺ Follow Display 1</button>` +
       `<button id="sg-ctx-reset-def" type="button">↺ Reset to default</button>`;
     document.body.appendChild(m);
     document.addEventListener('click', e => {
@@ -9785,15 +9795,16 @@ function renderStylePanel(panel) {
       const inheritBtn  = document.getElementById('sg-ctx-inherit-d1');
       const resetDefBtn = document.getElementById('sg-ctx-reset-def');
       const isOvFont = !!(fontFld && s?.fontFields?.[fontFld]);
-      resetBtn.textContent = fontFld ? '↺ Use the Style tab font' : advFld === 'color' ? '↺ Use the Style tab colour' : '↺ Reset to global';
+      resetBtn.textContent = fontFld ? '↺ Use the Style tab font' : advFld === 'color' ? '↺ Use the Style tab colour' : '↺ Use Global';
       resetBtn.style.display    = (typoKey && isOvTypo) || (advKey && advFld && isOvAdv) || isOvFont ? '' : 'none';
       // Fonts and colours are shared through the Style tab's slots, not pushed per element.
       pushBtn.style.display     = (typoKey || (advKey && advFld && advFld !== 'color')) ? '' : 'none';
       // "Reset to Display 1" only for a Display 2 prop row that's currently overriding.
       inheritBtn.style.display  = (advKey && D2_ADV_INHERIT[advKey] && s?.[advKey] != null) ? '' : 'none';
       resetDefBtn.style.display = 'none';
-      const hasItems = typoKey || (advKey && advFld) || isOvFont;
-      if (!hasItems) return;
+      // Only open when at least one action applies — never an empty menu.
+      const hasItems = [resetBtn, pushBtn, inheritBtn, resetDefBtn].some(b => b.style.display !== 'none');
+      if (!hasItems) { _sgCtx.style.display = 'none'; return; }
       _sgCtx.style.cssText = `display:block;position:fixed;left:${e.clientX}px;top:${e.clientY}px;`;
     });
   });
@@ -9812,6 +9823,7 @@ function renderStylePanel(panel) {
       _sgCtx.dataset.scheme  = '';
       _sgCtx.dataset.field   = '';
       document.getElementById('sg-ctx-reset').style.display     = '';
+      document.getElementById('sg-ctx-reset').textContent       = '↺ Use Global';
       document.getElementById('sg-ctx-push').style.display      = '';
       document.getElementById('sg-ctx-inherit-d1').style.display = 'none';
       document.getElementById('sg-ctx-reset-def').style.display = 'none';
@@ -16045,13 +16057,13 @@ function helpSections() {
       <p>On the <strong>Style tab</strong>, pick a slot and change it right at the top; the line under the picker says whether it comes from Global or is set for this style (with <em>↺ Use Global</em> / <em>↑ Make Global</em>). Elements that set their own font or colour are listed in amber — changes to the slot won't reach them until you click <em>↺ Use …</em>. Everything else that uses the slot is outlined in the preview and listed as chips you can click to edit. Advanced styling (bold/italic, caps, alignment, outline, shadow, spacing, margins) follows Global live too: <em>Reset to Global</em> re-links a field, <em>Push to Global</em> sends it up and keeps following it.</p>
 
       <h4>Reading the colours</h4>
-      <p>Throughout the editor, <span class="help-pill help-pill-blue">blue</span> means a value is <strong>inheriting</strong> (from Global, or from Display&nbsp;1), and <span class="help-pill help-pill-orange">orange</span> means it's a <strong>custom override</strong>. Untouched fields inherit; the moment you change one it turns orange.</p>
+      <p>Untouched values follow the layer below. Where a style or element sets its own value you'll see an <strong>amber dot</strong> in the list (or an amber ring on the control), and status lines read <em>From Global</em> or <em>Set for this style</em>. Grey numbers in Layout are coming from Global.</p>
 
       <h4>Managing values (right-click a cell)</h4>
       <ul>
-        <li><strong>Reset to Global</strong> — drop a custom override and inherit again. On a font or colour this reads <em>Use the Style tab font/colour</em>.</li>
-        <li><strong>Push to Global</strong> — send this value up so every inheriting style adopts it.</li>
-        <li><strong>Reset to Display 1</strong> — hand an ${D2} row back to inheriting the main screen (see <em>LED Wall</em>).</li>
+        <li><strong>Use Global</strong> — drop this value and follow Global again (live). On a font or colour it reads <em>Use the Style tab font/colour</em>.</li>
+        <li><strong>Make Global</strong> — send this value up so every style following Global uses it, and keep following it.</li>
+        <li><strong>Follow Display 1</strong> — hand an ${D2} row back to inheriting the main screen (see <em>LED Wall</em>).</li>
       </ul>
 
       <h4>Style toolbar</h4>
@@ -16126,7 +16138,7 @@ function helpSections() {
       <p>Per-style stage-display layouts, same model as Macros. <strong>+ Add Stage Display</strong> picks any Pro7 stage layout; assign it slide-type and/or Slide&nbsp;# triggers. The <strong>Stage Screen</strong> row at the top identifies the physical display these layouts target.</p>
 
       <div class="help-callout">
-        <strong>Whole-list inheritance.</strong> A style's Macros / Stage lists inherit Global's list live until you edit them — the first change forks a private copy (an orange “Custom” badge appears). <strong>Reset to Global</strong> returns to inheriting; <strong>Push to Global</strong> shares your list with every inheriting style.
+        <strong>Whole-list inheritance.</strong> A style's Macros / Stage lists inherit Global's list live until you edit them — the first change forks a private copy (the status line switches to “Set for this style”). <strong>Use Global</strong> returns to inheriting; <strong>Make Global</strong> shares your list with every style that follows Global.
       </div>
       <p class="help-muted">Import your machine's macros and layouts once via <strong>···&nbsp;→&nbsp;Machine Setup</strong>.</p>
     `,
@@ -16139,7 +16151,7 @@ function helpSections() {
       <p>By default the ${D2} (Display&nbsp;2) follows the main screen. Every ${D2} text style — Body, Bold, Title, Point — plus the <strong>Response Card</strong> text (RC Body → Body, RC Title → Title) starts out <strong>inheriting its main-screen counterpart, live</strong>. Style the main screen and the LED wall follows automatically.</p>
       <ul>
         <li>Change any ${D2} cell and it becomes its own <strong>override</strong> (orange) — keeping whatever it was inheriting as the starting point, so nothing jumps.</li>
-        <li>Right-click an overridden ${D2} row → <strong>Reset to Display 1</strong> to hand it back to inheriting.</li>
+        <li>Right-click an overridden ${D2} row → <strong>Follow Display 1</strong> (or use the inspector's “Follow Main Screen … again” button) to hand it back to inheriting.</li>
         <li>Fonts and sizes already inherited when left blank; this covers the advanced styling too (colour, italic/underline, alignment, margins, stroke, shadow).</li>
       </ul>
 
