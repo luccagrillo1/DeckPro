@@ -2,9 +2,18 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.40.0';
+const APP_VERSION = '4.41.0-beta.1';
 
 const CHANGELOG = [
+  {
+    version: '4.41.0-beta.1',
+    date: '2026-10-23',
+    changes: [
+      "Fixed Undo: the first press after any edit did nothing (it restored the state you were already in), so every Undo took two presses — including undoing a slide reorder. Undo now goes straight back to before your last change. Typing in one field counts as one step instead of one per letter, and just clicking between slides no longer fills the undo history.",
+      "Fixed: dragging a slide in the sidebar threw an error every time (harmless to the deck, but it broke the drag's fade effect).",
+      "New: a full end-to-end test (npm run e2e) that drives the real app in Electron — builds a deck from scratch, edits every slide type, reorders, undoes, uses every Styles tab, the Deck Library (duplicate, template, archive, trash, restore, delete), Bible lookup, aliases, overrides, ⌘Z, and exports (plain and QR pair) into a throwaway ProPresenter folder, then decodes the files to check the content. It runs on a fresh deck and on a copy of this Mac's data, and never touches the real ProPresenter.",
+    ],
+  },
   {
     version: '4.40.0',
     date: '2026-10-23',
@@ -3377,10 +3386,32 @@ const _redoStack = [];
 const UNDO_LIMIT = 60;
 let _skipUndoPush = false;
 
+// saveState() runs AFTER each change, so the stack can't just record "state
+// now" — that made the first Undo restore the state you were already in.
+// Instead _undoBase holds the state as of the previous save, and a change
+// pushes THAT. Selecting a different slide (activeId only) isn't an edit and
+// pushes nothing; a burst of edits on the same item within a second (typing)
+// folds into one step.
+let _undoBase = null, _undoBaseKey = null, _undoAt = 0, _undoAtId = null;
+const _undoContentKey = () => JSON.stringify(state, function (k, v) { return this === state && k === 'activeId' ? undefined : v; });
+function resetUndoBase() {
+  _undoBase = JSON.stringify(state);
+  _undoBaseKey = _undoContentKey();
+  _undoAt = 0;
+}
 function pushUndo() {
   if (_skipUndoPush) return;
-  _undoStack.push(JSON.stringify(state));
-  if (_undoStack.length > UNDO_LIMIT) _undoStack.shift();
+  const key = _undoContentKey();
+  if (_undoBase == null) { resetUndoBase(); return; }
+  if (key === _undoBaseKey) { _undoBase = JSON.stringify(state); return; } // navigation only
+  const now = Date.now();
+  const sameBurst = now - _undoAt < 1000 && _undoAtId === state.activeId && _undoStack.length;
+  if (!sameBurst) {
+    _undoStack.push(_undoBase);
+    if (_undoStack.length > UNDO_LIMIT) _undoStack.shift();
+  }
+  _undoAt = now; _undoAtId = state.activeId;
+  _undoBase = JSON.stringify(state); _undoBaseKey = key;
   _redoStack.length = 0;
   updateUndoButtons();
 }
@@ -3396,6 +3427,7 @@ function applyUndo() {
   if (!_undoStack.length) return;
   _redoStack.push(JSON.stringify(state));
   state = JSON.parse(_undoStack.pop());
+  resetUndoBase();
   _skipUndoPush = true;
   saveState(); render(); syncHeaderInputs();
   _syncNotesPanelToDeck?.();  // keep notes panel in sync if undo crossed a load/clear
@@ -3407,6 +3439,7 @@ function applyRedo() {
   if (!_redoStack.length) return;
   _undoStack.push(JSON.stringify(state));
   state = JSON.parse(_redoStack.pop());
+  resetUndoBase();
   _skipUndoPush = true;
   saveState(); render(); syncHeaderInputs();
   _syncNotesPanelToDeck?.();  // keep notes panel in sync if redo crossed a load/clear
@@ -3484,6 +3517,7 @@ function saveState() {
 
 function applySavedState(saved) {
   if (!saved || typeof saved !== 'object') return false;
+  _undoBase = null; // re-baselined on the first save after loading
   try {
     state = Object.assign(DEFAULT_STATE(), saved);
     // Merge config separately so new keys get defaults
@@ -5278,9 +5312,10 @@ function renderSidebar() {
 let dragId = null;
 
 function onDragStart(e) {
-  dragId = e.currentTarget.dataset.id;
+  const el = e.currentTarget; // null by the time the timeout runs
+  dragId = el.dataset.id;
   e.dataTransfer.effectAllowed = 'move';
-  setTimeout(() => { e.currentTarget.style.opacity = '0.4'; }, 0);
+  setTimeout(() => { el.style.opacity = '0.4'; }, 0);
 }
 
 function onDragEnd(e) {
@@ -15116,6 +15151,8 @@ async function loadDeckState(id) {
   const row = _libCache.find(d => d.id === id);
   if (row) row.last_opened_at = new Date().toISOString();
   _undoStack.length = 0; _redoStack.length = 0;
+  resetUndoBase(); // a freshly opened deck is the new starting point
+  updateUndoButtons();
   saveState();
   clearTimeout(_autosaveTimer); // opening a deck isn't an edit — skip the echo save
   render();
@@ -15156,6 +15193,8 @@ async function newDeck({ series = '', title = '', date = '', schemeId = null, sp
   state = s;
   _deckBaseStamp = null;
   _undoStack.length = 0; _redoStack.length = 0;
+  resetUndoBase(); // a freshly opened deck is the new starting point
+  updateUndoButtons();
   saveState();
   clearTimeout(_autosaveTimer);
   render();

@@ -348,7 +348,12 @@ app.post('/api/reveal', (req, res) => {
   }
 });
 
+// End-to-end test mode (scripts/e2e): the app must never see, quit or
+// relaunch the real ProPresenter on the machine running the tests.
+const E2E = process.env.DECKPRO_E2E === '1';
+
 function pro7IsRunning() {
+  if (E2E) return false;
   try {
     return execSync('pgrep -x ProPresenter', { timeout: 2000 }).toString().trim().length > 0;
   } catch (_) {
@@ -390,7 +395,7 @@ function dismissPro7QuitDialog() {
 // and giving up too early forced a needless retry; Cancel is the escape hatch
 // for when they'd rather stop than wait.
 async function quitPro7AndWait(timeoutMs = 60000, shouldCancel = null) {
-  if (!pro7IsRunning()) return true;
+  if (E2E || !pro7IsRunning()) return true;
   try { execSync(`osascript -e 'tell application "ProPresenter" to quit'`, { timeout: 5000 }); }
   catch (_) { /* may already be quitting */ }
   const deadline = Date.now() + timeoutMs;
@@ -406,6 +411,7 @@ async function quitPro7AndWait(timeoutMs = 60000, shouldCancel = null) {
 
 /** Relaunch Pro7 (fire and forget). */
 function launchPro7() {
+  if (E2E) return false;
   try { execSync(`open -a ProPresenter`, { timeout: 5000 }); return true; }
   catch (_) { return false; }
 }
