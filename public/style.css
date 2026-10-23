@@ -4808,3 +4808,134 @@ body.dark .g-tip-title { color: #ff8a4c; }
   background: rgba(245,158,11,.18); color: #f59e0b; font-size: 10px; font-weight: 700;
   text-transform: uppercase; letter-spacing: .04em; vertical-align: 1px;
 }
+
+/* ═══ Unified UI layer ════════════════════════════════════════════════════════
+   Brings the slide editors, Preferences and older controls in line with the
+   redesigned Styles tabs (tp-* / pt-* / lt-* / mo-*): sentence-case labels,
+   card sections, tinted segmented controls, one button size. Appended last so
+   it wins over the older per-component rules above. */
+
+/* Form labels: sentence case, like the inspector group labels */
+.field label,
+.body-field-hdr > label {
+  font-size: 12px; font-weight: 600; color: var(--text);
+  text-transform: none; letter-spacing: 0; margin-bottom: 6px;
+}
+.field { margin-bottom: 16px; }
+.slide-form { max-width: 760px; }
+
+/* Inputs share the inspector's input metrics */
+.field input[type="text"], .field input[type="date"], .field input[type="number"],
+.field input[type="password"], .field select {
+  padding: 7px 10px; border-radius: 6px; font-size: 13px;
+}
+
+/* Segmented controls: tinted active state, like the inspector's .tp-seg */
+.segmented-control { border-radius: 6px; }
+.segmented-control button { padding: 6px 14px; font-size: 13px; color: var(--text); background: var(--surface); }
+.segmented-control button:hover:not(.active):not(:disabled) { color: var(--blue); }
+.segmented-control button.active {
+  background: rgba(224, 96, 16, .16); color: var(--blue); font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(224, 96, 16, .45);
+}
+
+/* Collapsible slide sections (Overrides, custom confidence-monitor text) as cards */
+details.slide-overrides {
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
+  padding: 0 14px; margin-top: 0;
+}
+.slide-overrides-summary {
+  font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none;
+  color: var(--text); padding: 11px 0;
+}
+.slide-overrides-summary::before { content: '▸'; display: inline-block; width: 14px; color: var(--muted); }
+details.slide-overrides[open] .slide-overrides-summary::before { content: '▾'; }
+details.slide-overrides[open] .slide-overrides-body { padding: 2px 0 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+
+/* Preferences sections read like inspector cards */
+.settings-section { padding: 16px 18px; }
+.settings-section h3 {
+  font-size: 14px; font-weight: 700; color: var(--text);
+  text-transform: none; letter-spacing: 0; margin: 0 0 12px;
+}
+
+/* One button size for the small utility buttons */
+.btn-browse, .btn-sm {
+  min-height: 30px; padding: 5px 12px; border-radius: 6px; font-size: 12px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+}
+.btn-browse:hover:not(:disabled), .btn-sm:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); }
+.btn-sm:disabled, .btn-browse:disabled { opacity: .45; cursor: not-allowed; }
+
+/* The blank-before panel already draws the card; its nested collapsible doesn't */
+.blank-before-preview > details.slide-overrides { border: none; background: none; padding: 0; }
+.blank-before-preview > details.slide-overrides .slide-overrides-summary { padding: 4px 0 8px; }
+.blank-before-preview > details.slide-overrides[open] .slide-overrides-body { border-top: none; padding-top: 0; }
+
+/* Body tool toggles (Fit Width, + Display 2, Strip, Verses): tinted when on */
+.body-tool-btn { min-height: 26px; padding: 3px 9px; font-size: 11.5px; border-radius: 6px; background: var(--surface); color: var(--text); }
+.body-tool-btn:hover { background: var(--surface); }
+.body-tool-btn.active {
+  background: rgba(224, 96, 16, .16); color: var(--blue); border-color: rgba(224, 96, 16, .55); font-weight: 600;
+}
+
+/* Machine Setup: card headers in sentence case, like the inspector cards */
+.setup-card-head { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 700; color: var(--text); }
+.setup-card { background: var(--surface); }
+.setup-card label { font-size: 12px; font-weight: 600; color: var(--text); }
+
+/* Help: section list on the left, content on the right — the same list +
+   inspector shape as the Styles tabs, instead of a wall of tab pills. */
+.help-modal-inner {
+  width: min(1000px, 92vw); height: 82vh; max-height: 82vh;
+  display: grid; grid-template-columns: 220px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.help-modal-hdr { grid-column: 1 / -1; }
+.help-nav {
+  grid-column: 1; grid-row: 2 / 4; flex-direction: column; flex-wrap: nowrap; gap: 1px;
+  padding: 10px 8px; border-bottom: none; border-right: 1px solid var(--border); overflow-y: auto;
+}
+.help-nav-btn {
+  text-align: left; border-radius: 6px; padding: 6px 10px; font-size: 13px; font-weight: 500; color: var(--text);
+}
+.help-nav-btn:hover { background: rgba(127,127,127,.12); }
+.help-nav-btn.active { background: rgba(224, 96, 16, .16); color: var(--blue); font-weight: 600; }
+.help-body { grid-column: 2; grid-row: 2; padding: 20px 28px 32px; }
+.help-no-results { grid-column: 2; grid-row: 3; }
+@media (max-width: 760px) {
+  .help-modal-inner { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; }
+  .help-nav { grid-row: 2; flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--border); }
+  .help-body { grid-column: 1; grid-row: 3; }
+  .help-no-results { grid-column: 1; grid-row: 4; }
+}
+
+/* What's New: wider, one card per version, readable line length */
+.changelog-modal-inner { width: min(680px, 92vw); max-height: 80vh; }
+.cl-entry { border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; background: var(--bg); }
+.cl-entry-current { border-color: rgba(224, 96, 16, .55); }
+.cl-entry-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.cl-entry-hd .cl-entry-date { margin-left: auto; }
+.cl-entry-you { font-size: 11px; color: var(--blue); font-weight: 600; }
+.cl-entry-changes li { line-height: 1.5; margin-bottom: 6px; }
+
+/* Export dialog: paths may break anywhere, but sentences shouldn't */
+.gen-modal-filename > div + div { word-break: normal; overflow-wrap: anywhere; }
+
+/* Respond to the space the main panel actually has (Speaker Notes open, small
+   window), not the window width — the old viewport media queries missed that. */
+.main-panel { container-type: inline-size; container-name: mainpanel; }
+.style-tabs { flex-wrap: wrap; row-gap: 2px; }
+@container mainpanel (max-width: 720px) {
+  .tp-wrap, .tp-body { grid-template-columns: minmax(0, 1fr); }
+  .tp-list { position: static; flex-direction: row; flex-wrap: wrap; gap: 4px; }
+  .tp-list-sec { width: 100%; margin: 6px 0 2px; }
+  .tp-list-item { padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; }
+  .tp-list .btn-sm { margin-top: 0 !important; }
+  .tp-notes-block { max-width: none; }
+  .scheme-toolbar { flex-wrap: wrap; }
+}
+@container mainpanel (max-width: 520px) {
+  .tp-insp { padding: 4px 10px 10px; }
+  .tp-row { gap: 8px 10px; }
+  .tp-select { min-width: 0; }
+}

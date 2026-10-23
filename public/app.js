@@ -2,9 +2,21 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.0-beta.1';
+const APP_VERSION = '4.41.0-beta.2';
 
 const CHANGELOG = [
+  {
+    version: '4.41.0-beta.2',
+    date: '2026-10-23',
+    changes: [
+      "The rest of the app now matches the redesigned Styles tabs: sentence-case labels in the slide editors, Overrides and custom confidence-monitor text as cards, tinted (not solid orange) selected buttons everywhere — modes, transitions, Fit Width / + Display 2 / Strip / Verses — and one button size. Preferences and Machine Setup cards use the same headings.",
+      "Help is now a section list on the left with the guide on the right (was a wall of 24 tab pills). What's New shows one card per version, marks betas and the version you're on.",
+      "Styles adapts to the space it actually has: with Speaker Notes open or a small window, the tabs wrap instead of being cut off, and the element list turns into chips above a full-width inspector.",
+      "Styles → Global → Response Card shows the same LED-wall preview as a style (was a raw table).",
+      "Export finished dialog: the slide-type chips follow light/dark mode, and the prop-collection sentence no longer breaks mid-word.",
+      "Fixed: the ProPresenter version next to \"Connected\" was blank with ProPresenter 21.x.",
+    ],
+  },
   {
     version: '4.41.0-beta.1',
     date: '2026-10-23',
@@ -6374,12 +6386,42 @@ function attachSchemesStageTab(containerId) {
 // elements (title, R1–R4) plus custom ones, each fully editable:
 // name (= Pro7 object name), text, position (X/Y/W/H) and style (font/size/
 // color/align). Response 1–4 text is filled from the Response Card deck item.
+// Response Card element helpers, shared by the style tab and the Global view.
+const RC_FROM_DECK = ['r1', 'r2', 'r3', 'r4'];
+const RC_ROLE_LABEL = { title: 'Title', r1: 'Response 1', r2: 'Response 2', r3: 'Response 3', r4: 'Response 4', custom: 'Custom' };
+// What export falls back to for an empty font/size/colour (buildProp's
+// makePropStyle): the LED wall's Title for the title element, Body otherwise.
+function rcInherited(pv, elObj) {
+  const t = elObj.role === 'title';
+  return {
+    font: t ? pv.propTitleFont : pv.propBodyFont,
+    size: t ? pv.propTitleSize : pv.propBodySize,
+    color: ((t ? pv.propTitleFontAdv : pv.propBodyFontAdv) || {}).color || '#ffffff',
+    lbl: t ? `${dn('ledWall')} Title` : `${dn('ledWall')} Body`,
+  };
+}
+const rcTextOf = elObj => RC_FROM_DECK.includes(elObj.role)
+  ? ((state.config.responses || {})[elObj.role] || RC_ROLE_LABEL[elObj.role])
+  : (elObj.text || elObj.name || '');
+function rcPreviewHTML(pv, els, sel) {
+  const cw = pv.propCanvasW || 3200, ch = pv.propCanvasH || 1280;
+  const boxes = els.map((e, i) => {
+    const inh = rcInherited(pv, e);
+    const adv = { ...FONT_ADV_DEFAULTS(), color: e.color || inh.color, alignment: e.align === 'left' ? '' : (e.align || 'center'), verticalAlignment: 'middle' };
+    return _tpEl(pv, cw, ch, { row: `rc${i}`, box: [e.x ?? 0, e.y ?? 0, e.w ?? 2600, e.h ?? 150], font: e.font || inh.font,
+      size: e.size || inh.size, adv, spans: [{ text: rcTextOf(e) }], sel: i === sel });
+  }).join('');
+  return `<div class="tp-canvas-block">
+    <div class="lp-canvas-lbl">${esc(dn('ledWall'))} · Response Card · ${Math.round(cw)}×${Math.round(ch)}</div>
+    <div class="tp-canvas tp-led" data-cw="${cw}" style="aspect-ratio:${cw} / ${ch}">${boxes}</div>
+  </div>`;
+}
+
 function attachSchemesResponseCardTab(containerId) {
   const el = document.getElementById(containerId);
   if (!el) return;
   const getScheme = () => state.styleSchemes.find(s => s.id === state.activeSchemeId) || state.styleSchemes[0];
-  const FROM_DECK = ['r1', 'r2', 'r3', 'r4'];
-  const ROLE_LABEL = { title: 'Title', r1: 'Response 1', r2: 'Response 2', r3: 'Response 3', r4: 'Response 4', custom: 'Custom' };
+  const FROM_DECK = RC_FROM_DECK, ROLE_LABEL = RC_ROLE_LABEL;
   const families = (typeof _fontFamilyMap === 'object' && _fontFamilyMap) ? Object.keys(_fontFamilyMap).sort((a, b) => a.localeCompare(b)) : [];
 
   // Read-only: what to DISPLAY. s.rcElements stays null (following Global)
@@ -6390,34 +6432,7 @@ function attachSchemesResponseCardTab(containerId) {
     if (s.rcElements == null) s.rcElements = deepClone(ensureGlobalRcElements());
     return s;
   }
-  // What export falls back to for an empty font/size/colour (buildProp's
-  // makePropStyle): the LED wall's Title for the title element, Body otherwise.
-  const inherited = (pv, elObj) => {
-    const t = elObj.role === 'title';
-    return {
-      font: t ? pv.propTitleFont : pv.propBodyFont,
-      size: t ? pv.propTitleSize : pv.propBodySize,
-      color: ((t ? pv.propTitleFontAdv : pv.propBodyFontAdv) || {}).color || '#ffffff',
-      lbl: t ? `${dn('ledWall')} Title` : `${dn('ledWall')} Body`,
-    };
-  };
-  const textOf = elObj => FROM_DECK.includes(elObj.role)
-    ? ((state.config.responses || {})[elObj.role] || ROLE_LABEL[elObj.role])
-    : (elObj.text || elObj.name || '');
-
-  function preview(pv, els, sel) {
-    const cw = pv.propCanvasW || 3200, ch = pv.propCanvasH || 1280;
-    const boxes = els.map((e, i) => {
-      const inh = inherited(pv, e);
-      const adv = { ...FONT_ADV_DEFAULTS(), color: e.color || inh.color, alignment: e.align === 'left' ? '' : (e.align || 'center'), verticalAlignment: 'middle' };
-      return _tpEl(pv, cw, ch, { row: `rc${i}`, box: [e.x ?? 0, e.y ?? 0, e.w ?? 2600, e.h ?? 150], font: e.font || inh.font,
-        size: e.size || inh.size, adv, spans: [{ text: textOf(e) }], sel: i === sel });
-    }).join('');
-    return `<div class="tp-canvas-block">
-      <div class="lp-canvas-lbl">${esc(dn('ledWall'))} · Response Card · ${Math.round(cw)}×${Math.round(ch)}</div>
-      <div class="tp-canvas tp-led" data-cw="${cw}" style="aspect-ratio:${cw} / ${ch}">${boxes}</div>
-    </div>`;
-  }
+  const inherited = rcInherited, preview = rcPreviewHTML;
 
   function render() {
     const s = getScheme();
@@ -8343,8 +8358,12 @@ function renderGlobalPanel(panel, schemeOptionsHTML) {
           : '<p class="cm-empty">No global stage displays yet — push one from a style.</p>'}
       </div>
       <div class="style-tab-body" id="g-tab-responseCard" ${_gTab !== 'responseCard' ? 'style="display:none"' : ''}>
-        <table class="bo-table"><thead><tr><th>Name</th><th>Role</th><th>Text</th><th>X</th><th>Y</th><th>W</th><th>H</th></tr></thead>
-        <tbody>${gRc.map(el => `<tr><td>${esc(el.name)}</td><td>${esc(el.role)}</td><td>${esc(el.text || '—')}</td><td>${el.x}</td><td>${el.y}</td><td>${el.w}</td><td>${el.h}</td></tr>`).join('')}</tbody></table>
+        <div class="tp-preview">${rcPreviewHTML(styleForExport(gScheme), gRc, -1)}</div>
+        <div class="pt-els">${gRc.map(el => `<div class="pt-el">
+          <span class="pt-el-name"><span class="pt-el-sec">${esc(RC_ROLE_LABEL[el.role] || 'Element')}</span> ${esc(el.name || '')}</span>
+          <span class="pt-el-what">${esc(rcTextOf(el))} · ${el.x}, ${el.y} · ${el.w}×${el.h}</span>
+          <span class="pt-el-actions"></span></div>`).join('')}</div>
+        <p class="lt-note">Read-only — styles that follow Global use these elements. Edit them from a style, then ↑ Make Global.</p>
       </div>
     </fieldset>
   </div>`;
@@ -14221,16 +14240,11 @@ function showGenerateModal(data, spec) {
     ? Math.round(data.presentations.reduce((sum, p) => sum + (p.bytes || 0), 0) / 1024)
     : (data.presentationBytes ? Math.round(data.presentationBytes / 1024) : null);
 
-  const chipColors = {
-    scripture: '#e8f0fe', point: '#e8f5e9', blank: '#f3e5f5', image: '#fff3e0', custom: '#fce4ec'
-  };
-  const chipTextColors = {
-    scripture: '#1565c0', point: '#2e7d32', blank: '#6a1b9a', image: '#bf360c', custom: '#880e4f'
-  };
-
+  // Same per-type colours as the sidebar's Add buttons (icon-*), which already
+  // have light and dark variants.
   const breakdownChips = Object.entries(counts)
     .filter(([, n]) => n > 0)
-    .map(([type, n]) => `<span class="gen-breakdown-chip" style="background:${chipColors[type]};color:${chipTextColors[type]};border-color:${chipColors[type]}">${n} ${type}</span>`)
+    .map(([type, n]) => `<span class="gen-breakdown-chip icon-${type}">${n} ${type}</span>`)
     .join('');
 
   const propSection = data.props && data.props.length
@@ -14767,9 +14781,11 @@ async function checkPro7(silent = false) {
     pro7rt.connected = !!(data.ok && data.connected);
     if (pro7rt.connected && data.data) {
       const v = data.data;
+      // Older Pro7 sends applicationVersion {major, minor}; 21.x sends
+      // host_description "ProPresenter 21.4".
       pro7rt.version = v.applicationVersion
         ? `${v.applicationVersion.major || ''}.${v.applicationVersion.minor || ''}`
-        : null;
+        : (String(v.host_description || '').match(/(\d+(?:\.\d+)+)/)?.[1] || null);
     } else {
       pro7rt.version = null;
     }
@@ -16478,9 +16494,11 @@ function initChangelog() {
   if (versionEl) versionEl.textContent = `v${APP_VERSION}`;
 
   body.innerHTML = CHANGELOG.map(entry => `
-    <div>
-      <div>
+    <div class="cl-entry${entry.version === APP_VERSION ? ' cl-entry-current' : ''}">
+      <div class="cl-entry-hd">
         <span class="cl-entry-version">v${entry.version}</span>
+        ${/-/.test(entry.version) ? '<span class="update-beta-tag">beta</span>' : ''}
+        ${entry.version === APP_VERSION ? '<span class="cl-entry-you">this version</span>' : ''}
         <span class="cl-entry-date">${entry.date}</span>
       </div>
       <ul class="cl-entry-changes">
