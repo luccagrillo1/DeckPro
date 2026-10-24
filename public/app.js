@@ -2,9 +2,19 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.0-beta.9';
+const APP_VERSION = '4.41.0-beta.10';
 
 const CHANGELOG = [
+  {
+    version: '4.41.0-beta.10',
+    date: '2026-10-24',
+    changes: [
+      "Response Card lock is back, for any of the 4 responses: click Lock next to a response and it can't be edited by accident, and every new deck starts with that text. Response 1 comes locked to \"I have decided to follow Jesus today!\" — click Locked to unlock it. Locks belong to this computer (and sync with iCloud), not to a deck.",
+      "Response Card suggestions from Speaker Notes skip locked responses and fill the open ones in order.",
+      "Preferences groups are now tabs that show one group at a time (the scrolling jump bar let content slide in above it and highlighted the wrong group). The tab you're on stays put when a setting re-draws the page.",
+      "Port, password, API key, translation and queue pickers in Preferences match the app's other inputs.",
+    ],
+  },
   {
     version: '4.41.0-beta.9',
     date: '2026-10-23',
@@ -3237,6 +3247,10 @@ const DEFAULT_STATE = () => ({
       r4: '',
       notesTemplate: '1 — {r1}\n2 — {r2}\n3 — {r3}\n4 — {r4}',
     },
+    // Locked Response Card text, per response (r1-r4). Lives on this computer
+    // (and in iCloud sync), not the deck: every new deck starts with it, and a
+    // locked field can't be edited until it's unlocked.
+    rcLocks:             { r1: 'I have decided to follow Jesus today!' },
   },
   globalTypography: DEFAULT_GLOBAL_TYPOGRAPHY(),
   globalLayout:     DEFAULT_GLOBAL_LAYOUT(),
@@ -6772,6 +6786,7 @@ function attachSchemesQRTab(containerId) {
     'Fires on the slide right after Questions (the next item\'s blank-before, or the item itself if it has none) — e.g. clear the outside source so ProPresenter takes the wall back.');
 }
 
+let _prefsTab = 'prefs-general';
 function renderConfigPanel(panel) {
   const cfg = state.config;
 
@@ -6781,7 +6796,7 @@ function renderConfigPanel(panel) {
         Preferences
       </h2>
 
-      <nav class="prefs-nav" id="prefs-nav">
+      <nav class="prefs-nav" id="prefs-nav" role="tablist">
         <button type="button" data-target="prefs-general">General</button>
         <button type="button" data-target="prefs-pro7">ProPresenter</button>
         <button type="button" data-target="prefs-scripture">Scripture</button>
@@ -7070,31 +7085,21 @@ function renderConfigPanel(panel) {
     </div>
   `;
 
-  // Jump bar: click scrolls to a group; scrolling highlights the group in view.
-  const prefsNavBtns = [...panel.querySelectorAll('#prefs-nav button')];
-  let prefsNavPinnedUntil = 0;
-  const markPrefsNav = () => {
-    if (!document.getElementById('prefs-nav') || Date.now() < prefsNavPinnedUntil) return;
-    const top = panel.getBoundingClientRect().top + 60;
-    let cur = prefsNavBtns[0];
-    for (const b of prefsNavBtns) {
-      const g = document.getElementById(b.dataset.target);
-      if (g && g.getBoundingClientRect().top <= top) cur = b;
-    }
-    // At the bottom the last short group can't reach the top; mark it anyway.
-    if (panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 4) cur = prefsNavBtns[prefsNavBtns.length - 1];
-    prefsNavBtns.forEach(b => b.classList.toggle('active', b === cur));
+  // Tabs: one group at a time. The choice survives the re-renders that many
+  // settings trigger, so changing a setting never bounces you back to General.
+  const prefsTabs = [...panel.querySelectorAll('#prefs-nav button')];
+  const showPrefsTab = (id) => {
+    if (!panel.querySelector('#' + id)) id = 'prefs-general';
+    _prefsTab = id;
+    prefsTabs.forEach(b => b.classList.toggle('active', b.dataset.target === id));
+    panel.querySelectorAll('.prefs-group').forEach(g => { g.hidden = g.id !== id; });
   };
-  // A clicked group stays marked even when it's too short to reach the top.
-  prefsNavBtns.forEach(b => b.addEventListener('click', () => {
-    prefsNavPinnedUntil = Date.now() + 500;
-    prefsNavBtns.forEach(x => x.classList.toggle('active', x === b));
-    document.getElementById(b.dataset.target)?.scrollIntoView({ block: 'start' });
+  prefsTabs.forEach(b => b.addEventListener('click', () => {
+    showPrefsTab(b.dataset.target);
+    panel.scrollTop = 0;
   }));
   if (panel._prefsScroll) panel.removeEventListener('scroll', panel._prefsScroll);
-  panel._prefsScroll = markPrefsNav;
-  panel.addEventListener('scroll', markPrefsNav, { passive: true });
-  markPrefsNav();
+  showPrefsTab(_prefsTab);
 
   // Deck Library location
   (async () => {
@@ -10008,9 +10013,29 @@ function renderStylePanel(panel) {
 
 // ─── Response Card panel ──────────────────────────────────────────────────────
 
+// Locked text for one response, or '' when it isn't locked.
+function rcLockedText(cfg, key) {
+  const t = (cfg.rcLocks || {})[key];
+  return typeof t === 'string' && t.trim() ? t : '';
+}
+// Puts every locked response's text into the deck. Returns true if anything changed.
+function applyRcLocks(cfg) {
+  if (!cfg.responses) cfg.responses = { r1: '', r2: '', r3: '', r4: '' };
+  let changed = false;
+  for (const key of ['r1', 'r2', 'r3', 'r4']) {
+    const t = rcLockedText(cfg, key);
+    if (t && cfg.responses[key] !== t) { cfg.responses[key] = t; changed = true; }
+  }
+  return changed;
+}
+
+const LOCK_SVG = (locked) => locked
+  ? '<svg viewBox="0 0 12 12" width="12" height="12" fill="none"><rect x="2.5" y="5.5" width="7" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M4 5.5V4a2 2 0 0 1 4 0v1.5" stroke="currentColor" stroke-width="1.2"/></svg>'
+  : '<svg viewBox="0 0 12 12" width="12" height="12" fill="none"><rect x="2.5" y="5.5" width="7" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M4 5.5V4a2 2 0 0 1 3.9-.6" stroke="currentColor" stroke-width="1.2"/></svg>';
+
 function renderResponseCardPanel(panel) {
   const cfg = state.config;
-  if (!cfg.responses) cfg.responses = { r1: '', r2: '', r3: '', r4: '' };
+  if (applyRcLocks(cfg)) saveState();
   const rc = cfg.responses;
   const DEFAULT_RC_NOTES = '1 — {r1}\n2 — {r2}\n3 — {r3}\n4 — {r4}';
 
@@ -10029,11 +10054,18 @@ function renderResponseCardPanel(panel) {
 
       <div class="settings-section">
         <h3>Text</h3>
-        ${['r1', 'r2', 'r3', 'r4'].map((key, i) => `
+        ${['r1', 'r2', 'r3', 'r4'].map((key, i) => {
+          const locked = !!rcLockedText(cfg, key);
+          return `
         <div class="field" style="margin-bottom:${i < 3 ? 10 : 0}px">
           <label>Response ${i + 1}</label>
-          <input type="text" id="rc-${key}" spellcheck="true" value="${esc(rc[key])}" placeholder="Response option">
-        </div>`).join('')}
+          <div class="rc-lock-row${locked ? ' is-locked' : ''}">
+            <input type="text" id="rc-${key}" spellcheck="true" value="${esc(rc[key])}" placeholder="Response option"${locked ? ' readonly' : ''}>
+            <button type="button" class="btn-sm rc-lock-btn" data-key="${key}" title="${locked ? 'Locked — every new deck starts with this text. Click to unlock.' : 'Lock this text so every new deck starts with it'}">${LOCK_SVG(locked)}${locked ? 'Locked' : 'Lock'}</button>
+          </div>
+        </div>`;
+        }).join('')}
+        <div class="rc-lock-note">Locked responses can't be edited by accident, and every new deck starts with their text.</div>
       </div>
 
       <div class="settings-section">
@@ -10059,6 +10091,31 @@ function renderResponseCardPanel(panel) {
     const el = document.getElementById('rc-' + key);
     if (el) el.addEventListener('input', e => { cfg.responses[key] = e.target.value; saveState(); });
   });
+
+  panel.querySelectorAll('.rc-lock-btn').forEach(btn => btn.addEventListener('click', () => {
+    const key = btn.dataset.key;
+    const n = key.slice(1);
+    if (rcLockedText(cfg, key)) {
+      showConfirmModal(`Unlock Response ${n}?`,
+        'You can edit it in this deck, and new decks will start with it blank.',
+        'Unlock', () => {
+          const locks = { ...(cfg.rcLocks || {}) };
+          delete locks[key];
+          cfg.rcLocks = locks;
+          saveState();
+          render();
+          document.getElementById('rc-' + key)?.focus();
+        });
+      return;
+    }
+    const text = (cfg.responses[key] || '').trim();
+    if (!text) { toast('warn', `Type Response ${n} first`, 'There’s nothing to lock yet.'); return; }
+    cfg.rcLocks = { ...(cfg.rcLocks || {}), [key]: text };
+    cfg.responses[key] = text;
+    saveState();
+    render();
+    toast('success', `Response ${n} locked`, 'New decks will start with this text.');
+  }));
 
   const tmplEl = document.getElementById('rc-notes-template');
   if (tmplEl) tmplEl.addEventListener('input', e => { cfg.responses.notesTemplate = e.target.value; saveState(); });
@@ -13931,11 +13988,9 @@ function notesAddConfidence(text) {
 function notesAddResponseCard(s) {
   const cfg = state.config;
   if (!cfg.responses) cfg.responses = { r1: '', r2: '', r3: '', r4: '' };
-  const [r1, r2, r3, r4] = s.bullets || [];
-  if (r1) cfg.responses.r1 = r1;
-  if (r2) cfg.responses.r2 = r2;
-  if (r3) cfg.responses.r3 = r3;
-  if (r4) cfg.responses.r4 = r4;
+  // Locked responses keep their text; the suggestion fills the open ones in order.
+  const open = ['r1', 'r2', 'r3', 'r4'].filter(k => !rcLockedText(cfg, k));
+  (s.bullets || []).filter(Boolean).slice(0, open.length).forEach((b, i) => { cfg.responses[open[i]] = b; });
   cfg.includeResponseCard = true; // filling it implies this week uses it
   saveState();
   render();
@@ -15294,7 +15349,7 @@ const PERSISTENT_CONFIG_FIELDS = [
   // App-wide preferences (mirrors SYNC_SECTIONS()'s portable-vs-deck split)
   'features', 'recentSeries', 'displayNames', 'bookNames', 'queueMode',
   'speakers', 'notesStyleMap', 'capitalizeDivinePronouns',
-  'notesMode', 'notesUseNearbyRefs',
+  'notesMode', 'notesUseNearbyRefs', 'rcLocks',
 ];
 const PERSISTENT_STATE_FIELDS = [
   'styleSchemes', 'globalTypography', 'globalLayout', 'globalFontAdv',
@@ -15363,6 +15418,7 @@ async function newDeck({ series = '', title = '', date = '', schemeId = null, sp
   // !fromTemplateId behavior this block already had).
   carryPersistentConfig(state, s);
   if (!fromTemplateId) carryPersistentGlobals(state, s);
+  applyRcLocks(s.config);
   s.activeSchemeId = schemeId || s.activeSchemeId || state.activeSchemeId;
   s.currentDeckId  = crypto.randomUUID();
   s.activeId       = 'start';
@@ -16455,7 +16511,7 @@ function helpSections() {
     label: 'Preferences',
     html: `
       <h3>Preferences</h3>
-      <p>Open with <strong>···&nbsp;→&nbsp;Preferences</strong>. The bar at the top jumps between its five groups:</p>
+      <p>Open with <strong>···&nbsp;→&nbsp;Preferences</strong>. The tabs at the top switch between its five groups:</p>
       <ul>
         <li><strong>General</strong> — Updates (Stable or Beta channel), Deck Library location (point at a shared folder to use one library on several Macs), and iCloud Sync for styles and portable preferences.</li>
         <li><strong>ProPresenter</strong> — Connection (port, password), Export (Pro7 folder, export library, auto-manage ProPresenter on export), and QR Export (export both the QR and no-QR versions).</li>
@@ -16716,6 +16772,7 @@ function SYNC_SECTIONS() {
     bookNames:        { get: () => c.bookNames,        set: v => { c.bookNames = v || {}; } },
     speakers:         { get: () => c.speakers,         set: v => { c.speakers = v || []; } },
     responses:        { get: () => c.responses,        set: v => { c.responses = v || {}; } },
+    rcLocks:          { get: () => c.rcLocks,          set: v => { c.rcLocks = v || {}; } },
     notesStyleMap:    { get: () => c.notesStyleMap,    set: v => { c.notesStyleMap = v || {}; } },
     stageScreen:      { get: () => c.stageScreen,      set: v => { c.stageScreen = v; } },
     qrMacro:          { get: () => c.qrMacro,          set: v => { c.qrMacro = v || null; } },
