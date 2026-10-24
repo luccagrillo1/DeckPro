@@ -2,9 +2,18 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.0-beta.8';
+const APP_VERSION = '4.41.0-beta.9';
 
 const CHANGELOG = [
+  {
+    version: '4.41.0-beta.9',
+    date: '2026-10-23',
+    changes: [
+      "Preferences is organized into five groups — General, ProPresenter, Scripture, Your Setup, Advanced — with a bar at the top that jumps between them and highlights where you are.",
+      "The old Pro7 Connection block is split into Connection (port, password) and Export (Pro7 folder, export library, auto-manage); Divine Pronouns is its own section with shorter wording.",
+      "Port, password, API key, translation and queue format now use the same aligned label column as the rest of Preferences.",
+    ],
+  },
   {
     version: '4.41.0-beta.8',
     date: '2026-10-23',
@@ -6772,6 +6781,17 @@ function renderConfigPanel(panel) {
         Preferences
       </h2>
 
+      <nav class="prefs-nav" id="prefs-nav">
+        <button type="button" data-target="prefs-general">General</button>
+        <button type="button" data-target="prefs-pro7">ProPresenter</button>
+        <button type="button" data-target="prefs-scripture">Scripture</button>
+        <button type="button" data-target="prefs-setup">Your Setup</button>
+        <button type="button" data-target="prefs-advanced">Advanced</button>
+      </nav>
+
+      <section class="prefs-group" id="prefs-general">
+        <div class="prefs-group-title">General</div>
+
       <div class="settings-section">
         <h3>Updates</h3>
         <div class="settings-row" style="align-items:center">
@@ -6813,78 +6833,32 @@ function renderConfigPanel(panel) {
         </div>
         <div class="sync-status" id="sync-status" style="margin-top:8px"></div>
       </div>
+      </section>
+
+      <section class="prefs-group" id="prefs-pro7">
+        <div class="prefs-group-title">ProPresenter</div>
 
       <div class="settings-section">
-        <h3>Display Names</h3>
-        <p style="color:var(--muted);font-size:12px;margin:0 0 10px">
-          Rename outputs to match your setup — these labels appear throughout the app.
-        </p>
-        <div class="settings-row" style="margin-bottom:8px;align-items:center">
-          <label style="min-width:100px;font-size:13px;color:var(--muted)">Display 1</label>
-          <input type="text" id="cfg-dn-mainScreen" value="${esc((cfg.displayNames || {}).mainScreen || 'Main Screen')}" placeholder="Main Screen" style="flex:1">
+        <h3>Connection</h3>
+        <div class="settings-row">
+          <label>Port</label>
+          <input type="number" id="cfg-pro7port" value="${cfg.pro7Port || 1025}" min="1" max="65535" style="width:110px">
         </div>
-        <div class="settings-row" style="margin-bottom:8px;align-items:center">
-          <label style="min-width:100px;font-size:13px;color:var(--muted)">Display 2</label>
-          <input type="text" id="cfg-dn-ledWall" value="${esc((cfg.displayNames || {}).ledWall || 'LED Wall')}" placeholder="LED Wall" style="flex:1">
-        </div>
-        <div class="settings-row" style="align-items:center">
-          <label style="min-width:100px;font-size:13px;color:var(--muted)">Display 3</label>
-          <input type="text" id="cfg-dn-monitor" value="${esc((cfg.displayNames || {}).monitor || 'Confidence Monitor')}" placeholder="Confidence Monitor" style="flex:1">
-        </div>
-      </div>
-
-      <div class="settings-section">
-        <h3>Speakers</h3>
-        <p style="color:var(--muted);font-size:12px;margin:0 0 10px">
-          Recurring speakers offered in the New Deck dropdown. New names can be added there too.
-        </p>
-        <div id="speakers-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
-          ${(cfg.speakers || []).length
-            ? (cfg.speakers || []).map(s => `
-                <span class="speaker-chip" style="display:inline-flex;align-items:center;gap:6px;background:var(--panel-2,#2a2a2a);border:1px solid var(--border,#444);border-radius:14px;padding:3px 6px 3px 10px;font-size:12.5px">
-                  ${esc(s)}
-                  <button class="speaker-chip-x" data-speaker="${esc(s)}" title="Remove" style="border:none;background:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0 2px">×</button>
-                </span>`).join('')
-            : '<span style="color:var(--muted);font-size:12px">No permanent speakers yet.</span>'}
-        </div>
-        <div class="settings-row" style="align-items:center">
-          <input type="text" id="cfg-speaker-add" placeholder="Add a speaker…" style="flex:1" spellcheck="true">
-          <button class="btn-browse" id="btn-speaker-add">Add</button>
-        </div>
-      </div>
-
-      <div class="settings-section">
-        <h3 data-tip-key="queue">Queue</h3>
-        <div class="field" style="margin-bottom:0">
-          <label data-tip-key="queue-format">Upcoming-slide format</label>
-          <select id="cfg-queue-mode" style="flex:1">
-            <option value="ref"${(cfg.queueMode || 'ref') === 'ref' ? ' selected' : ''}>Next Reference Only — e.g. "Ephesians 5:18"</option>
-            <option value="refPhrase"${cfg.queueMode === 'refPhrase' ? ' selected' : ''}>Next Reference + First Phrase</option>
-            <option value="fullNext"${cfg.queueMode === 'fullNext' ? ' selected' : ''}>Next Slide — Full Text, Reference on Top</option>
-            <option value="list"${cfg.queueMode === 'list' ? ' selected' : ''}>Full List</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="settings-section">
-        <h3>Pro7 Connection</h3>
-        <div class="pro7-conn-row">
-          <div class="field" style="flex:0 0 110px;margin-bottom:0">
-            <label>Port</label>
-            <input type="number" id="cfg-pro7port" value="${cfg.pro7Port || 1025}" min="1" max="65535" style="width:100%">
-          </div>
-          <div class="field" style="flex:1;margin-bottom:0">
-            <label>Password (if set)</label>
-            <input type="password" id="cfg-pro7password" value="${esc(cfg.pro7Password || '')}" placeholder="leave blank if none" style="width:100%">
-          </div>
-          <button class="btn-sm" id="btn-pro7-connect" style="align-self:flex-end;margin-bottom:0">Check</button>
+        <div class="settings-row">
+          <label>Password</label>
+          <input type="password" id="cfg-pro7password" value="${esc(cfg.pro7Password || '')}" placeholder="leave blank if none" style="flex:1;min-width:0">
+          <button class="btn-sm" id="btn-pro7-connect">Check</button>
         </div>
         <div id="pro7-connect-status" class="pro7-connect-status ${pro7rt.connected ? 'ok' : 'err'}">
           ${pro7rt.connected
             ? `Connected${pro7rt.version ? ' — ' + esc(pro7rt.version) : ''}`
             : 'Not connected — check Pro7 is running and Network API is enabled in preferences'}
         </div>
-        <div class="settings-row" style="margin-top:12px;align-items:center">
+      </div>
+
+      <div class="settings-section">
+        <h3>Export</h3>
+        <div class="settings-row" style="align-items:center">
           <label style="min-width:110px">Pro7 Folder</label>
           <div class="folder-row" style="flex:1">
             <input type="text" id="cfg-pro7-root" value="${esc(cfg.pro7RootFolder || '')}" readonly placeholder="Auto-detect" style="flex:1;min-width:0">
@@ -6927,6 +6901,131 @@ function renderConfigPanel(panel) {
           When the deck's QR toggle is on, Export delivers two presentations to Pro7 — one without QR and one with — both sharing the same prop collection, instead of just the QR version. Handy for a Saturday/Sunday pair with identical content. Both files get a sequential <code>_v1</code>/<code>_v2</code> suffix.
         </div>
       </div>
+      </section>
+
+      <section class="prefs-group" id="prefs-scripture">
+        <div class="prefs-group-title">Scripture</div>
+
+      <div class="settings-section">
+        <h3>Bible Lookup (API.Bible)</h3>
+        <p style="color:var(--muted);font-size:12px;margin:0 0 10px">
+          Get a free API key at <strong>api.bible</strong>. Paste it below, then click Fetch to load your available translations.
+        </p>
+        <div class="settings-row">
+          <label>API Key</label>
+          <input type="password" id="cfg-bible-key" value="${esc(cfg.bibleApiKey || '')}" placeholder="Paste your api.bible key" spellcheck="false" autocomplete="off" style="flex:1;min-width:0">
+          <button class="btn-sm" id="btn-bible-fetch">Fetch</button>
+        </div>
+        <div class="settings-row" style="margin-bottom:4px">
+          <label>Default Translation</label>
+          <select id="cfg-bible-id" style="flex:1;min-width:0">
+            ${(cfg.bibleList || []).length
+              ? (cfg.bibleList.map(b =>
+                  `<option value="${esc(b.id)}" ${b.id === cfg.bibleId ? 'selected' : ''}>${esc(b.name)} (${esc(b.abbreviation)})</option>`
+                ).join(''))
+              : (cfg.bibleId
+                  ? `<option value="${esc(cfg.bibleId)}">${esc(cfg.bibleName || cfg.bibleId)}</option>`
+                  : `<option value="">— paste key and click Fetch —</option>`)}
+          </select>
+        </div>
+        ${(cfg.bibleList || []).length ? `
+          <div class="bible-list-note">${cfg.bibleList.length} translation${cfg.bibleList.length !== 1 ? 's' : ''} available on your account</div>
+        ` : ''}
+      </div>
+
+      <div class="settings-section">
+        <h3>Book Names</h3>
+        <p style="color:var(--muted);font-size:12px;margin:0 0 10px">
+          Choose how ambiguous book names appear in the title. Applied at export — changing the setting retroactively updates all slides.
+        </p>
+        ${BOOK_NAME_OPTIONS.map(({ key, label, choices }) => {
+          const cur = (cfg.bookNames || {})[key] || '';
+          return `
+            <div class="settings-row" style="margin-bottom:8px;align-items:center">
+              <label style="min-width:160px;font-size:13px">${esc(label)}</label>
+              <select class="bookname-select" data-key="${esc(key)}" style="flex:1">
+                <option value="">As typed</option>
+                ${choices.map(c => `<option value="${esc(c)}" ${cur === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+              </select>
+            </div>
+          `;
+        }).join('')}
+      </div>
+
+      <div class="settings-section">
+        <h3>Divine Pronouns</h3>
+        <div class="rc-toggle-row" id="capitalize-pronouns-row">
+          <div class="toggle ${cfg.capitalizeDivinePronouns === true ? 'on' : ''}" id="capitalize-pronouns-toggle"></div>
+          <span>Capitalize He, Him, His, Himself in looked-up verses</span>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
+          The caps show in the editor so you can lowercase any that don't refer to God (e.g. Mark 1:40). No rule can tell a divine "he" from a human one, so review them.
+        </div>
+        <button class="btn-sm" id="btn-divine-caps-deck" style="margin-top:10px">Apply to this deck now</button>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
+          Applies it to text already in this deck (typed or pasted), then fix exceptions by hand.
+        </div>
+      </div>
+      </section>
+
+      <section class="prefs-group" id="prefs-setup">
+        <div class="prefs-group-title">Your Setup</div>
+
+      <div class="settings-section">
+        <h3>Display Names</h3>
+        <p style="color:var(--muted);font-size:12px;margin:0 0 10px">
+          Rename outputs to match your setup — these labels appear throughout the app.
+        </p>
+        <div class="settings-row" style="margin-bottom:8px;align-items:center">
+          <label style="min-width:100px;font-size:13px;color:var(--muted)">Display 1</label>
+          <input type="text" id="cfg-dn-mainScreen" value="${esc((cfg.displayNames || {}).mainScreen || 'Main Screen')}" placeholder="Main Screen" style="flex:1">
+        </div>
+        <div class="settings-row" style="margin-bottom:8px;align-items:center">
+          <label style="min-width:100px;font-size:13px;color:var(--muted)">Display 2</label>
+          <input type="text" id="cfg-dn-ledWall" value="${esc((cfg.displayNames || {}).ledWall || 'LED Wall')}" placeholder="LED Wall" style="flex:1">
+        </div>
+        <div class="settings-row" style="align-items:center">
+          <label style="min-width:100px;font-size:13px;color:var(--muted)">Display 3</label>
+          <input type="text" id="cfg-dn-monitor" value="${esc((cfg.displayNames || {}).monitor || 'Confidence Monitor')}" placeholder="Confidence Monitor" style="flex:1">
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Speakers</h3>
+        <p style="color:var(--muted);font-size:12px;margin:0 0 10px">
+          Recurring speakers offered in the New Deck dropdown. New names can be added there too.
+        </p>
+        <div id="speakers-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+          ${(cfg.speakers || []).length
+            ? (cfg.speakers || []).map(s => `
+                <span class="speaker-chip" style="display:inline-flex;align-items:center;gap:6px;background:var(--panel-2,#2a2a2a);border:1px solid var(--border,#444);border-radius:14px;padding:3px 6px 3px 10px;font-size:12.5px">
+                  ${esc(s)}
+                  <button class="speaker-chip-x" data-speaker="${esc(s)}" title="Remove" style="border:none;background:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0 2px">×</button>
+                </span>`).join('')
+            : '<span style="color:var(--muted);font-size:12px">No permanent speakers yet.</span>'}
+        </div>
+        <div class="settings-row" style="align-items:center">
+          <input type="text" id="cfg-speaker-add" placeholder="Add a speaker…" style="flex:1" spellcheck="true">
+          <button class="btn-browse" id="btn-speaker-add">Add</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3 data-tip-key="queue">Queue</h3>
+        <div class="settings-row" style="margin-bottom:0">
+          <label data-tip-key="queue-format">Upcoming-slide format</label>
+          <select id="cfg-queue-mode" style="flex:1;min-width:0">
+            <option value="ref"${(cfg.queueMode || 'ref') === 'ref' ? ' selected' : ''}>Next Reference Only — e.g. "Ephesians 5:18"</option>
+            <option value="refPhrase"${cfg.queueMode === 'refPhrase' ? ' selected' : ''}>Next Reference + First Phrase</option>
+            <option value="fullNext"${cfg.queueMode === 'fullNext' ? ' selected' : ''}>Next Slide — Full Text, Reference on Top</option>
+            <option value="list"${cfg.queueMode === 'list' ? ' selected' : ''}>Full List</option>
+          </select>
+        </div>
+      </div>
+      </section>
+
+      <section class="prefs-group" id="prefs-advanced">
+        <div class="prefs-group-title">Advanced</div>
 
       <details class="settings-disclosure">
         <summary class="settings-disclosure-summary" data-tip-key="feature-visibility">Feature Visibility</summary>
@@ -6966,68 +7065,36 @@ function renderConfigPanel(panel) {
           })()}
         </div>
       </details>
-
-      <div class="settings-section">
-        <h3>Bible Lookup (API.Bible)</h3>
-        <p style="color:var(--muted);font-size:12px;margin:0 0 10px">
-          Get a free API key at <strong>api.bible</strong>. Paste it below, then click Fetch to load your available translations.
-        </p>
-        <div class="field" style="margin-bottom:8px">
-          <label>API Key</label>
-          <div style="display:flex;gap:6px">
-            <input type="password" id="cfg-bible-key" value="${esc(cfg.bibleApiKey || '')}" placeholder="Paste your api.bible key" spellcheck="false" autocomplete="off" style="flex:1">
-            <button class="btn-sm" id="btn-bible-fetch">Fetch</button>
-          </div>
-        </div>
-        <div class="field" style="margin-bottom:4px">
-          <label>Default Translation</label>
-          <select id="cfg-bible-id" style="width:100%">
-            ${(cfg.bibleList || []).length
-              ? (cfg.bibleList.map(b =>
-                  `<option value="${esc(b.id)}" ${b.id === cfg.bibleId ? 'selected' : ''}>${esc(b.name)} (${esc(b.abbreviation)})</option>`
-                ).join(''))
-              : (cfg.bibleId
-                  ? `<option value="${esc(cfg.bibleId)}">${esc(cfg.bibleName || cfg.bibleId)}</option>`
-                  : `<option value="">— paste key and click Fetch —</option>`)}
-          </select>
-        </div>
-        ${(cfg.bibleList || []).length ? `
-          <div class="bible-list-note">${cfg.bibleList.length} translation${cfg.bibleList.length !== 1 ? 's' : ''} available on your account</div>
-        ` : ''}
-      </div>
-
-      <div class="settings-section">
-        <h3>Book Names</h3>
-        <p style="color:var(--muted);font-size:12px;margin:0 0 10px">
-          Choose how ambiguous book names appear in the title. Applied at export — changing the setting retroactively updates all slides.
-        </p>
-        ${BOOK_NAME_OPTIONS.map(({ key, label, choices }) => {
-          const cur = (cfg.bookNames || {})[key] || '';
-          return `
-            <div class="settings-row" style="margin-bottom:8px;align-items:center">
-              <label style="min-width:160px;font-size:13px">${esc(label)}</label>
-              <select class="bookname-select" data-key="${esc(key)}" style="flex:1">
-                <option value="">As typed</option>
-                ${choices.map(c => `<option value="${esc(c)}" ${cur === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
-              </select>
-            </div>
-          `;
-        }).join('')}
-        <div class="rc-toggle-row" id="capitalize-pronouns-row" style="margin-top:10px">
-          <div class="toggle ${cfg.capitalizeDivinePronouns === true ? 'on' : ''}" id="capitalize-pronouns-toggle"></div>
-          <span>Capitalize divine pronouns on Scripture lookup (He, Him, His, Himself)</span>
-        </div>
-        <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
-          When on, verses you look up get He/Him/His/Himself capitalized right in the editor — visible, so you can lowercase any that refer to someone other than God (e.g. Mark 1:40, where the man with leprosy says "he said"). No translation on your key does this automatically, and no rule can tell a divine "he" from a human one, so the caps are yours to review. Whole-word only — "this" and "history" are untouched.
-        </div>
-        <button class="btn-sm" id="btn-divine-caps-deck" style="margin-top:10px">Capitalize divine pronouns in this deck now</button>
-        <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
-          Applies the same capitalization to every body field already in this deck — handy for text you typed or pasted rather than looked up. Run it once, then fix any exceptions by hand.
-        </div>
-      </div>
+      </section>
 
     </div>
   `;
+
+  // Jump bar: click scrolls to a group; scrolling highlights the group in view.
+  const prefsNavBtns = [...panel.querySelectorAll('#prefs-nav button')];
+  let prefsNavPinnedUntil = 0;
+  const markPrefsNav = () => {
+    if (!document.getElementById('prefs-nav') || Date.now() < prefsNavPinnedUntil) return;
+    const top = panel.getBoundingClientRect().top + 60;
+    let cur = prefsNavBtns[0];
+    for (const b of prefsNavBtns) {
+      const g = document.getElementById(b.dataset.target);
+      if (g && g.getBoundingClientRect().top <= top) cur = b;
+    }
+    // At the bottom the last short group can't reach the top; mark it anyway.
+    if (panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 4) cur = prefsNavBtns[prefsNavBtns.length - 1];
+    prefsNavBtns.forEach(b => b.classList.toggle('active', b === cur));
+  };
+  // A clicked group stays marked even when it's too short to reach the top.
+  prefsNavBtns.forEach(b => b.addEventListener('click', () => {
+    prefsNavPinnedUntil = Date.now() + 500;
+    prefsNavBtns.forEach(x => x.classList.toggle('active', x === b));
+    document.getElementById(b.dataset.target)?.scrollIntoView({ block: 'start' });
+  }));
+  if (panel._prefsScroll) panel.removeEventListener('scroll', panel._prefsScroll);
+  panel._prefsScroll = markPrefsNav;
+  panel.addEventListener('scroll', markPrefsNav, { passive: true });
+  markPrefsNav();
 
   // Deck Library location
   (async () => {
@@ -16388,25 +16455,20 @@ function helpSections() {
     label: 'Preferences',
     html: `
       <h3>Preferences</h3>
-      <p>Open with <strong>···&nbsp;→&nbsp;Preferences</strong>.</p>
+      <p>Open with <strong>···&nbsp;→&nbsp;Preferences</strong>. The bar at the top jumps between its five groups:</p>
       <ul>
-        <li><strong>Deck Library</strong> — where decks are stored; point at a shared folder to sync across Macs.</li>
-        <li><strong>iCloud Sync</strong> — keep styles and portable preferences in step across your Macs.</li>
-        <li><strong>Display Names</strong> — rename Display 1 / 2 / 3 (e.g. “${D1}”, “${D2}”, “${D3}”). Your names appear everywhere in the app.</li>
-        <li><strong>Speakers</strong> — recurring names for the New Deck dropdown.</li>
-        <li><strong>Queue</strong> — the upcoming-slide format on the queue sidebar: Next Reference Only · Next Reference + First Phrase · Next Slide Full Text (reference on top, untruncated body below) · Full List.</li>
-        <li><strong>Pro7 Connection</strong> — port, password, folder, library, auto-manage.</li>
-        <li><strong>Feature Visibility</strong> — hide advanced fields (Blank Before, ${D3} text, Prop Name, Overrides, Fit Width/Strip, Verses) for simpler handoffs. Hiding never changes what's exported.</li>
-        <li><strong>Bible Lookup</strong> — API key &amp; default translation.</li>
-        <li><strong>Book Names</strong> — ambiguous book-name styling.</li>
-        <li><strong>Capitalize Divine Pronouns</strong> — see below.</li>
+        <li><strong>General</strong> — Updates (Stable or Beta channel), Deck Library location (point at a shared folder to use one library on several Macs), and iCloud Sync for styles and portable preferences.</li>
+        <li><strong>ProPresenter</strong> — Connection (port, password), Export (Pro7 folder, export library, auto-manage ProPresenter on export), and QR Export (export both the QR and no-QR versions).</li>
+        <li><strong>Scripture</strong> — Bible Lookup (API key &amp; default translation), Book Names (ambiguous book-name styling), and Divine Pronouns — see below.</li>
+        <li><strong>Your Setup</strong> — Display Names (rename Display 1 / 2 / 3, e.g. “${D1}”, “${D2}”, “${D3}”), Speakers for the New Deck dropdown, and the Queue's upcoming-slide format.</li>
+        <li><strong>Advanced</strong> — Feature Visibility: hide advanced fields (Blank Before, ${D3} text, Prop Name, Overrides, Fit Width/Strip, Verses) for simpler handoffs. Hiding never changes what's exported.</li>
       </ul>
 
       <h4>Capitalize Divine Pronouns</h4>
       <p>No Bible translation available through a normal api.bible key capitalizes He/Him/His/Himself for God (the ones that do — NASB, Amplified, LSB, MEV — aren't in the catalog), and no automatic rule can tell a divine "he" from an ordinary one: Mark 1:40–41 has both back to back, worded identically. So DeckPro doesn't guess silently — it capitalizes visibly, where you can check it:</p>
       <ul>
         <li>Turn the toggle on, and looking up a verse capitalizes He/Him/His/Himself right in the body text as it's fetched.</li>
-        <li><strong>Capitalize divine pronouns in this deck now</strong> — a button below the toggle that applies the same capitalization across every body field already in the deck, for text you typed or pasted rather than looked up.</li>
+        <li><strong>Apply to this deck now</strong> — a button below the toggle that applies the same capitalization across every body field already in the deck, for text you typed or pasted rather than looked up.</li>
       </ul>
       <p>Either way, look over the result and lowercase any pronoun that doesn't actually refer to God — that edit sticks, since nothing re-applies behind your back.</p>
     `,

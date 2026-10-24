@@ -5158,3 +5158,27 @@ details.settings-disclosure { border-top: 1px solid var(--border); background: t
 .settings-section .rc-toggle-row { background: transparent; border: none; padding: 2px 0; margin-bottom: 8px; }
 /* One label column for every settings row, so controls line up down the page. */
 .settings-row > label { width: 180px; min-width: 180px !important; max-width: 180px; flex-shrink: 0; white-space: normal; line-height: 1.3; }
+
+/* Preferences groups + jump bar */
+.prefs-nav {
+  position: sticky; top: -1px; z-index: 5;
+  display: flex; gap: 2px; flex-wrap: wrap;
+  margin: 0 0 8px; padding: 8px 0;
+  background: var(--bg); border-bottom: 1px solid var(--border);
+}
+.prefs-nav button {
+  border: none; background: transparent; color: var(--muted);
+  font-size: 12.5px; font-weight: 500; padding: 5px 10px; border-radius: 6px; cursor: pointer;
+}
+.prefs-nav button:hover { background: var(--hover-bg); color: var(--text); }
+.prefs-nav button.active { background: var(--hover-bg); color: var(--text); font-weight: 600; }
+.prefs-group { scroll-margin-top: 52px; padding-top: 18px; }
+.prefs-group-title {
+  font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--muted); margin: 0 0 2px;
+}
+.prefs-group > .prefs-group-title + .settings-section,
+.prefs-group > .prefs-group-title + details.settings-disclosure { border-top: none; padding-top: 10px; }
+.prefs-group + .prefs-group { margin-top: 10px; border-top: 1px solid var(--border); }
+/* Status lines under a control start at the control column, not the label. */
+.settings-section .pro7-connect-status, .settings-section .bible-list-note { margin-left: 190px; }
