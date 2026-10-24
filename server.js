@@ -11,6 +11,7 @@ const { encode, encodeDeliverPair, listPropsBackups, restorePropsBackup, decodeP
 const { extractScheme, listPresentations } = require('./extractScheme');
 const { diffPresentations } = require('./diffPresentation');
 const library              = require('./library');
+const cloud                = require('./cloudSync');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -21,6 +22,7 @@ const DATA_DIR = process.env.DECKPRO_DATA_DIR ||
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 
 library.open();
+cloud.init();
 
 app.use(express.json({ limit: '20mb' }));
 
@@ -239,12 +241,13 @@ app.put('/api/decks/:id', (req, res) => {
   try {
     const result = library.saveDeck({ id: req.params.id, ...(req.body || {}) });
     if (result.conflict) return res.status(409).json({ ok: false, ...result });
+    if (!result.unchanged) cloud.nudge();
     res.json(result);
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 
 app.post('/api/decks/:id/info', (req, res) => {
-  try { res.json(library.updateDeckInfo(req.params.id, req.body || {})); }
+  try { res.json(library.updateDeckInfo(req.params.id, req.body || {})); cloud.nudge(); }
   catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 
@@ -254,25 +257,57 @@ app.post('/api/decks/:id/opened', (req, res) => {
 });
 
 app.post('/api/decks/:id/status', (req, res) => {
-  try { res.json(library.setStatus(req.params.id, (req.body || {}).status)); }
+  try { res.json(library.setStatus(req.params.id, (req.body || {}).status)); cloud.nudge(); }
   catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 
 app.post('/api/decks/:id/template', (req, res) => {
-  try { res.json(library.setTemplate(req.params.id, (req.body || {}).isTemplate)); }
+  try { res.json(library.setTemplate(req.params.id, (req.body || {}).isTemplate)); cloud.nudge(); }
   catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 
 app.post('/api/decks/:id/duplicate', (req, res) => {
-  try { res.json(library.duplicateDeck(req.params.id, (req.body || {}).newId)); }
+  try { res.json(library.duplicateDeck(req.params.id, (req.body || {}).newId)); cloud.nudge(); }
   catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 
 app.delete('/api/decks/:id', (req, res) => {
   try {
-    if (req.query.hard === '1') return res.json(library.hardDelete(req.params.id));
-    res.json(library.setStatus(req.params.id, 'deleted'));
+    const r = req.query.hard === '1' ? library.hardDelete(req.params.id) : library.setStatus(req.params.id, 'deleted');
+    cloud.nudge();
+    res.json(r);
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// Keeps the library's copy of a deck as "(conflicted copy)" before the open
+// editor overwrites it — used when a synced edit from another Mac lands while
+// this one also has unsaved changes.
+app.post('/api/decks/:id/conflict-copy', (req, res) => {
+  try {
+    const newId = (req.body || {}).newId;
+    const src = library.getDeck(req.params.id);
+    if (!src || !newId) return res.status(400).json({ ok: false, error: 'Deck not found' });
+    const title = `${src.title || 'Untitled'} (conflicted copy)`;
+    const state = { ...(src.state || {}), currentDeckId: newId, config: { ...((src.state || {}).config || {}), messageTitle: title } };
+    const r = library.saveDeck({ id: newId, series: src.series, title, date: src.date, speaker: src.speaker,
+      schemeId: src.scheme_id, notesLink: src.notes_link, state });
+    cloud.nudge();
+    res.json({ ...r, id: newId, title });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// ── DeckPro Cloud (account + sync) ────────────────────────────────────────
+app.get('/api/cloud/status', (req, res) => res.json(cloud.getStatus(parseInt(req.query.since || '0', 10) || 0)));
+app.post('/api/cloud/signin', async (req, res) => res.json(await cloud.startSignIn()));
+app.post('/api/cloud/signin/cancel', (req, res) => { cloud.cancelSignIn(); res.json({ ok: true }); });
+app.post('/api/cloud/signout', async (req, res) => res.json(await cloud.signOut()));
+app.post('/api/cloud/sync', async (req, res) => { await cloud.syncNow(); res.json(cloud.getStatus()); });
+app.get('/api/cloud/account', async (req, res) => res.json(await cloud.getAccount()));
+app.get('/api/cloud/settings', async (req, res) => res.json(await cloud.settingsPull()));
+app.post('/api/cloud/settings', async (req, res) => {
+  const { doc } = req.body || {};
+  if (!doc || typeof doc !== 'object') return res.status(400).json({ ok: false, error: 'Missing doc' });
+  res.json(await cloud.settingsPush(doc));
 });
 
 app.get('/api/history', (req, res) => {

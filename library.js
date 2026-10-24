@@ -104,6 +104,13 @@ function open() {
   // Paired QR export writes two files (no-QR + QR); last_export_path already
   // tracks the no-QR/primary one (recordGeneration), this tracks the second.
   try { db.exec(`ALTER TABLE decks ADD COLUMN last_export_path_qr TEXT DEFAULT ''`); } catch (_) {}
+  // DeckPro Cloud: cloud_rev = the server version this row is based on (0 =
+  // never synced); cloud_pending = edited here since the last push. Existing
+  // rows start pending so the first sign-in uploads them.
+  try { db.exec(`ALTER TABLE decks ADD COLUMN cloud_rev INTEGER DEFAULT 0`); } catch (_) {}
+  try { db.exec(`ALTER TABLE decks ADD COLUMN cloud_pending INTEGER DEFAULT 1`); } catch (_) {}
+  // Permanent deletes of synced decks, waiting to be pushed.
+  db.exec(`CREATE TABLE IF NOT EXISTS cloud_tombstones (id TEXT PRIMARY KEY, rev INTEGER, deleted_at TEXT)`);
 
   const ver = getMeta('schema_version');
   if (!ver) setMeta('schema_version', String(SCHEMA_VERSION));
@@ -154,6 +161,17 @@ function summarizeSlides(state) {
   return { slideCount: content.length, slideTypes: parts.join(' · ') };
 }
 
+// View-only parts of a deck's state: which slide is selected, whether blanks
+// show in the sidebar. Changing them isn't an edit, and they never sync.
+const UI_STATE_KEYS = ['activeId', 'showBlanks'];
+function contentJson(json) {
+  try {
+    const st = typeof json === 'string' ? JSON.parse(json) : { ...json };
+    for (const k of UI_STATE_KEYS) delete st[k];
+    return JSON.stringify(st);
+  } catch (_) { return null; }
+}
+
 function rowMeta(row) {
   // Everything except state_json — what the library list needs
   const { state_json, ...meta } = row;
@@ -187,21 +205,35 @@ function getDeck(id) {
  * the stored row's updated_at, returns { conflict: true } unless force.
  */
 function saveDeck({ id, series, title, date, speaker, schemeId, notesLink, state, baseUpdatedAt, force }) {
-  const existing = db.prepare('SELECT updated_at, created_at, status, is_template, dirty FROM decks WHERE id = ?').get(id);
-
-  if (existing && !force && baseUpdatedAt !== undefined && baseUpdatedAt !== null &&
-      existing.updated_at && existing.updated_at !== baseUpdatedAt) {
-    return { conflict: true, theirsUpdatedAt: existing.updated_at };
-  }
+  const existing = db.prepare('SELECT updated_at, created_at, status, is_template, dirty, state_json, series, title, date, speaker, scheme_id, notes_link FROM decks WHERE id = ?').get(id);
 
   const ts = now();
   const { slideCount, slideTypes } = summarizeSlides(state);
   const stateJson = JSON.stringify(state);
 
+  // Nothing changed except which slide is selected (or nothing at all, e.g. a
+  // save echoed after opening the deck): store it, but keep the timestamp so
+  // the deck isn't marked edited or re-synced.
+  if (existing &&
+      existing.series === (series || '') && existing.title === (title || '') &&
+      existing.date === (date || '') && existing.speaker === (speaker || '') &&
+      existing.scheme_id === (schemeId || '') && existing.notes_link === (notesLink || '') &&
+      (existing.state_json === stateJson || contentJson(existing.state_json) === contentJson(stateJson))) {
+    if (existing.state_json !== stateJson) db.prepare('UPDATE decks SET state_json = ? WHERE id = ?').run(stateJson, id);
+    return { ok: true, updatedAt: existing.updated_at, unchanged: true };
+  }
+
+  // Checked after the no-op case: a stale save that carries the same content
+  // (e.g. a view-only autosave racing a sync) isn't a conflict.
+  if (existing && !force && baseUpdatedAt !== undefined && baseUpdatedAt !== null &&
+      existing.updated_at && existing.updated_at !== baseUpdatedAt) {
+    return { conflict: true, theirsUpdatedAt: existing.updated_at };
+  }
+
   if (existing) {
     db.prepare(`
       UPDATE decks SET series=?, title=?, date=?, speaker=?, scheme_id=?, notes_link=?,
-        slide_count=?, slide_types=?, dirty=1, updated_at=?, last_saved_by=?, state_json=?
+        slide_count=?, slide_types=?, dirty=1, cloud_pending=1, updated_at=?, last_saved_by=?, state_json=?
       WHERE id=?
     `).run(series || '', title || '', date || '', speaker || '', schemeId || '', notesLink || '',
            slideCount, slideTypes, ts, HOSTNAME, stateJson, id);
@@ -233,7 +265,7 @@ function updateDeckInfo(id, { series, title, date, speaker, qrCode }) {
   db.prepare(`
     UPDATE decks SET series=COALESCE(?, series), title=COALESCE(?, title),
       date=COALESCE(?, date), speaker=COALESCE(?, speaker),
-      updated_at=?, last_saved_by=?, state_json=?
+      updated_at=?, last_saved_by=?, state_json=?, cloud_pending=1
     WHERE id=?
   `).run(series ?? null, title ?? null, date ?? null, speaker ?? null, ts, HOSTNAME, JSON.stringify(state), id);
   return { ok: true, updatedAt: ts };
@@ -245,16 +277,20 @@ function touchOpened(id) {
 
 function setStatus(id, status) {
   if (!['active', 'archived', 'deleted'].includes(status)) return { ok: false, error: 'Bad status' };
-  db.prepare('UPDATE decks SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), id);
+  db.prepare('UPDATE decks SET status = ?, updated_at = ?, cloud_pending = 1 WHERE id = ?').run(status, now(), id);
   return { ok: true };
 }
 
 function setTemplate(id, isTemplate) {
-  db.prepare('UPDATE decks SET is_template = ? WHERE id = ?').run(isTemplate ? 1 : 0, id);
+  db.prepare('UPDATE decks SET is_template = ?, updated_at = ?, cloud_pending = 1 WHERE id = ?').run(isTemplate ? 1 : 0, now(), id);
   return { ok: true };
 }
 
 function hardDelete(id) {
+  const row = db.prepare('SELECT cloud_rev FROM decks WHERE id = ?').get(id);
+  if (row && row.cloud_rev > 0) {
+    db.prepare('INSERT OR REPLACE INTO cloud_tombstones (id, rev, deleted_at) VALUES (?, ?, ?)').run(id, row.cloud_rev, now());
+  }
   db.prepare('DELETE FROM decks WHERE id = ?').run(id);
   db.prepare('DELETE FROM generations WHERE deck_id = ?').run(id);
   return { ok: true };
@@ -435,7 +471,93 @@ function resetLocation() {
   return { ok: true, libraryDir: LIB_DIR };
 }
 
+// ─── DeckPro Cloud ────────────────────────────────────────────────────────────
+// What a deck looks like on the wire: the synced metadata columns + state.
+// Machine-only columns (export paths, export history, "edited since export")
+// never leave this computer.
+const CLOUD_META_COLS = ['series', 'title', 'date', 'speaker', 'scheme_id', 'notes_link', 'status', 'is_template', 'created_at'];
+
+function cloudPendingDecks(limit = 10) {
+  return db.prepare(`SELECT * FROM decks WHERE cloud_pending = 1 ORDER BY updated_at LIMIT ?`).all(limit).map(row => {
+    let state = null;
+    try { state = JSON.parse(row.state_json); } catch (_) {}
+    const meta = {};
+    for (const c of CLOUD_META_COLS) meta[c] = row[c];
+    return { id: row.id, baseRev: row.cloud_rev || 0, updatedAt: row.updated_at, meta, state };
+  });
+}
+
+// After a push: remember the server rev. Only clear "pending" if the row
+// wasn't edited again while the push was in flight.
+function cloudMarkPushed(id, rev, pushedUpdatedAt) {
+  db.prepare(`UPDATE decks SET cloud_rev = ?, cloud_pending = CASE WHEN updated_at = ? THEN 0 ELSE 1 END WHERE id = ?`)
+    .run(rev, pushedUpdatedAt, id);
+}
+
+function cloudTombstones() {
+  return db.prepare('SELECT id, rev, deleted_at FROM cloud_tombstones').all();
+}
+function cloudClearTombstone(id) {
+  db.prepare('DELETE FROM cloud_tombstones WHERE id = ?').run(id);
+}
+
+// Apply a deck that came from the server. Returns 'applied', 'deleted' or
+// 'skipped'. A row with unpushed local edits is left alone unless force (the
+// server already decided it lost a conflict and kept it as a copy).
+function cloudApplyRemote(remote, { force = false, keepConfigKeys = [] } = {}) {
+  const local = db.prepare('SELECT cloud_rev, cloud_pending, state_json FROM decks WHERE id = ?').get(remote.id);
+  if (local && !force && (local.cloud_pending || (local.cloud_rev || 0) >= remote.rev)) return 'skipped';
+  if (remote.deleted) {
+    if (!local) return 'skipped';
+    db.prepare('DELETE FROM decks WHERE id = ?').run(remote.id);
+    db.prepare('DELETE FROM generations WHERE deck_id = ?').run(remote.id);
+    return 'deleted';
+  }
+  const state = remote.state || {};
+  // Keep this computer's own machine settings and view state inside the stored state.
+  if (local) {
+    let prev = null;
+    try { prev = JSON.parse(local.state_json); } catch (_) {}
+    if (prev?.config && keepConfigKeys.length) {
+      state.config = state.config || {};
+      for (const k of keepConfigKeys) if (prev.config[k] !== undefined) state.config[k] = prev.config[k];
+    }
+    for (const k of UI_STATE_KEYS) if (prev && prev[k] !== undefined) state[k] = prev[k];
+  }
+  const m = remote.meta || {};
+  const { slideCount, slideTypes } = summarizeSlides(state);
+  const vals = [m.series || '', m.title || '', m.date || '', m.speaker || '', m.scheme_id || '', m.notes_link || '',
+    ['active', 'archived', 'deleted'].includes(m.status) ? m.status : 'active', m.is_template ? 1 : 0,
+    slideCount, slideTypes, remote.updatedAt, remote.savedBy || '', JSON.stringify(state), remote.rev];
+  if (local) {
+    db.prepare(`UPDATE decks SET series=?, title=?, date=?, speaker=?, scheme_id=?, notes_link=?, status=?, is_template=?,
+      slide_count=?, slide_types=?, updated_at=?, last_saved_by=?, state_json=?, cloud_rev=?, cloud_pending=0, dirty=1 WHERE id=?`)
+      .run(...vals, remote.id);
+  } else {
+    db.prepare(`INSERT INTO decks (series, title, date, speaker, scheme_id, notes_link, status, is_template,
+      slide_count, slide_types, updated_at, last_saved_by, state_json, cloud_rev, cloud_pending, dirty, created_at, id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`)
+      .run(...vals, m.created_at || remote.updatedAt, remote.id);
+  }
+  return 'applied';
+}
+
+// Signing into a different account (or out): every deck is "never synced".
+function cloudReset() {
+  db.prepare('UPDATE decks SET cloud_rev = 0, cloud_pending = 1').run();
+  db.prepare('DELETE FROM cloud_tombstones').run();
+  setMeta('cloud_cursor', '0');
+}
+function cloudGetMeta(key) { return getMeta(key); }
+function cloudSetMeta(key, value) { setMeta(key, value); }
+function cloudPendingCount() {
+  return db.prepare('SELECT COUNT(*) AS n FROM decks WHERE cloud_pending = 1').get().n +
+         db.prepare('SELECT COUNT(*) AS n FROM cloud_tombstones').get().n;
+}
+
 module.exports = {
+  cloudPendingDecks, cloudMarkPushed, cloudTombstones, cloudClearTombstone, cloudApplyRemote,
+  cloudReset, cloudGetMeta, cloudSetMeta, cloudPendingCount, UI_STATE_KEYS,
   open, close, getStatus,
   listDecks, getDeck, saveDeck, updateDeckInfo, touchOpened,
   setStatus, setTemplate, hardDelete, duplicateDeck,

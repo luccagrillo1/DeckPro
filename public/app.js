@@ -2,9 +2,19 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.0-beta.10';
+const APP_VERSION = '4.41.0-beta.11';
 
 const CHANGELOG = [
+  {
+    version: '4.41.0-beta.11',
+    date: '2026-10-24',
+    changes: [
+      "New: DeckPro Account. Sign in with Google in Preferences → General → Account on each Mac, and your decks, styles and preferences follow you between them. Edits on one Mac show up on the others within a few seconds, even in a deck that's open.",
+      "If the same deck is edited on two Macs before they sync, the newest edit wins and the other version is kept as a \"(conflicted copy)\" deck, so nothing is lost.",
+      "Things that belong to one computer stay on it: the Pro7 password and folders, the Bible API key, theme and update channel are never uploaded.",
+      "Signing out keeps every deck on this Mac. While you're signed in, the account replaces iCloud Sync.",
+    ],
+  },
   {
     version: '4.41.0-beta.10',
     date: '2026-10-24',
@@ -3471,6 +3481,7 @@ const GEN_HISTORY_MAX = 30;
 
 let _savedTimer   = null;
 let _autosaveTimer = null;
+let _autosaveDue = false;   // an edit is waiting for autosaveDeck() to write it
 const _undoStack = [];
 const _redoStack = [];
 const UNDO_LIMIT = 60;
@@ -3612,6 +3623,7 @@ function saveState() {
     _savedTimer = setTimeout(() => el.classList.remove('show'), 1200);
   }
   clearTimeout(_autosaveTimer);
+  _autosaveDue = true;
   _autosaveTimer = setTimeout(autosaveDeck, 1500);
   bumpSyncMeta();
 }
@@ -6807,6 +6819,8 @@ function renderConfigPanel(panel) {
       <section class="prefs-group" id="prefs-general">
         <div class="prefs-group-title">General</div>
 
+      <div class="settings-section" id="cloud-account">${cloudAccountHTML()}</div>
+
       <div class="settings-section">
         <h3>Updates</h3>
         <div class="settings-row" style="align-items:center">
@@ -6837,17 +6851,18 @@ function renderConfigPanel(panel) {
         </div>
       </div>
 
+      ${_cloud.signedIn ? '' : `
       <div class="settings-section">
         <h3>iCloud Sync</h3>
         <div class="rc-toggle-row" id="sync-toggle-row">
           <div class="toggle ${cfg.icloudSync === true ? 'on' : ''}" id="sync-toggle"></div>
-          <span>Sync portable settings with iCloud</span>
+          <span>Sync styles and preferences with iCloud</span>
         </div>
         <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
-          Keeps your <strong>styles</strong> and preferences (display names, feature visibility, Bible defaults, book names, speakers, response card, queue format) in step across your Macs via iCloud Drive. Machine-specific settings — Pro7 paths &amp; password, export folder, API keys, theme — and the current draft stay on this computer.
+          Without an account, iCloud Drive can keep your styles and preferences in step across your Macs (not your decks). Signing in above syncs both and replaces this.
         </div>
         <div class="sync-status" id="sync-status" style="margin-top:8px"></div>
-      </div>
+      </div>`}
       </section>
 
       <section class="prefs-group" id="prefs-pro7">
@@ -7100,6 +7115,7 @@ function renderConfigPanel(panel) {
   }));
   if (panel._prefsScroll) panel.removeEventListener('scroll', panel._prefsScroll);
   showPrefsTab(_prefsTab);
+  renderCloudAccount();
 
   // Deck Library location
   (async () => {
@@ -15166,7 +15182,36 @@ let _libCache  = [];      // deck metadata rows from the library db (no state)
 let _libReady  = false;
 let _libStatus = null;    // /api/library/status payload
 let _deckBaseStamp = null;     // optimistic-concurrency stamp for the open deck
+let _deckBaseContent = null;   // deckContentKey() of the open deck as last loaded/saved
+let _deckBaseSaved = null;     // deckSavedKey() of the same — everything a save would store
 let _conflictPrompted = false;
+
+// The open deck's own content — slides and deck settings — without the view
+// state and the preferences/styles every deck carries a copy of. Two saves
+// with the same key are the same deck, whatever else moved around.
+function deckContentKey(st) {
+  if (!st) return '';
+  const skip = new Set(['activeId', 'showBlanks', ...PERSISTENT_STATE_FIELDS]);
+  const out = {};
+  for (const [k, v] of Object.entries(st)) if (!skip.has(k)) out[k] = v;
+  if (st.config) {
+    out.config = { ...st.config };
+    for (const k of PERSISTENT_CONFIG_FIELDS) delete out.config[k];
+  }
+  return JSON.stringify(out);
+}
+// Everything a save stores except the view state — equal means the save would
+// change nothing, so it's skipped (no new timestamp for other Macs to pull).
+function deckSavedKey(st) {
+  if (!st) return '';
+  const { activeId, showBlanks, ...rest } = st;
+  return JSON.stringify(rest);
+}
+function markDeckBase(stamp) {
+  _deckBaseStamp = stamp;
+  _deckBaseContent = deckContentKey(state);
+  _deckBaseSaved = deckSavedKey(state);
+}
 
 async function libApi(url, opts = {}) {
   try {
@@ -15240,11 +15285,18 @@ function deckSaveBody() {
 }
 
 async function autosaveDeck() {
+  _autosaveDue = false;
   if (!state.currentDeckId) return; // draft — never auto-promote to library
   const id = state.currentDeckId;
+  const savingContent = deckContentKey(state);
+  const savingAll = deckSavedKey(state);
+  // Only the selected slide moved since the last load/save: nothing to store.
+  if (_deckBaseSaved !== null && savingAll === _deckBaseSaved) return;
   const r  = await libApi(`/api/decks/${id}`, { method: 'PUT', body: deckSaveBody() });
   if (r.ok) {
     _deckBaseStamp = r.updatedAt;
+    _deckBaseContent = savingContent;
+    _deckBaseSaved = savingAll;
     const row = _libCache.find(d => d.id === id);
     if (row) {
       row.series      = state.config.seriesName   || '';
@@ -15265,6 +15317,28 @@ async function autosaveDeck() {
 async function handleSaveConflict(id) {
   if (_conflictPrompted) return;
   _conflictPrompted = true;
+  if (_deckBaseContent !== null && deckContentKey(state) === _deckBaseContent) {
+    // Nothing was actually edited here since the last load/save — this save
+    // was just an echo. Take the library's newer version instead.
+    try { await reloadOpenDeckFromLibrary(id); } finally { _conflictPrompted = false; }
+    return;
+  }
+  if (_cloud.signedIn) {
+    // Synced from another Mac while this one had unsaved edits. Newest wins:
+    // keep the library's (other Mac's) version as a "(conflicted copy)" deck,
+    // then save these edits over it — same rule the cloud uses.
+    try {
+      const copy = await libApi(`/api/decks/${id}/conflict-copy`, { method: 'POST', body: { newId: crypto.randomUUID() } });
+      const r = await libApi(`/api/decks/${id}`, { method: 'PUT', body: { ...deckSaveBody(), force: true } });
+      if (r.ok) markDeckBase(r.updatedAt);
+      await refreshLibCache();
+      renderDecksList();
+      if (copy.ok) toast('info', 'Edited on another Mac too', `Kept your changes here; the other version is saved as "${copy.title}".`);
+    } finally {
+      _conflictPrompted = false;
+    }
+    return;
+  }
   const keepMine = window.confirm(
     'This deck was changed somewhere else — most likely on another computer sharing this library.\n\n' +
     'OK — keep THIS version (overwrites the library copy)\n' +
@@ -15273,7 +15347,7 @@ async function handleSaveConflict(id) {
   try {
     if (keepMine) {
       const r = await libApi(`/api/decks/${id}`, { method: 'PUT', body: { ...deckSaveBody(), force: true } });
-      if (r.ok) _deckBaseStamp = r.updatedAt;
+      if (r.ok) markDeckBase(r.updatedAt);
     } else {
       await loadDeckState(id);
     }
@@ -15286,7 +15360,7 @@ async function deleteDeck(id) { // soft delete → Trash
   await libApi(`/api/decks/${id}`, { method: 'DELETE' });
   const row = _libCache.find(d => d.id === id);
   if (row) row.status = 'deleted';
-  if (state.currentDeckId === id) { state.currentDeckId = null; _deckBaseStamp = null; }
+  if (state.currentDeckId === id) { state.currentDeckId = null; _deckBaseStamp = _deckBaseContent = _deckBaseSaved = null; }
   renderDecksList();
 }
 
@@ -15381,7 +15455,7 @@ async function loadDeckState(id) {
   state = r.deck.state;
   carryPersistentSettings(priorState, state);
   state.currentDeckId = id;
-  _deckBaseStamp = r.deck.updated_at;
+  markDeckBase(r.deck.updated_at);
   libApi(`/api/decks/${id}/opened`, { method: 'POST' });
   const row = _libCache.find(d => d.id === id);
   if (row) row.last_opened_at = new Date().toISOString();
@@ -15390,6 +15464,7 @@ async function loadDeckState(id) {
   updateUndoButtons();
   saveState();
   clearTimeout(_autosaveTimer); // opening a deck isn't an edit — skip the echo save
+  _autosaveDue = false;
   render();
   syncHeaderInputs();
   _syncNotesPanelToDeck?.();    // load THIS deck's own notes doc (per-deck, not global)
@@ -15427,7 +15502,7 @@ async function newDeck({ series = '', title = '', date = '', schemeId = null, sp
     s.config.recentSeries = [series, ...recent.filter(x => x !== series)].slice(0, 12);
   }
   state = s;
-  _deckBaseStamp = null;
+  _deckBaseStamp = _deckBaseContent = _deckBaseSaved = null;
   _undoStack.length = 0; _redoStack.length = 0;
   resetUndoBase(); // a freshly opened deck is the new starting point
   updateUndoButtons();
@@ -15781,7 +15856,7 @@ function initDecks() {
         const recent = state.config.recentSeries || [];
         state.config.recentSeries = [series, ...recent.filter(s => s !== series)].slice(0, 12);
       }
-      _deckBaseStamp = null;
+      _deckBaseStamp = _deckBaseContent = _deckBaseSaved = null;
       autosaveDeck().then(renderDecksList);
       saveState();
       clearTimeout(_autosaveTimer);
@@ -16838,7 +16913,7 @@ function buildBaselineSyncMeta() {
 // Detect local edits since last save and stamp them now(). Auto-tombstones any
 // palette that has disappeared. Runs on every saveState when sync is enabled.
 function bumpSyncMeta() {
-  if (!state.config.icloudSync) return;
+  if (!settingsSyncOn()) return;
   if (!_syncMeta) buildBaselineSyncMeta();
   const now = Date.now();
   let changed = false;
@@ -16971,12 +17046,17 @@ function scheduleSyncPush() {
   _syncPushTimer = setTimeout(() => syncCycle('local-edit'), 2000);
 }
 
+// Styles + preferences sync through the DeckPro account when signed in,
+// otherwise through iCloud Drive if that's turned on. Same document either way.
+function settingsSyncOn() { return _cloud.signedIn || state.config.icloudSync === true; }
+
 async function syncCycle(reason) {
-  if (!state.config.icloudSync || _syncing) return;
+  if (!settingsSyncOn() || _syncing) return;
   _syncing = true;
   setSyncStatus('syncing');
+  const viaCloud = _cloud.signedIn;
   try {
-    const pull = await fetch('/api/sync/pull').then(r => r.json()).catch(() => null);
+    const pull = await fetch(viaCloud ? '/api/cloud/settings' : '/api/sync/pull').then(r => r.json()).catch(() => null);
     if (!pull || !pull.available) { setSyncStatus('paused'); return; }
     if (!_syncMeta) buildBaselineSyncMeta();
 
@@ -16989,7 +17069,7 @@ async function syncCycle(reason) {
     const doc = buildSyncDoc();
     const remoteTop = pull.doc?.updatedAt ?? -1;
     if (!pull.doc || localAhead || doc.updatedAt > remoteTop) {
-      const pr = await fetch('/api/sync/push', {
+      const pr = await fetch(viaCloud ? '/api/cloud/settings' : '/api/sync/push', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ doc }),
       }).then(r => r.json()).catch(() => null);
@@ -17055,6 +17135,188 @@ function initSync() {
     bindSyncListeners();
     syncCycle('launch');
   }
+}
+
+// ─── DeckPro Account (cloud sync) ────────────────────────────────────────────
+// The server (cloudSync.js) does the deck syncing in the background; the app
+// polls its status to show the Account section, and reloads the open deck when
+// a pull from another Mac changed it.
+
+let _cloud = { available: false, signedIn: false, user: null, state: 'off', changeSeq: 0 };
+let _cloudSeen = 0;          // last changeSeq handled
+let _cloudPollTimer = null;
+let _cloudDevices = null;    // from /api/cloud/account, for "N Macs"
+
+function cloudStatusLine() {
+  if (_cloud.signingIn) return 'Finish signing in in your browser…';
+  if (_cloud.signInError) return _cloud.signInError;
+  if (!_cloud.signedIn) return '';
+  const pending = _cloud.pending ? ` · ${_cloud.pending} waiting to upload` : '';
+  switch (_cloud.state) {
+    case 'syncing': return 'Syncing…';
+    case 'offline': return `Offline — changes are saved here and will sync when you’re back online${pending}`;
+    case 'error':   return `Sync problem: ${_cloud.error || 'unknown error'} — will retry${pending}`;
+    case 'synced': {
+      const macs = _cloudDevices ? ` · ${_cloudDevices.length} Mac${_cloudDevices.length === 1 ? '' : 's'}` : '';
+      return `Synced ${relTime(_cloud.lastSync) || 'just now'}${macs}${pending}`;
+    }
+    default: return 'Waiting to sync…';
+  }
+}
+
+function cloudAccountHTML() {
+  if (!_cloud.available) {
+    return `<h3>DeckPro Account</h3>
+      <p class="cloud-blurb">Account sync isn’t available in this build.</p>`;
+  }
+  if (!_cloud.signedIn) {
+    return `<h3>DeckPro Account</h3>
+      <p class="cloud-blurb">Sign in to keep your decks, styles and preferences in sync on every Mac you use.</p>
+      <div class="cloud-actions">
+        <button type="button" class="btn-google" id="btn-cloud-signin" ${_cloud.signingIn ? 'disabled' : ''}>
+          <svg viewBox="0 0 18 18" width="16" height="16" aria-hidden="true"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.33-1.58-5.04-3.7H.96v2.33A9 9 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.96 10.72A5.4 5.4 0 0 1 3.68 9c0-.6.1-1.18.28-1.72V4.95H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.05l3-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58A9 9 0 0 0 .96 4.95l3 2.33C4.67 5.16 6.66 3.58 9 3.58z"/></svg>
+          Sign in with Google
+        </button>
+        ${_cloud.signingIn ? '<button type="button" class="btn-browse" id="btn-cloud-cancel">Cancel</button>' : ''}
+      </div>
+      <div class="cloud-status ${_cloud.signInError ? 'err' : ''}">${esc(cloudStatusLine())}</div>`;
+  }
+  const u = _cloud.user || {};
+  const initial = (u.name || u.email || '?').trim().charAt(0).toUpperCase();
+  const cls = _cloud.state === 'error' ? 'err' : (_cloud.state === 'synced' ? 'ok' : '');
+  return `<h3>DeckPro Account</h3>
+    <div class="cloud-user">
+      <span class="cloud-avatar">${esc(initial)}</span>
+      <div class="cloud-user-text">
+        <div class="cloud-user-name">${esc(u.name || u.email || '')}</div>
+        <div class="cloud-user-email">${esc(u.email || '')}</div>
+      </div>
+      <button type="button" class="btn-browse" id="btn-cloud-sync">Sync now</button>
+      <button type="button" class="btn-browse" id="btn-cloud-signout">Sign out</button>
+    </div>
+    <div class="cloud-status ${cls}">${esc(cloudStatusLine())}</div>
+    <p class="cloud-blurb">Decks, styles and preferences sync to your account. Pro7 connection, folders, the Bible API key and the theme stay on each Mac.</p>`;
+}
+
+function renderCloudAccount() {
+  const el = document.getElementById('cloud-account');
+  if (!el) return;
+  el.innerHTML = cloudAccountHTML();
+  document.getElementById('btn-cloud-signin')?.addEventListener('click', cloudSignIn);
+  document.getElementById('btn-cloud-cancel')?.addEventListener('click', async () => {
+    await libApi('/api/cloud/signin/cancel', { method: 'POST' });
+    await pollCloud();
+  });
+  document.getElementById('btn-cloud-sync')?.addEventListener('click', async () => {
+    _cloud.state = 'syncing'; renderCloudAccount();
+    await libApi('/api/cloud/sync', { method: 'POST' });
+    await pollCloud();
+    syncCycle('manual');
+  });
+  document.getElementById('btn-cloud-signout')?.addEventListener('click', () => {
+    showConfirmModal('Sign out of DeckPro?',
+      'Your decks stay on this Mac, but stop syncing until you sign in again.',
+      'Sign out', async () => {
+        await libApi('/api/cloud/signout', { method: 'POST' });
+        _cloudDevices = null;
+        await pollCloud();
+        if (state.activeId === 'settings') render();
+      });
+  });
+}
+
+async function cloudSignIn() {
+  const r = await libApi('/api/cloud/signin', { method: 'POST' });
+  if (!r.ok) { toast('error', 'Can’t sign in', r.error || ''); return; }
+  window.open(r.url, '_blank');   // Electron hands this to the default browser
+  _cloud.signingIn = true; _cloud.signInError = null;
+  renderCloudAccount();
+  scheduleCloudPoll(1500);
+}
+
+async function pollCloud() {
+  const st = await libApi(`/api/cloud/status?since=${_cloudSeen}`);
+  if (!st.ok) return;
+  const wasSignedIn = _cloud.signedIn;
+  _cloud = st;
+  if (st.signedIn && !wasSignedIn) {
+    // Just signed in (here or at launch): settings start syncing through the account.
+    if (!_syncMeta) buildBaselineSyncMeta();
+    bindSyncListeners();
+    syncCycle('account');
+    if (state.activeId === 'settings') render();
+  } else if (!st.signedIn && wasSignedIn && state.activeId === 'settings') {
+    render();
+  }
+  if (st.signedIn && !_cloudDevices && state.activeId === 'settings') {
+    const acct = await libApi('/api/cloud/account');
+    if (acct.ok) _cloudDevices = acct.devices || [];
+  }
+  if (st.changeSeq > _cloudSeen) {
+    const changed = st.changes || [];
+    _cloudSeen = st.changeSeq;
+    await handleCloudChanges(changed);
+  }
+  renderCloudAccount();
+  scheduleCloudPoll(st.signingIn ? 1500 : (st.signedIn ? 8000 : 0));
+}
+
+function scheduleCloudPoll(ms) {
+  clearTimeout(_cloudPollTimer);
+  if (ms) _cloudPollTimer = setTimeout(pollCloud, ms);
+}
+
+// Decks changed by a pull: refresh the library list, and bring the open deck
+// up to date unless it has an edit waiting to save (that save then hits the
+// conflict path, which keeps both versions).
+async function handleCloudChanges(changed) {
+  if (!changed.length) return;
+  await refreshLibCache();
+  renderDecksList();
+  const id = state.currentDeckId;
+  const mine = changed.filter(c => c.id === id);
+  if (!id || !mine.length) return;
+  if (mine[mine.length - 1].kind === 'deleted') {
+    state.currentDeckId = null;
+    _deckBaseStamp = _deckBaseContent = _deckBaseSaved = null;
+    saveState();
+    toast('info', 'Deck deleted on another Mac', 'It’s still open here as an unsaved draft.');
+    return;
+  }
+  // Real unsaved edits here: let the autosave hit the conflict path instead.
+  if (_autosaveDue && deckContentKey(state) !== _deckBaseContent) return;
+  await reloadOpenDeckFromLibrary(id);
+}
+
+// Swap the open deck for the library's copy (after another Mac changed it),
+// keeping the same slide/panel selected if it still exists.
+async function reloadOpenDeckFromLibrary(id) {
+  const r = await libApi(`/api/decks/${id}`);
+  if (!r.ok || !r.deck?.state || state.currentDeckId !== id) return;
+  if (r.deck.updated_at === _deckBaseStamp && deckContentKey(r.deck.state) === deckContentKey(state)) return;
+  const keepActive = state.activeId;
+  const priorState = state;
+  state = r.deck.state;
+  carryPersistentSettings(priorState, state);
+  state.currentDeckId = id;
+  if (keepActive && (['start', 'end', 'settings', 'rc', 'style'].includes(keepActive) || (state.slides || []).some(s => s.id === keepActive))) {
+    state.activeId = keepActive;
+  }
+  markDeckBase(r.deck.updated_at);
+  clearTimeout(_autosaveTimer);
+  _autosaveDue = false;
+  _undoStack.length = 0; _redoStack.length = 0;
+  resetUndoBase();
+  updateUndoButtons();
+  persistStateLocal();
+  render();
+  syncHeaderInputs();
+  _syncNotesPanelToDeck?.();
+}
+
+function initCloud() {
+  pollCloud();
+  window.addEventListener('focus', () => { if (_cloud.signedIn) libApi('/api/cloud/sync', { method: 'POST' }).then(pollCloud); });
 }
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
@@ -17140,6 +17402,7 @@ async function bootstrap() {
   checkForUpdates();
   setInterval(() => checkForUpdates(), 6 * 60 * 60 * 1000); // re-check every 6h
   initSync();
+  initCloud();
   // Auto-manage may already be on from before this permission prompt
   // existed — ask once at startup too, not just when the toggle is flipped.
   if (state.config.autoManagePro7 === true) fetch('/api/request-accessibility', { method: 'POST' }).catch(() => {});

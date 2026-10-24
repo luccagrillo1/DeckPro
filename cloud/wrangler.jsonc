@@ -1,0 +1,15 @@
+{
+  "name": "deckpro-sync",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "deckpro-sync", "database_id": "3ce61a9a-f113-447e-ab8c-3dc8c9152039" }
+  ],
+  "vars": {
+    // Comma-separated Google emails allowed to create accounts. Empty = anyone.
+    "ALLOWED_EMAILS": ""
+  }
+  // Secrets (set with `npx wrangler secret put …`, never committed):
+  //   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+}
