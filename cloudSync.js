@@ -30,6 +30,8 @@ const ENABLED = !(process.env.DECKPRO_E2E === '1' && !process.env.DECKPRO_CLOUD_
 const MACHINE_CONFIG_KEYS = [
   'pro7Port', 'pro7Password', 'pro7RootFolder', 'pro7LibraryFolder', 'autoManagePro7',
   'outputFolder', 'setupComplete', 'icloudSync', 'theme', 'updateChannel', 'bibleApiKey',
+  // Stage screen UUIDs are made by each Mac's own Pro7 install.
+  'stageScreen',
 ];
 const SYNC_EVERY_MS  = 10 * 1000;
 const NUDGE_DELAY_MS = 3 * 1000;

@@ -574,6 +574,18 @@ app.get('/api/pro7/stage-layouts', async (req, res) => {
   }
 });
 
+app.get('/api/pro7/stage-screens', async (req, res) => {
+  const port     = parseInt(req.query.port) || 1025;
+  const password = req.query.password || '';
+  try {
+    const r = await pro7Fetch(port, password, '/v1/stage/screens');
+    if (r.status !== 200) return res.json({ ok: false, error: `Pro7 returned ${r.status}` });
+    res.json({ ok: true, screens: r.body });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  }
+});
+
 app.get('/api/pro7/props', async (req, res) => {
   const port     = parseInt(req.query.port) || 1025;
   const password = req.query.password || '';

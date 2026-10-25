@@ -2,9 +2,18 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.0-beta.11';
+const APP_VERSION = '4.41.0-beta.12';
 
 const CHANGELOG = [
+  {
+    version: '4.41.0-beta.12',
+    date: '2026-10-25',
+    changes: [
+      "New: Stage Screen picker at the top of Styles → Stage. Stage layouts only change in Pro7 when they're aimed at a real stage screen, and until now every Mac exported to the same built-in screen. If a stage display never seemed to fire on a computer, click Pick there and choose its screen.",
+      "The Stage Screen belongs to each computer (every Pro7 install has its own screens), so it no longer syncs between Macs. DeckPro flags it in orange, and warns before export, when the picked screen isn't in this computer's Pro7.",
+      "Macros and stage displays with no triggers now show an orange outline and a note right on the row, not only in the pre-export warning.",
+    ],
+  },
   {
     version: '4.41.0-beta.11',
     date: '2026-10-24',
@@ -3469,7 +3478,7 @@ function dn(key) {
 }
 
 // ─── Pro7 runtime state (not persisted) ──────────────────────────────────────
-const pro7rt = { connected: false, version: null, liveMacros: null, liveStageLayouts: null };
+const pro7rt = { connected: false, version: null, liveMacros: null, liveStageLayouts: null, liveStageScreens: null };
 let   _fontList      = null;  // cached system font list (PostScript names)
 let   _fontFamilyMap = null;  // family → [{ style, postscript }]
 
@@ -6233,7 +6242,7 @@ function attachSchemesMacrosTab(containerId) {
     const macros = resolvedMacros();
     el.querySelector('.smac-badge-wrap').innerHTML = badgeHtml();
     el.querySelector('.smac-list').innerHTML = macros.length ? macros.map((m, idx) => `
-      <div class="smac-row custom-macro-row">
+      <div class="smac-row custom-macro-row${(m.triggers || []).length || !m.uuid ? '' : ' smac-untriggered'}">
         <div class="custom-macro-fields">
           <span class="cm-dot" style="background:${macroDisplayColor(m)}"></span>
           <span class="cm-name-ro">${esc(m.name)}</span>
@@ -6252,6 +6261,7 @@ function attachSchemesMacrosTab(containerId) {
           ).join('')}
           <input type="number" class="smac-pos-input" min="1" max="999" placeholder="add #" data-idx="${idx}">
         </div>
+        ${((m.triggers || []).length || !m.uuid) ? '' : '<p class="smac-untriggered-note">No triggers — this won\'t fire on export. Pick a slide type or add a Slide #.</p>'}
       </div>`).join('')
     : `<p class="cm-empty">No macros for this scheme — click + Add Macro to import from Pro7.</p>`;
   }
@@ -6364,12 +6374,33 @@ function attachSchemesStageTab(containerId) {
 
   const STAGE_ICON = `<svg style="width:10px;height:10px;vertical-align:middle;margin-right:3px" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="1.3" width="6" height="4.2" rx="0.6" stroke="currentColor" stroke-width="1.1"/><path d="M5 5.5v1.6M3.3 7.9h3.4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>`;
 
+  // The physical Pro7 screen every stage layout targets. Per computer (each
+  // Pro7 install makes its own screen UUIDs), so it lives in state.config and
+  // is the same for every style.
+  function screenRowHtml() {
+    const ss    = state.config.stageScreen || DEFAULT_STAGESCREEN();
+    const live  = pro7rt.liveStageScreens;
+    const found = !live || !ss.screenUuid || live.some(sc => sc.uuid === ss.screenUuid);
+    return `<div class="smac-row sstage-screen-row${found ? '' : ' sstage-screen-missing'}">
+      <div class="custom-macro-fields">
+        <span class="sstage-screen-label">Stage Screen</span>
+        <span class="cm-name-ro">${esc(ss.screenName) || '<span style="color:var(--muted);font-style:italic;font-weight:400">none picked</span>'}</span>
+        <code class="cm-uuid-ro">${esc(ss.screenUuid || '')}</code>
+        <button class="btn-sm" type="button" id="sstage-screen-pick">Pick</button>
+      </div>
+      <p class="sstage-screen-note">${found
+        ? 'The Pro7 output these layouts show on. Set once on each computer — every style uses it.'
+        : 'This screen isn\'t in this computer\'s Pro7, so stage layouts won\'t change. Click Pick to choose the right one.'}</p>
+    </div>`;
+  }
+
   function rerender() {
     const entries = resolvedStageDisplays();
+    el.querySelector('.sstage-screen-wrap').innerHTML = screenRowHtml();
     el.querySelector('.sstage-badge-wrap').innerHTML = badgeHtml();
 
     el.querySelector('.sstage-list').innerHTML = entries.length ? entries.map((d, idx) => `
-      <div class="smac-row custom-macro-row">
+      <div class="smac-row custom-macro-row${(d.triggers || []).length || !d.uuid ? '' : ' smac-untriggered'}">
         <div class="custom-macro-fields">
           <span class="cm-dot" style="background:var(--orange);opacity:.7">${STAGE_ICON}</span>
           <span class="cm-name-ro">${esc(d.name) || '<span style="color:var(--muted);font-style:italic;font-weight:400">no layout picked</span>'}</span>
@@ -6389,11 +6420,13 @@ function attachSchemesStageTab(containerId) {
           ).join('')}
           <input type="number" class="smac-pos-input sstage-pos-input" min="1" max="999" placeholder="add #" data-idx="${idx}">
         </div>
+        ${((d.triggers || []).length || !d.uuid) ? '' : '<p class="smac-untriggered-note">No triggers — this won\'t fire on export. Pick a slide type or add a Slide #.</p>'}
       </div>`).join('')
     : `<p class="cm-empty">No stage displays — click + Add Stage Display to pick a layout from Pro7.</p>`;
   }
 
   el.innerHTML = `
+    <div class="sstage-screen-wrap"></div>
     <div class="sstage-badge-wrap"></div>
     <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
       <button class="btn-sm" id="sstage-add-btn">+ Add Stage Display</button>
@@ -6401,6 +6434,8 @@ function attachSchemesStageTab(containerId) {
     <div class="sstage-list smac-list"></div>
   `;
   rerender();
+  if (pro7rt.connected && !pro7rt.liveStageScreens)
+    fetchPro7StageScreens().then(() => { if (el.isConnected) rerender(); });
 
   // Add Stage Display button → multi-select picker
   el.querySelector('#sstage-add-btn').addEventListener('click', () => {
@@ -6415,6 +6450,14 @@ function attachSchemesStageTab(containerId) {
 
   // Trigger chip toggle
   el.addEventListener('click', e => {
+    if (e.target.id === 'sstage-screen-pick') {
+      showStageLayoutPicker(null, e.target, (name, uuid) => {
+        state.config.stageScreen = Object.assign(DEFAULT_STAGESCREEN(), state.config.stageScreen || {},
+          { screenName: name, screenUuid: uuid });
+        saveState(); rerender();
+      }, true, { screens: true });
+      return;
+    }
     if (e.target.id === 'sstage-wf-reset') {
       const s = getScheme(); if (!s) return;
       s.stageDisplays = null;
@@ -12449,6 +12492,11 @@ function preflightWarnings() {
     if (d.name && d.uuid && !(d.triggers || []).length)
       warn(`Stage display "${d.name}" has no triggers set — it will never fire on export (Styles → Stage)`);
   }
+  // Stage layouts need this computer's real stage screen, or Pro7 ignores them.
+  const ss = state.config.stageScreen;
+  if (pro7rt.liveStageScreens && activeStageDisplays.some(d => d.uuid && (d.triggers || []).length)
+      && !pro7rt.liveStageScreens.some(sc => sc.uuid === ss?.screenUuid))
+    warn(`Stage Screen "${ss?.screenName || 'none'}" isn't in this computer's Pro7 — stage layouts won't change (Styles → Stage → Pick)`);
 
   // ── Quote mismatch checks ──────────────────────────────────────────────────
   for (const slide of state.slides) {
@@ -14732,10 +14780,15 @@ async function lookupBibleVerse(slide, ref, overrideBibleId = '', boldPhrases = 
 
 // cb(name, uuid) for single-select (Pick on existing entry).
 // cb([{name,uuid}, ...]) for multi-select (+ Add Stage Display).
-function showStageLayoutPicker(field, anchorEl, cb, singleSelect = true) {
+// opts.screens lists Pro7's stage SCREENS (the physical outputs) instead of layouts.
+function showStageLayoutPicker(field, anchorEl, cb, singleSelect = true, opts = {}) {
   document.getElementById('stage-layout-picker-overlay')?.remove();
-  const liveLayouts = pro7rt.liveStageLayouts || [];
-  const existing    = new Set((activeStyleScheme().stageDisplays ?? ensureGlobalStageDisplays()).map(d => d.uuid));
+  const forScreens  = !!opts.screens;
+  const noun        = forScreens ? 'screens' : 'layouts';
+  const liveSource  = () => (forScreens ? pro7rt.liveStageScreens : pro7rt.liveStageLayouts) || [];
+  const liveLayouts = [...liveSource()];
+  const existing    = forScreens ? new Set()
+    : new Set((activeStyleScheme().stageDisplays ?? ensureGlobalStageDisplays()).map(d => d.uuid));
   const selected    = new Set();
 
   const overlay = document.createElement('div');
@@ -14744,12 +14797,12 @@ function showStageLayoutPicker(field, anchorEl, cb, singleSelect = true) {
   overlay.innerHTML = `
     <div class="macro-picker-modal">
       <div class="macro-picker-header">
-        <input type="text" class="macro-picker-search" placeholder="Search stage layouts…" autocomplete="off" spellcheck="false">
+        <input type="text" class="macro-picker-search" placeholder="Search stage ${noun}…" autocomplete="off" spellcheck="false">
         <button class="macro-picker-close" title="Cancel">×</button>
       </div>
       <div class="macro-picker-list"></div>
       <div class="macro-picker-footer">
-        <span class="macro-picker-count">${liveLayouts.length} layouts from Pro7</span>
+        <span class="macro-picker-count">${liveLayouts.length} ${noun} from Pro7</span>
         <div style="display:flex;gap:6px;align-items:center">
           <button class="macro-picker-refresh">Refresh</button>
           ${singleSelect ? '' : `<button class="macro-picker-add" disabled>Add 0</button>`}
@@ -14777,7 +14830,7 @@ function showStageLayoutPicker(field, anchorEl, cb, singleSelect = true) {
   function renderRows(filter = '') {
     const f = filter.trim().toLowerCase();
     if (!liveLayouts.length) {
-      list.innerHTML = `<div class="macro-picker-empty">No stage layouts found — make sure Pro7 is connected.</div>`;
+      list.innerHTML = `<div class="macro-picker-empty">No stage ${noun} found — make sure Pro7 is connected.</div>`;
       return;
     }
     const filtered = liveLayouts.filter(l => !f || l.name.toLowerCase().includes(f) || l.uuid.toLowerCase().includes(f));
@@ -14832,10 +14885,10 @@ function showStageLayoutPicker(field, anchorEl, cb, singleSelect = true) {
   refresh.addEventListener('click', async () => {
     refresh.textContent = 'Refreshing…';
     refresh.disabled = true;
-    await fetchPro7StageLayouts(true);
+    if (forScreens) await fetchPro7StageScreens(); else await fetchPro7StageLayouts(true);
     liveLayouts.length = 0;
-    liveLayouts.push(...(pro7rt.liveStageLayouts || []));
-    count.textContent = `${liveLayouts.length} layouts from Pro7`;
+    liveLayouts.push(...liveSource());
+    count.textContent = `${liveLayouts.length} ${noun} from Pro7`;
     refresh.textContent = 'Refresh';
     refresh.disabled = false;
     renderRows(search.value);
@@ -15027,6 +15080,7 @@ async function checkPro7(silent = false) {
     if (pro7rt.connected) {
       await fetchPro7Macros(true);
       await fetchPro7StageLayouts(true);
+      await fetchPro7StageScreens();
     }
   } catch (_) {
     pro7rt.connected = false;
@@ -15067,6 +15121,26 @@ async function fetchPro7StageLayouts(silent = false) {
         name: l.id?.name ?? l.name ?? '',
         uuid: l.id?.uuid ?? l.uuid ?? '',
       })).filter(l => l.name || l.uuid);
+    }
+  } catch (_) {}
+}
+
+async function fetchPro7StageScreens() {
+  if (!pro7rt.connected) return;
+  const port     = state.config.pro7Port || 1025;
+  const password = state.config.pro7Password || '';
+  try {
+    const res  = await fetch(`/api/pro7/stage-screens?port=${port}&password=${encodeURIComponent(password)}`);
+    const data = await res.json();
+    if (data.ok) {
+      // Pro7 returns [{ id: { uuid, name, index }, layout: {...} }]
+      const raw = Array.isArray(data.screens) ? data.screens
+                : Array.isArray(data.screens?.screens) ? data.screens.screens
+                : [];
+      pro7rt.liveStageScreens = raw.map(sc => ({
+        name: sc.id?.name ?? sc.name ?? '',
+        uuid: sc.id?.uuid ?? sc.uuid ?? '',
+      })).filter(sc => sc.name || sc.uuid);
     }
   } catch (_) {}
 }
@@ -16396,7 +16470,7 @@ function helpSections() {
       <p>A dedicated single macro field, separate from the per-trigger list above — the macro that fires on Scripture, Point, and Response Card content cues. It's deck-wide, not per-style, since it's a real macro rather than visual style — same reasoning as QR Macro. See <em>QR Code</em> for the matching <strong>Gradient (QR code version)</strong> field, which fires instead whenever that export's QR toggle is on.</p>
 
       <h3>Stage tab</h3>
-      <p>Per-style stage-display layouts, same model as Macros. <strong>+ Add Stage Display</strong> picks any Pro7 stage layout; assign it slide-type and/or Slide&nbsp;# triggers. The <strong>Stage Screen</strong> row at the top identifies the physical display these layouts target.</p>
+      <p>Per-style stage-display layouts, same model as Macros. <strong>+ Add Stage Display</strong> picks any Pro7 stage layout; assign it slide-type and/or Slide&nbsp;# triggers. The <strong>Stage Screen</strong> row at the top picks the physical Pro7 screen these layouts target. It's set once on each computer and isn't synced, because every Pro7 install has its own screens.</p>
 
       <div class="help-callout">
         <strong>Whole-list inheritance.</strong> A style's Macros / Stage lists inherit Global's list live until you edit them — the first change forks a private copy (the status line switches to “Set for this style”). <strong>Use Global</strong> returns to inheriting; <strong>Make Global</strong> shares your list with every style that follows Global.
@@ -16849,7 +16923,6 @@ function SYNC_SECTIONS() {
     responses:        { get: () => c.responses,        set: v => { c.responses = v || {}; } },
     rcLocks:          { get: () => c.rcLocks,          set: v => { c.rcLocks = v || {}; } },
     notesStyleMap:    { get: () => c.notesStyleMap,    set: v => { c.notesStyleMap = v || {}; } },
-    stageScreen:      { get: () => c.stageScreen,      set: v => { c.stageScreen = v; } },
     qrMacro:          { get: () => c.qrMacro,          set: v => { c.qrMacro = v || null; } },
     qrExportPair:     { get: () => ({ v: c.qrExportPair }), set: v => { c.qrExportPair = !!v.v; } },
     gradientMacro:    { get: () => c.gradientMacro,    set: v => { c.gradientMacro = v || null; } },

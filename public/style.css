@@ -2366,6 +2366,14 @@ body.dark .setup-pill.ok { color: #6fcf7a; }
 
 /* ── Schemes → Macros tab ────────────────────────────────────────────────── */
 .smac-row { border: 1px solid var(--border); border-radius: 7px; padding: 10px 12px; margin-bottom: 8px; }
+.sstage-screen-row { margin-bottom: 12px; }
+.sstage-screen-row .custom-macro-fields { grid-template-columns: auto minmax(80px,160px) 1fr auto; }
+.smac-untriggered { border-color: #fb923c; }
+.smac-untriggered-note { margin: 6px 0 0; font-size: 11px; color: #c2410c; font-weight: 600; }
+.sstage-screen-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+.sstage-screen-note { margin: 6px 0 0; font-size: 11px; color: var(--muted); line-height: 1.4; }
+.sstage-screen-missing { border-color: #fb923c; }
+.sstage-screen-missing .sstage-screen-note { color: #c2410c; font-weight: 600; }
 .smac-header { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
 .smac-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .smac-name { font-size: 13px; font-weight: 600; color: var(--text); }
