@@ -2,9 +2,34 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.0-beta.13';
+const APP_VERSION = '4.41.0-beta.15';
 
 const CHANGELOG = [
+  {
+    version: '4.41.0-beta.15',
+    date: '2026-10-25',
+    changes: [
+      "Merge/Override rebuilt. The dialog now lists what actually changed, slide by slide, in plain words (\"Psalms 23:6 — text moved, reference bar resized\"; \"Ephesians 5:18 — deleted in Pro7\"). The full technical list is still there behind Details.",
+      "Fixed the wall of bogus changes. ProPresenter re-saves a file when it opens it (for example in a newer version), storing the slides in a scrambled order. DeckPro compared slides by position, so every slide was checked against a different one. Slides are now matched by their ID in ProPresenter's own slide order. On a real deck that showed 70 \"changes\", only the 6 slides really deleted in Pro7 remain.",
+      "A Pro7 re-save no longer counts as an edit: same words saved in Pro7's own text encoding, its rebuilt text settings, and the auto-generated upcoming-slides list and live badge are all ignored.",
+      "Merge finds each edited slide by name in the new export, so edits land on the right slide even after you've added or removed slides in DeckPro. Deleting a slide in Pro7 doesn't block Merge any more.",
+      "Fixed: merging text you retyped in Pro7 could put raw RTF code on the slide.",
+      "Fixed: after switching between a QR-pair export and a single export, DeckPro could compare against the wrong file and report every style difference as a hand edit. It now only compares a file it knows it wrote for that exact export.",
+    ],
+  },
+  {
+    version: '4.41.0-beta.14',
+    date: '2026-10-25',
+    changes: [
+      "New: DeckPro now warns when a slide has more text than its box holds. Pro7 quietly shrinks the font when that happens; the slide editor now says so, with how many lines it needs, how many fit, and roughly what size Pro7 will shrink it to. Checked against the macOS text engine Pro7 uses.",
+      "New: \"Split for Main Screen\" button on that warning. It splits the passage into the fewest slides that each fit at full size, breaking at sentence ends first, then clauses, and keeping the slides about even.",
+      "The LED wall keeps the whole passage up through all the split slides, reading as one passage (a split in the middle of a sentence or poetry line comes back together there). Parts you split by hand still show on separate lines, as before.",
+      "The same too-long warnings show in the pre-export check (main screen, LED wall, and single points), with a link to the slide.",
+      "Split scripture slides: each part now gets its own Fit Width box, line breaks and title position. Before, parts 2 and up reused part 1's box, which could crop them or put the reference bar in the wrong place.",
+      "Fit Width on the LED wall now measures every part of a split slide (that's what the LED shows), not just the first one.",
+      "Poetry with a line too long for the box now counts its wrapped lines, so Auto Title Y places the reference bar correctly above it.",
+    ],
+  },
   {
     version: '4.41.0-beta.13',
     date: '2026-10-25',
@@ -4605,7 +4630,25 @@ function _fitResolveContext(rs, type, display, spans = null) {
     ? (type === 'point' ? (st.propPointX ?? st.propBodyX) : st.propBodyX)
     : (type === 'point' ? (st.pointX ?? st.bodyX) : st.bodyX);
   const align = adv.alignment || 'center';
-  return { st, isProp, canvasW, size, maxW, boxW, marginL, marginR, palX: palX ?? null, align, baseDesc, boldDesc };
+  // Box height and top/bottom margins exactly as the element is written
+  // (builder.js makeBodyElement/makePointBodyElement, buildProp.js), so
+  // `maxLines` below is how many lines Pro7 can show before it scales the
+  // font down to fit.
+  const boxH = isProp
+    ? (type === 'point' ? (st.propPointH ?? st.propBodyH ?? 350.02) : (st.propBodyH ?? 350.02))
+    : (type === 'point' ? (st.pointH ?? st.bodyH ?? 100) : (st.bodyH ?? 100));
+  const fbT = isProp ? 0 : type === 'point' ? (st.pointMarginTop ?? st.bodyMarginTop ?? 0) : (st.bodyMarginTop ?? 0);
+  const fbB = isProp ? (type === 'point' ? 0 : 60)
+            : type === 'point' ? (st.pointMarginBottom ?? st.bodyMarginBottom ?? 60) : (st.bodyMarginBottom ?? 0);
+  const innerH = Math.max(0, boxH - (adv.marginTop ?? fbT) - (adv.marginBottom ?? fbB));
+  const lineHeight = adv.lineHeight ?? 1;
+  return { st, isProp, canvasW, size, maxW, boxW, marginL, marginR, palX: palX ?? null, align, baseDesc, boldDesc, innerH, lineHeight };
+}
+
+// How many lines of this row fit in its box at full size (see ctx.innerH).
+function _fitMaxLines(ctx, metrics) {
+  const lineH = (metrics.ascent + metrics.descent) * ctx.lineHeight;
+  return lineH > 0 ? Math.max(1, Math.floor((ctx.innerH + 1) / lineH)) : Infinity;
 }
 
 // True when a point's spans genuinely mix bold and plain words — the only
@@ -4664,9 +4707,15 @@ function _fitHash(spans, ctx) {
 function _fitCurrentBodyHash(slide, scheme, display) {
   const isProp = display === 'prop';
   if (slide.type === 'scripture') {
-    const rawSpans = (slide.bodies || [[]])[0] || [];
-    const spans = (!isProp && slide.stripNewlines) ? stripNewlineSpans(rawSpans) : rawSpans;
-    return _fitHash(spans, _fitResolveContext(scheme, 'scripture', display, spans));
+    if (isProp) {
+      const spans = scriptureLedSpans(slide);
+      return _fitHash(spans, _fitResolveContext(scheme, 'scripture', display, spans));
+    }
+    // Every main-screen part is fitted, so any part's edit makes it stale.
+    return (slide.bodies || [[]]).map(raw => {
+      const spans = slide.stripNewlines ? stripNewlineSpans(raw || []) : (raw || []);
+      return _fitHash(spans, _fitResolveContext(scheme, 'scripture', display, spans));
+    }).join('\x03');
   }
   if (slide.type === 'point' && slide.mode !== 'revealing') {
     // Split mode: Display 2 (prop) has its own independent text, so its
@@ -4774,6 +4823,43 @@ function _fitSpansFromWinningLayout(words, lineWordCounts) {
   return out;
 }
 
+// Hidden measurement container in 1:1 canvas pixels, styled as the row
+// renders: base font on the container, the emphasis (alt) font on <strong>,
+// a plain \b as the current font's bold weight on <b>. Caller removes `msr`.
+function _fitMeasurer(ctx) {
+  const { size, baseDesc, boldDesc } = ctx;
+  const boldOf = d => String(Math.max(Number(d.fontWeight) || 400, 700));
+  const msr   = document.createElement('div');
+  const style = document.createElement('style');
+  style.textContent = `._msr strong{${_fitDescriptorCss(boldDesc)}}._msr b{font-weight:${boldOf(baseDesc)}}`
+    + `._msr strong b,._msr b strong{font-weight:${boldOf(boldDesc)}}._msr em{font-style:italic}._msr ._fw{display:inline}`;
+  const inner = document.createElement('div');
+  inner.className = '_msr';
+  msr.appendChild(style);
+  msr.appendChild(inner);
+  Object.assign(msr.style, {
+    position: 'fixed', top: '-9999px', left: '-9999px',
+    visibility: 'hidden', pointerEvents: 'none',
+    fontSize: `${size}px`,
+    lineHeight: '1.3',
+  });
+  _fitApplyDescriptor(msr.style, baseDesc);
+  document.body.appendChild(msr);
+  return { msr, inner };
+}
+
+// Split spans into paragraphs at explicit newlines (each a spans array).
+function _fitParagraphs(spans) {
+  const paras = [[]];
+  for (const span of (spans || [])) {
+    String(span.text || '').split('\n').forEach((part, i) => {
+      if (i > 0) paras.push([]);
+      if (part) paras[paras.length - 1].push({ ...span, text: part });
+    });
+  }
+  return paras;
+}
+
 /**
  * Measure text spans in a hidden div and find the optimal body width.
  * Poetry mode (has \n): tightest width that fits each explicit line no-wrap.
@@ -4816,7 +4902,7 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
   // heuristic, which routinely disagreed with what Fit Width actually rendered.
   // `metrics` (ascent/descent/capAscent) and `fitHash` (staleness fingerprint,
   // see _fitHash) are assigned right below, before `centered` is ever called.
-  let metrics = null, fitHash = null;
+  let metrics = null, fitHash = null, maxLines = Infinity;
   // `w` is the text width; the box adds the row's left/right margins back on
   // and sits inside the Styles box per the row's alignment (centred on that
   // box, not on the canvas, so an off-centre layout keeps its position).
@@ -4825,7 +4911,7 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
     const left = palX ?? Math.round((canvasW - boxW) / 2);
     let bx = align === 'left' ? left : align === 'right' ? left + boxW - bw : left + (boxW - bw) / 2;
     bx = Math.round(Math.max(0, Math.min(bx, canvasW - bw)));
-    return { bodyW: bw, bodyX: bx, brokenText, brokenSpans, lines, fitHash, ...metrics };
+    return { bodyW: bw, bodyX: bx, brokenText, brokenSpans, lines, fitHash, maxLines, ...metrics };
   };
 
   metrics = _fitFontMetrics(baseDesc, size);
@@ -4834,8 +4920,6 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
   // _fitResolveContext) — measure it that way too.
   if (type === 'point' && !_fitPointMixed(spans)) spans = (spans || []).map(s => ({ ...s, bold: false }));
   const fmtType = type === 'point' ? 'point' : 'body';
-  // Plain \b inside a span: the current font's bold weight (Medium → Bold).
-  const boldOf = d => String(Math.max(Number(d.fontWeight) || 400, 700));
   // Capitalization is applied only to what gets *rendered* into the
   // measurement DOM (each segment's `mtext`, see
   // _fitWordList) — never to `spans`/`words[].text` themselves. Those flow
@@ -4855,48 +4939,26 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
     }
   }
 
-  // Hidden measurement container — 1:1 canvas coordinate space.
-  const msr   = document.createElement('div');
-  const style = document.createElement('style');
-  style.textContent = `._msr strong{${_fitDescriptorCss(boldDesc)}}._msr b{font-weight:${boldOf(baseDesc)}}`
-    + `._msr strong b,._msr b strong{font-weight:${boldOf(boldDesc)}}._msr em{font-style:italic}._msr ._fw{display:inline}`;
-  const inner = document.createElement('div');
-  inner.className = '_msr';
-  msr.appendChild(style);
-  msr.appendChild(inner);
-  Object.assign(msr.style, {
-    position: 'fixed', top: '-9999px', left: '-9999px',
-    visibility: 'hidden', pointerEvents: 'none',
-    fontSize: `${size}px`,
-    lineHeight: '1.3',
-  });
-  _fitApplyDescriptor(msr.style, baseDesc);
-  document.body.appendChild(msr);
+  const { msr, inner } = _fitMeasurer(ctx);
+  maxLines = _fitMaxLines(ctx, metrics);
 
   try {
     if (hasExplicit) {
-      // Poetry: measure each explicit line at no-wrap, take the widest.
+      // Poetry: keep the explicit lines; the box fits the widest one. A line
+      // longer than the box still wraps, so count each paragraph's real
+      // wrapped lines at the chosen width (not just one per explicit line).
+      const paras = _fitParagraphs(spans)
+        .map(p => _fitWordList(p, baseDesc.cap, boldDesc.cap, fmtType)).filter(w => w.length);
       inner.style.whiteSpace = 'nowrap';
       inner.style.display    = 'inline-block';
-
-      const lines = [[]];
-      for (const span of spans) {
-        const parts = span.text.split('\n');
-        parts.forEach((part, i) => {
-          if (i > 0) lines.push([]);
-          if (part) lines[lines.length - 1].push({ ...span, text: part });
-        });
-      }
-
-      let widest = 0, lineCount = 0;
-      for (const line of lines) {
-        if (!line.length) continue;
-        lineCount++;
-        inner.innerHTML = _fitWordList(line, baseDesc.cap, boldDesc.cap, fmtType).map(_fitWordHtml).join(' ');
+      let widest = 0;
+      for (const words of paras) {
+        inner.innerHTML = words.map(_fitWordHtml).join(' ');
         widest = Math.max(widest, inner.scrollWidth);
       }
-      const n = Math.max(1, lineCount);
-      return { ...centered(Math.min(Math.ceil(widest) + padding, maxW), null, n), staticLines: n };
+      const width = Math.min(Math.ceil(widest) + padding, maxW);
+      const count = w => paras.reduce((n, words) => n + _fitLinesAtWidth(inner, words, w).length, 0) || 1;
+      return { ...centered(width, null, count(width)), staticLines: count(maxW) };
     }
 
     // ── Balance mode: weighted candidate search ──
@@ -5006,6 +5068,171 @@ function stripNewlineSpans(spans) {
   return replaced.filter(s => s.text !== '');
 }
 
+// What the LED wall shows for a scripture slide: every part at once (its prop
+// stays up across all the main-screen parts). slide.partJoins[i] is what goes
+// between part i and i+1: "Split for main screen" records whatever was there
+// in the passage (a space, or a line break in poetry) so the LED shows it as
+// if it was never split; parts split by hand keep a line break, as they
+// always have. Mirrors buildScripturePropCue in buildProp.js (spec.propJoins).
+function scripturePartJoins(slide) {
+  return (slide.bodies || [[]]).slice(1).map((_, i) => (slide.partJoins?.[i] === ' ' ? ' ' : '\n'));
+}
+function scriptureLedSpans(slide) {
+  const joins = scripturePartJoins(slide);
+  return (slide.bodies || [[]]).reduce((acc, body, i) => {
+    if (i > 0) acc.push({ text: joins[i - 1], bold: false });
+    return acc.concat(body || []);
+  }, []);
+}
+
+// ── Overflow: text taller than its box ──────────────────────────────────────
+// Every body/point box is written with SCALE_FONT_DOWN, so when the text needs
+// more lines than the box holds Pro7 quietly shrinks the font until it fits.
+// DeckPro never shrinks it itself: it warns, and for the main screen offers to
+// split the passage into slides that each fit (splitPassageForMain).
+
+// Cheap natural-wrap line counter for one row, sharing one measurement
+// container across many calls. `fit`: count at Fit Width's planning width
+// (what a fitted box shows), else at the full Styles width.
+function _fitLineCounter(scheme, type, display, fit) {
+  const ctx = _fitResolveContext(scheme, type, display, null);
+  const metrics = _fitFontMetrics(ctx.baseDesc, ctx.size);
+  const pad = Math.max(FIT_WEIGHTS.pad, Math.round(ctx.size * FIT_WEIGHTS.padPerPt));
+  const width = fit ? Math.max(1, ctx.maxW - pad) : ctx.maxW;
+  const fmtType = type === 'point' ? 'point' : 'body';
+  const { msr, inner } = _fitMeasurer(ctx);
+  return {
+    maxLines: _fitMaxLines(ctx, metrics),
+    size: ctx.size,
+    count(spans) {
+      return _fitParagraphs(spans).reduce((n, p) => {
+        const words = _fitWordList(p, ctx.baseDesc.cap, ctx.boldDesc.cap, fmtType);
+        return n + (words.length ? _fitLinesAtWidth(inner, words, width).length : 0);
+      }, 0);
+    },
+    close() { msr.remove(); },
+  };
+}
+
+// The part of `spans` between character offsets [a, b) of their joined text,
+// formatting kept, outer whitespace trimmed.
+function _sliceSpans(spans, a, b) {
+  const out = [];
+  let pos = 0;
+  for (const sp of spans) {
+    const t = sp.text || '', s0 = pos, s1 = pos + t.length;
+    pos = s1;
+    const lo = Math.max(a, s0), hi = Math.min(b, s1);
+    if (hi > lo) out.push({ ...sp, text: t.slice(lo - s0, hi - s0) });
+  }
+  if (out.length) {
+    out[0] = { ...out[0], text: out[0].text.replace(/^\s+/, '') };
+    const k = out.length - 1;
+    out[k] = { ...out[k], text: out[k].text.replace(/\s+$/, '') };
+  }
+  return out.filter(x => x.text !== '');
+}
+
+// Split one passage into the fewest pieces that each fit the main-screen box,
+// preferring breaks at sentence ends, then clauses, then dashes, and pieces of
+// even length. Returns { pieces: span arrays, joins: what separated each piece
+// from the next (' ' or '\n') }, or null when it already fits
+// (or no split can make it fit). `strip`: pieces are shown with newlines
+// flattened (the slide's Strip setting), so measure them that way.
+function splitPassageForMain(spans, scheme, { fit = false, strip = false } = {}) {
+  spans = (spans || []).filter(x => x.text);
+  const text = spans.map(x => x.text).join('');
+  const toks = [...text.matchAll(/\S+/g)].map(m => ({ a: m.index, b: m.index + m[0].length, t: m[0] }));
+  if (toks.length < 2) return null;
+  // Which characters belong to a verse number — never end a piece on one.
+  const verseAt = new Uint8Array(text.length);
+  { let pos = 0; for (const sp of spans) { if (sp.verseNum) verseAt.fill(1, pos, pos + sp.text.length); pos += sp.text.length; } }
+  const rank = toks.map((tk, i) => {
+    if (verseAt[tk.b - 1]) return -1;
+    const gap = i + 1 < toks.length ? text.slice(tk.b, toks[i + 1].a) : '';
+    if (gap.includes('\n')) return 3;
+    const end = tk.t.replace(/["'”’)\]]+$/, '');
+    return /[.!?…]$/.test(end) ? 3 : /[:;]$/.test(end) ? 2 : /[,—–-]$/.test(end) ? 1 : 0;
+  });
+  const ctr = _fitLineCounter(scheme, 'scripture', 'main', fit);
+  try {
+    const piece = (i, j) => _sliceSpans(spans, toks[i].a, toks[j - 1].b);
+    const lines = (i, j) => { const p = piece(i, j); return ctr.count(strip ? stripNewlineSpans(p) : p); };
+    const n = toks.length, max = ctr.maxLines;
+    if (lines(0, n) <= max) return null;
+    const solve = loose => {
+      const ends = [];
+      for (let j = 1; j < n; j++) if (rank[j - 1] >= (loose ? 0 : 1)) ends.push(j);
+      ends.push(n);
+      const best = new Array(n + 1).fill(null);
+      best[0] = { cost: 0, prev: -1 };
+      for (const i of [0, ...ends.slice(0, -1)]) {
+        if (!best[i]) continue;
+        for (const j of ends) {
+          if (j <= i) continue;
+          const L = lines(i, j);
+          if (L > max) break; // longer pieces from i only get taller
+          const r = j < n ? rank[j - 1] : 3;
+          const cost = best[i].cost + 1000 + [10, 6, 3, 0][Math.max(0, r)] + 2 * L * L + (j - i <= 2 ? 12 : 0);
+          if (!best[j] || cost < best[j].cost) best[j] = { cost, prev: i };
+        }
+      }
+      if (!best[n]) return null;
+      const cuts = [];
+      for (let j = n; j > 0; j = best[j].prev) cuts.unshift([best[j].prev, j]);
+      return {
+        pieces: cuts.map(([i, j]) => piece(i, j)),
+        // What separated each piece from the next in the passage.
+        joins: cuts.slice(0, -1).map(([, j]) => (text.slice(toks[j - 1].b, toks[j].a).includes('\n') ? '\n' : ' ')),
+      };
+    };
+    return solve(false) || solve(true);
+  } finally {
+    ctr.close();
+  }
+}
+
+// What overflows on this slide, from its last measurement (storeFitCapacity):
+// { main: [{ part, lines, maxLines }], led: { lines, maxLines } | null }.
+function slideOverflow(slide) {
+  const fit = !!slide.fitWidth, propFit = fit && !!slide.propFitWidth;
+  const over = (f, fitted) => {
+    if (!f || !f.maxLines) return null;
+    const lines = fitted ? (f.lines ?? f.staticLines) : (f.staticLines ?? f.lines);
+    return lines > f.maxLines ? { lines, maxLines: f.maxLines } : null;
+  };
+  if (slide.type === 'scripture') {
+    const main = (slide._bodyFits || []).map((f, part) => {
+      const o = over(f, fit);
+      return o && { part, ...o };
+    }).filter(Boolean);
+    return { main, led: over(slide._ledFit, propFit) };
+  }
+  if (slide.type === 'point' && slide.mode !== 'revealing') {
+    const o = over(slide._pointFit, fit);
+    return { main: o ? [{ part: 0, ...o }] : [], led: null };
+  }
+  return { main: [], led: null };
+}
+
+// Rough size Pro7 shrinks to: fewer points means more words per line AND
+// shorter lines, so the needed scale is about √(lines that fit / lines needed).
+function overflowShrunkSize(size, o) {
+  return Math.max(1, Math.round(size * Math.sqrt(o.maxLines / o.lines)));
+}
+
+// Keep what the overflow check needs from a computeSlideFitWidth result:
+// scripture's per-part fits (also exported, see buildSpec) and each display's
+// line count vs. how many lines its box holds.
+function storeFitCapacity(slide, r) {
+  if (slide.type === 'scripture') {
+    slide._bodyFits = r.bodyFits || null;
+    slide._ledFit = { lines: r.propFitLines ?? null, staticLines: r.propStaticLines ?? null, maxLines: r.propMaxLines ?? null };
+  } else if (slide.type === 'point' && slide.mode !== 'revealing') {
+    slide._pointFit = { lines: r.lines ?? null, staticLines: r.staticLines ?? r.lines ?? null, maxLines: r.maxLines ?? null };
+  }
+}
+
 // Compute Fit Width for one slide's current text. Single source of truth for
 // both the per-slide toggle (attachFormHandlers) and the pre-export batch
 // recompute — keeps the two from drifting apart.
@@ -5046,10 +5273,17 @@ function stripNewlineSpans(spans) {
 function computeSlideFitWidth(slide, scheme) {
   const wantsProp = !!slide.propFitWidth;
   if (slide.type === 'scripture') {
-    const rawSpans = (slide.bodies || [[]])[0] || [];
+    const bodies = (slide.bodies && slide.bodies.length) ? slide.bodies : [[]];
+    const rawSpans = bodies[0] || [];
     if (!rawSpans.length || rawSpans.every(s => !s.text)) return null;
-    const mainSpans = slide.stripNewlines ? stripNewlineSpans(rawSpans) : rawSpans;
-    const main = computeOptimalBodyWidth(mainSpans, scheme, 'scripture', 'main');
+    // Each main-screen part is its own cue with its own box (builder.js reads
+    // spec.bodyFits[idx]); part 1's result also fills the legacy body* fields.
+    const bodyFits = bodies.map(raw => {
+      const spans = slide.stripNewlines ? stripNewlineSpans(raw || []) : (raw || []);
+      if (!spans.some(s => (s.text || '').trim())) return null;
+      return computeOptimalBodyWidth(spans, scheme, 'scripture', 'main');
+    });
+    const main = { ...bodyFits[0], fitHash: _fitCurrentBodyHash(slide, scheme, 'main') };
     // Title font metrics (see _fitTitleMetrics) — independent of the body
     // measurement above, but only ever needed alongside it (scripture's title
     // bar), so it's resolved here rather than adding a separate call site.
@@ -5060,17 +5294,23 @@ function computeSlideFitWidth(slide, scheme) {
     // Title Y needs the real line count + metrics either way. The line count
     // is the tier N measured at the full Styles width, which IS the static box
     // when the width isn't fitted — so it's exact for that box too.
-    const prop = computeOptimalBodyWidth(rawSpans, scheme, 'scripture', 'prop');
+    // The LED wall shows every part at once, so it's measured on all of them.
+    const prop = computeOptimalBodyWidth(scriptureLedSpans(slide), scheme, 'scripture', 'prop');
     const propTitleM = _fitTitleMetrics(scheme, 'prop');
     return {
       ...main, bodyLines: main.lines, titleAscent: titleM.ascent, titleDescent: titleM.descent,
       bodyStaticLines: main.staticLines ?? main.lines,
+      bodyFits: bodyFits.map(f => f && {
+        bodyW: f.bodyW, bodyX: f.bodyX, lines: f.lines, staticLines: f.staticLines ?? f.lines,
+        brokenText: f.brokenText || null, brokenSpans: f.brokenSpans || null, maxLines: f.maxLines,
+      }),
+      propMaxLines: prop.maxLines, propStaticLines: prop.staticLines ?? prop.lines, propFitLines: prop.lines,
       propBodyW: wantsProp ? prop.bodyW : null, propBodyX: wantsProp ? prop.bodyX : null,
       propBodyLines: wantsProp ? prop.lines : (prop.staticLines ?? prop.lines),
       propBrokenText: wantsProp ? (prop.brokenText || null) : null, propBrokenSpans: wantsProp ? (prop.brokenSpans || null) : null,
       propAscent: prop.ascent, propDescent: prop.descent, propCapAscent: prop.capAscent,
       propTitleAscent: propTitleM.ascent, propTitleDescent: propTitleM.descent,
-      propFitHash: prop.fitHash,
+      propFitHash: _fitCurrentBodyHash(slide, scheme, 'prop'),
     };
   }
   if (slide.type === 'point') {
@@ -5622,7 +5862,7 @@ function slidePreviewData(slide) {
     const spans = pick(fit ? slide._fitBrokenSpans : null);
     return { pv, scene: 'scripture', content: {
       spans: spans.some(x => x.text.trim()) ? spans : [{ text: '—' }],
-      propSpans: pick(propFit ? slide._fitPropBrokenSpans : null),
+      propSpans: ((propFit && slide._fitPropBrokenSpans) || scriptureLedSpans(slide)).map(x => ({ text: x.text || '', bold: !!x.bold })),
       reference: orDash(slide.reference || slide.label) } };
   }
   if (slide.type === 'point') {
@@ -10677,6 +10917,7 @@ function scriptureForm(slide) {
           </div>
         </div>
         ${bodyEditors}
+        <div class="overflow-banner" id="overflow-banner" hidden></div>
         <button class="btn-split-body" id="btn-split-body" type="button" data-tip-key="split">+ Split into another slide</button>
       </div>
 
@@ -10717,6 +10958,7 @@ function pointForm(slide) {
         </div>
       </div>
       ${plainEditor('f-bodyText', slide.bodyText, 'Point text…')}
+      <div class="overflow-banner" id="overflow-banner" hidden></div>
     </div>
     ${mode === 'split' ? `
     <div class="field" id="field-propBodyText">
@@ -11271,20 +11513,9 @@ function attachFormHandlers(slide) {
       attachRichEditor(`f-body-${idx}`, spans => {
         slide.bodies[idx] = spans;
         updateDigitBadge(idx, spans);
-        if (slide.fitWidth) {
-          clearTimeout(_fitTimer);
-          _fitTimer = setTimeout(() => {
-            const s = activeStyleScheme();
-            const allSpans = (slide.bodies || [[]])[0] || [];
-            if (allSpans.some(sp => sp.text)) {
-              const r = computeOptimalBodyWidth(allSpans, s);
-              slide.bodyW = r.bodyW; slide.bodyX = r.bodyX;
-            }
-            saveState();
-          }, 450);
-        } else {
-          saveState();
-        }
+        saveState();
+        clearTimeout(_fitTimer);
+        _fitTimer = setTimeout(() => { refreshOverflow(); saveState(); }, 450);
       });
     });
     slide.bodies.forEach((body, idx) => updateDigitBadge(idx, body));
@@ -11294,6 +11525,8 @@ function attachFormHandlers(slide) {
     if (splitBtn) {
       splitBtn.addEventListener('click', () => {
         slide.bodies.push([]);
+        // A hand split always shows as a line break on the LED wall.
+        slide.partJoins = [...scripturePartJoins(slide).slice(0, slide.bodies.length - 2), '\n'];
         slide._labelManual = true;
         renderMain();
       });
@@ -11305,6 +11538,8 @@ function attachFormHandlers(slide) {
         const idx = Number(btn.dataset.bodyIdx);
         if (slide.bodies.length > 1) {
           slide.bodies.splice(idx, 1);
+          // The join before the removed part goes with it.
+          if (Array.isArray(slide.partJoins)) slide.partJoins.splice(idx - 1, 1);
           renderMain();
         }
       });
@@ -11357,6 +11592,7 @@ function attachFormHandlers(slide) {
   }
 
   // ── Point single fields ──
+  let _pointFitTimer = null;
   attachPlainEditor('f-bodyText', text => {
     slide.bodyText = text;
     // Label and prop/cue name stay single-line (collapse any line breaks).
@@ -11372,6 +11608,8 @@ function attachFormHandlers(slide) {
       if (pn) pn.value = slide.propName;
     }
     saveState();
+    clearTimeout(_pointFitTimer);
+    _pointFitTimer = setTimeout(() => { refreshOverflow(); saveState(); }, 450);
   });
 
   // ── Point split fields (Display 2's own independent text) ──
@@ -11537,6 +11775,7 @@ function attachFormHandlers(slide) {
     // fitWidth slide on every export.
     slide.bodyFitHash = result.fitHash ?? null;
     slide.propBodyFitHash = result.propFitHash ?? null;
+    storeFitCapacity(slide, result);
   }
 
   const fitBtn     = get('btn-fit-width');
@@ -11585,6 +11824,7 @@ function attachFormHandlers(slide) {
       slide.propFitWidth = !slide.propFitWidth;
       fitPropBtn.classList.toggle('active', slide.propFitWidth);
       if (slide.fitWidth) applyFitWidth(); // recompute — computeSlideFitWidth already nulls prop fields when off
+      refreshOverflow();
       saveState();
     });
   }
@@ -11595,7 +11835,7 @@ function attachFormHandlers(slide) {
       stripBtn.classList.toggle('active', slide.stripNewlines);
       // Strip changes what Fit Width measures (flattened vs. explicit-break text),
       // so re-run it if it's on.
-      if (slide.fitWidth) applyFitWidth();
+      refreshOverflow();
       saveState();
     });
   }
@@ -11620,6 +11860,65 @@ function attachFormHandlers(slide) {
       saveState();
     });
   }
+
+  // ── Too-long warning + Split for main screen ──
+  // Re-measures the slide (re-fitting it when Fit Width is on) and shows
+  // whether any display needs more lines than its box holds.
+  function refreshOverflow() {
+    const box = get('overflow-banner');
+    if (!box) return;
+    const scheme = activeStyleScheme();
+    try {
+      if (slide.fitWidth) applyFitWidth();
+      else {
+        const r = computeSlideFitWidth(slide, scheme);
+        if (r) storeFitCapacity(slide, r);
+        else { slide._bodyFits = null; slide._ledFit = null; slide._pointFit = null; }
+      }
+    } catch (err) { console.warn('[overflow] measure failed', err); return; }
+    const o = slideOverflow(slide);
+    const isScr = slide.type === 'scripture';
+    const rows = [];
+    let plan = null;
+    if (o.main.length) {
+      const size = _fitResolveContext(scheme, isScr ? 'scripture' : 'point', 'main').size;
+      const worst = o.main.reduce((a, b) => (b.lines / b.maxLines > a.lines / a.maxLines ? b : a));
+      const multi = isScr && slide.bodies.length > 1;
+      const who = !multi ? 'Too long' : o.main.length === 1 ? `Slide ${worst.part + 1} is too long` : `${o.main.length} of these slides are too long`;
+      if (isScr) {
+        // Split only the parts that overflow; parts that fit stay as they are.
+        const bad = new Set(o.main.map(m => m.part));
+        const oldJoins = scripturePartJoins(slide);
+        const bodies = [], joins = [];
+        let ok = true;
+        slide.bodies.forEach((body, i) => {
+          if (i > 0) joins.push(oldJoins[i - 1]);
+          const r = bad.has(i) ? splitPassageForMain(body, scheme, { fit: !!slide.fitWidth, strip: !!slide.stripNewlines }) : null;
+          if (bad.has(i) && !r) ok = false;
+          bodies.push(...(r ? r.pieces : [body]));
+          if (r) joins.push(...r.joins);
+        });
+        if (ok && bodies.length > slide.bodies.length) plan = { bodies, joins };
+      }
+      rows.push(`<div class="overflow-row"><span class="overflow-msg"><b>${who} for the ${esc(dn('mainScreen'))}</b> — needs ${worst.lines} lines, the box fits ${worst.maxLines}. Pro7 will shrink the text to about ${overflowShrunkSize(size, worst)}pt.${isScr ? '' : ' Shorten the point to keep it full size.'}</span>${plan ? `<button class="btn-sm overflow-split" id="btn-overflow-split" type="button">Split for ${esc(dn('mainScreen'))} → ${plan.bodies.length} slides</button>` : ''}</div>`);
+    }
+    if (o.led) {
+      const size = _fitResolveContext(scheme, 'scripture', 'prop').size;
+      rows.push(`<div class="overflow-row"><span class="overflow-msg"><b>Too long for the ${esc(dn('ledWall'))}</b> — the whole passage needs ${o.led.lines} lines, the box fits ${o.led.maxLines}. Pro7 will shrink it to about ${overflowShrunkSize(size, o.led)}pt.</span></div>`);
+    }
+    box.hidden = !rows.length;
+    box.innerHTML = rows.join('');
+    get('btn-overflow-split')?.addEventListener('click', () => {
+      // The LED wall keeps showing the whole passage as it was written (see
+      // scriptureLedSpans), so remember what each split point replaced.
+      slide.bodies = plan.bodies;
+      slide.partJoins = plan.joins;
+      slide._labelManual = true;
+      saveState();
+      renderMain();
+    });
+  }
+  if (slide.type === 'scripture' || (slide.type === 'point' && slide.mode !== 'revealing')) refreshOverflow();
 }
 
 // ─── Slide actions ────────────────────────────────────────────────────────────
@@ -12204,11 +12503,31 @@ function buildSpec() {
             _fitTextsMatch((slide._fitBrokenText || '').replace(/\n/g, ' ').trim(), liveText)) {
           bodyDisplaySpans = normalizeExportSpans(slide._fitBrokenSpans);
         }
+        // Display 2's layout covers every part (the LED shows them all at once).
+        const ledText = scriptureLedSpans(slide).map(s => s.text || '').join('').replace(/\n/g, ' ').trim();
         if (slide.fitWidth && slide.propFitWidth && slide._fitPropBrokenSpans &&
-            _fitTextsMatch((slide._fitPropBrokenText || '').replace(/\n/g, ' ').trim(), liveText)) {
+            _fitTextsMatch((slide._fitPropBrokenText || '').replace(/\n/g, ' ').trim(), ledText)) {
           propBodyDisplaySpans = normalizeExportSpans(slide._fitPropBrokenSpans);
         }
       }
+      // Parts 2+ of a split slide: their own box, line count and hard breaks
+      // (part 1 keeps using the bodyW/bodyX/bodyLines/bodyDisplaySpans fields).
+      // Same stale-cache guard as part 1, against that part's own text.
+      const bodyFits = bodies.length > 1 && Array.isArray(slide._bodyFits)
+        ? bodies.map((body, i) => {
+            const f = slide._bodyFits[i];
+            if (!f) return null;
+            const live = (slide.stripNewlines ? stripNewlineSpans(body) : body).map(x => x.text || '').join('').trim();
+            const broken = slide.fitWidth && f.brokenSpans &&
+              _fitTextsMatch((f.brokenText || '').replace(/\n/g, ' ').trim(), live.replace(/\n/g, ' '));
+            return {
+              bodyW: slide.fitWidth ? (f.bodyW || null) : null,
+              bodyX: slide.fitWidth ? (f.bodyX ?? null) : null,
+              lines: (slide.fitWidth ? f.lines : f.staticLines) || null,
+              displaySpans: broken ? normalizeExportSpans(f.brokenSpans) : null,
+            };
+          })
+        : null;
       // Auto-fill blankSpans from all bodies when split and not manually set
       const blankSpans = (slide.blankSpans && slide.blankSpans.length)
         ? slide.blankSpans
@@ -12226,6 +12545,8 @@ function buildSpec() {
         bodies,
         bodyDisplaySpans,
         propBodyDisplaySpans,
+        bodyFits,
+        propJoins:     scripturePartJoins(slide),
         propName:      normalizeDeckQuotes(slide.propName || slide.reference || 'scripture'),
         blankBefore:   !!slide.blankBefore,
         blankSpans:    normalizeExportSpans(blankSpans),
@@ -12476,6 +12797,17 @@ function updateDigitBadge(idx, spans) {
   }
 }
 
+// Fresh overflow check for one slide (see slideOverflow); null if it can't be
+// measured right now (no text, or no DOM fonts), so callers fall back.
+function measureOverflow(slide) {
+  try {
+    const r = computeSlideFitWidth(slide, activeStyleScheme());
+    if (!r) return null;
+    storeFitCapacity(slide, r);
+    return slideOverflow(slide);
+  } catch (_) { return null; }
+}
+
 function preflightWarnings() {
   // Each item: { msg, slideId?, field?, autoFix? }
   const items = [];
@@ -12503,10 +12835,18 @@ function preflightWarnings() {
       const bodies = slide.bodies || [[]];
       if (bodies.every(b => !b?.some(s => s.text?.trim())))
         warn(`Scripture “${label}” has no body text`, slide.id, 'body');
+      const ov = measureOverflow(slide);
+      if (ov) {
+        for (const m of ov.main) {
+          const sfx = bodies.length > 1 ? ` (slide ${m.part + 1})` : '';
+          warn(`Scripture “${label}”${sfx} is too long for the ${dn('mainScreen')} (${m.lines} lines, fits ${m.maxLines}) — Pro7 will shrink it. Open it and use “Split for ${dn('mainScreen')}”`, slide.id, 'body');
+        }
+        if (ov.led) warn(`Scripture “${label}” is too long for the ${dn('ledWall')} (${ov.led.lines} lines, fits ${ov.led.maxLines}) — Pro7 will shrink it`, slide.id, 'body');
+      }
       bodies.forEach((b, i) => {
         const joined = (b || []).map(s => s.text || '').join('');
         const sfx = bodies.length > 1 ? ` (slide ${i + 1})` : '';
-        if (joined.length > LONG_SCRIPTURE_CHARS)
+        if (!ov && joined.length > LONG_SCRIPTURE_CHARS)
           warn(`Scripture “${label}”${sfx} is long (${joined.length} chars) — consider splitting it into two slides`, slide.id, 'body');
         if (hasEdgeSpace(joined)) {
           warn(`Scripture “${label}”${sfx} has a stray space at the start or end`, slide.id, 'body', () => {
@@ -12579,6 +12919,11 @@ function preflightWarnings() {
           slide.id, 'bodyText',
           () => { slide.bodyText = slide.bodyText.replace(/^\s+|\s+$/g, ''); saveState(); }
         );
+      }
+      const ov = slide.bodyText?.trim() ? measureOverflow(slide) : null;
+      if (ov?.main.length) {
+        const m = ov.main[0];
+        warn(`Point “${label}” is too long for the ${dn('mainScreen')} (${m.lines} lines, fits ${m.maxLines}) — Pro7 will shrink it`, slide.id, 'bodyText');
       }
     }
     if (slide.type === 'point' && slide.mode === 'revealing') {
@@ -12714,6 +13059,7 @@ async function generate() {
         slide.propTitleDescent = r.propTitleDescent ?? null;
         slide.bodyFitHash = r.fitHash ?? null;
         slide.propBodyFitHash = r.propFitHash ?? null;
+        storeFitCapacity(slide, r);
       }
     }
   } catch (_) { /* non-fatal — export continues without fit-width pre-computation */ }
@@ -13084,36 +13430,97 @@ function formatChangeValue(v) {
   return s.length > 60 ? s.slice(0, 57) + '…' : s;
 }
 
+// Plain-language summary of one hand-edit change record (see
+// diffPresentations in diffPresentation.js): what a person would say they
+// did in Pro7 — "text edited", "box moved" — not the field path.
+const _EDIT_ELEMENT_NAMES = { body: 'text', 'this slide': 'text', title: 'reference bar', atem_gradient: 'gradient' };
+function describeHandEdit(c) {
+  const el = c.elementName ? (_EDIT_ELEMENT_NAMES[c.elementName] || `“${c.elementName}” box`) : null;
+  const p = c.path || '';
+  if (c.kind === 'added')   return { text: `${el || 'item'} added`, carries: c.mergeable !== false };
+  if (c.kind === 'removed') return { text: `${el || 'item'} removed`, carries: c.mergeable !== false };
+  if (/notes\.text$/.test(p)) return { text: 'speaker notes edited', carries: false };
+  if (el) {
+    const what =
+      /\.text\.text$/.test(p)                  ? 'edited' :
+      /bounds\.origin/.test(p)                 ? 'moved' :
+      /bounds\.size/.test(p)                   ? 'resized' :
+      /font\.size$/.test(p)                    ? 'text size changed' :
+      /font\./.test(p)                         ? 'font changed' :
+      /shadow/i.test(p)                        ? 'shadow changed' :
+      /stroke|outline/i.test(p)                ? 'outline changed' :
+      /alignment/i.test(p)                     ? 'alignment changed' :
+      /paragraphStyle|kerning|lineHeight/i.test(p) ? 'spacing changed' :
+      /margins/.test(p)                        ? 'margins changed' :
+      /fill|color/i.test(p)                    ? 'colour changed' :
+      /[Bb]uild|transition/i.test(p)           ? 'animation changed' :
+      'settings changed';
+    return { text: `${el} ${what}`, carries: c.mergeable !== false };
+  }
+  if (/label\.text$/.test(p))       return { text: 'slide name changed', carries: true };
+  if (/transition/i.test(p))         return { text: 'transition changed', carries: true };
+  if (/^actions\[\d+\]\.(macro|prop|clear|type)\b|^actions\[\d+\]$/.test(p)) return { text: 'macros/props changed', carries: true };
+  return { text: 'slide settings changed', carries: true };
+}
+
+// Groups change records by slide into [{ index, label, added, removed,
+// edits: [{ text, carries }] }], deduplicated — a paired QR export reports
+// most edits once per file.
+function summarizeHandEdits(changes) {
+  const groups = new Map();
+  for (const c of changes) {
+    if (c.kind === 'structural') continue;
+    const key = c.kind === 'slideAdded' ? `+${c.slideIndex}:${c.slideLabel}` : `${c.cueKey?.label ?? c.slideLabel}#${c.cueKey?.occ ?? c.slideIndex}`;
+    const label = c.slideLabel && c.slideLabel !== '(untitled)' ? c.slideLabel : 'Blank slide';
+    if (!groups.has(key)) groups.set(key, { index: c.slideIndex, label, added: false, removed: false, edits: [] });
+    const g = groups.get(key);
+    if (c.slideIndex != null && (g.index == null || c.slideIndex < g.index)) g.index = c.slideIndex;
+    if (c.kind === 'slideAdded') { g.added = true; continue; }
+    if (c.kind === 'slideRemoved') { g.removed = true; continue; }
+    const d = describeHandEdit(c);
+    const have = g.edits.find(e => e.text === d.text);
+    if (have) have.carries = have.carries && d.carries;
+    else g.edits.push(d);
+  }
+  return [...groups.values()].sort((a, b) => (a.index ?? Infinity) - (b.index ?? Infinity));
+}
+
 // Shown when the deck's last exported file was hand-edited in ProPresenter
 // since DeckPro wrote it (see checkForHandEdits in server.js). Lists what
-// changed — slide, element, property, old → new — and lets the user choose
-// to carry those edits forward into the new version, or export fresh from
-// DeckPro's own data and let the old edits go. Resolves to 'merge' |
-// 'override' | null (dismissed — caller should abort the export entirely,
-// not guess which the user meant).
+// changed slide by slide in plain words (the raw field-level list is behind
+// "Details") and lets the user choose to carry those edits forward into the
+// new version, or export fresh from DeckPro's own data and let the old edits
+// go. Resolves to 'merge' | 'override' | null (dismissed — caller should
+// abort the export entirely, not guess which the user meant).
 function showMergeDecisionModal(changes) {
   return new Promise(resolve => {
     const overlay = document.createElement('div');
     overlay.className = 'warn-overlay';
 
-    const rows = changes.map(c => {
-      if (c.kind === 'structural') {
-        return `<li class="warn-item"><span class="warn-msg">Slide count changed in ProPresenter: ${formatChangeValue(c.oldValue)} → ${formatChangeValue(c.newValue)} slides. This deck can't be reliably merged — pick Override, or fix the slide count in Pro7 first.</span></li>`;
-      }
-      // role only appears on a paired QR export (two independent files) —
-      // absent (and so omitted) for the plain single-file export path.
-      const roleTag = c.role ? `<span style="opacity:.65">[${c.role === 'qr' ? 'QR file' : 'No-QR file'}]</span> ` : '';
-      const where = c.slideIndex ? `Slide ${c.slideIndex}${c.slideLabel ? ` "${esc(c.slideLabel)}"` : ''}` : '';
-      const what  = c.elementName ? `${esc(c.elementName)}` : '';
+    const groups = summarizeHandEdits(changes);
+    const anyLost = groups.some(g => g.added || g.edits.some(e => !e.carries));
+    // One row per slide; identical rows (three blanks deleted) collapse to one.
+    const lines = [];
+    for (const g of groups) {
+      const what = g.added ? 'new slide added in Pro7 <em class="merge-lost">won’t carry over (add it in DeckPro)</em>'
+        : g.removed ? 'deleted in Pro7 <em class="merge-lost">— DeckPro will put it back</em>'
+        : g.edits.map(e => e.carries ? esc(e.text) : `${esc(e.text)} <em class="merge-lost">(won’t carry over)</em>`).join(', ');
+      const same = lines.find(l => l.label === g.label && l.what === what);
+      if (same) same.n++;
+      else lines.push({ label: g.label, what, n: 1 });
+    }
+    const rows = lines.map(l =>
+      `<li class="warn-item"><span class="warn-msg"><strong>${esc(l.label)}</strong>${l.n > 1 ? ` ×${l.n}` : ''} — ${l.what}</span></li>`).join('');
+
+    // The raw, field-level list (what this dialog used to show), for checking
+    // exactly what Merge would apply.
+    const detailRows = changes.filter(c => c.kind !== 'slideAdded' && c.kind !== 'slideRemoved' && c.kind !== 'structural').map(c => {
+      const roleTag = c.role ? `[${c.role === 'qr' ? 'QR file' : 'No-QR file'}] ` : '';
+      const what  = c.elementName ? ` · ${esc(c.elementName)}` : '';
       const prop  = esc(describeChangePath(c));
-      const notMergeable = c.mergeable === false ? ' <em style="opacity:.7">(shown only — can\'t auto-merge text content)</em>' : '';
-      let valueLine;
-      if (c.kind === 'added')       valueLine = 'added in Pro7';
-      else if (c.kind === 'removed') valueLine = 'removed in Pro7';
-      else valueLine = `${esc(formatChangeValue(c.oldValue))} → ${esc(formatChangeValue(c.newValue))}`;
-      return `<li class="warn-item">
-        <span class="warn-msg">${roleTag}<strong>${where}${what ? ' · ' + what : ''}</strong>${prop ? ' — ' + prop : ''}: ${valueLine}${notMergeable}</span>
-      </li>`;
+      const val = c.kind === 'added' ? 'added in Pro7' : c.kind === 'removed' ? 'removed in Pro7'
+        : `${esc(formatChangeValue(c.oldValue))} → ${esc(formatChangeValue(c.newValue))}`;
+      return `<li>${roleTag}${esc(c.slideLabel || '')}${what}${prop ? ' — ' + prop : ''}: ${val}</li>`;
     }).join('');
 
     overlay.innerHTML = `
@@ -13124,12 +13531,13 @@ function showMergeDecisionModal(changes) {
             <path d="M10 8v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             <circle cx="10" cy="14.5" r=".75" fill="currentColor"/>
           </svg>
-          <span>Changed in ProPresenter since last export</span>
+          <span>Edited in ProPresenter since your last export</span>
         </div>
         <p style="font-size:12.5px;color:var(--muted);margin:0 0 8px;line-height:1.4">
-          The last version of this deck has been hand-edited in ProPresenter. Merge to carry those edits into the new version, or override to export fresh from DeckPro and let them go.
+          <b>Merge</b> keeps these Pro7 edits in the new export. <b>Override</b> exports fresh from DeckPro and drops them.${anyLost ? ' Edits marked “won’t carry over” are lost either way — redo them in DeckPro.' : ''}
         </p>
         <ul class="warn-list">${rows}</ul>
+        ${detailRows ? `<details class="merge-details"><summary>Details</summary><ul>${detailRows}</ul></details>` : ''}
         <div class="warn-actions">
           <button class="warn-btn-cancel">Cancel</button>
           <button class="warn-btn-fixall" id="merge-decision-override">Override</button>

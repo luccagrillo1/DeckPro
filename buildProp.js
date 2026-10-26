@@ -466,12 +466,15 @@ function estimatePropTitleY(spans, bw, prs, knownLines, metrics) {
 function buildScripturePropCue(spec, rs = {}) {
   const { propName, reference, bodies } = spec;
   const prs = makePropStyle(rs);
-  // bodies[0] uses Fit Width's OWN Display-2 hard-break override when one won
-  // (see buildSpec in public/app.js) — independently computed against this
-  // display's own metrics, never Display 1's spec.bodyDisplaySpans.
-  const allSpans = bodies.reduce((acc, body, idx) => {
-    if (idx > 0) acc.push({ text: '\n', bold: false });
-    return acc.concat((idx === 0 && spec.propBodyDisplaySpans) ? spec.propBodyDisplaySpans : body);
+  // Every part at once. Fit Width's OWN Display-2 hard-break layout (see
+  // buildSpec in public/app.js) was measured on this same joined text, so it
+  // replaces the whole thing — never Display 1's spec.bodyDisplaySpans.
+  // propJoins[i] goes between part i and i+1: what "Split for main screen"
+  // cut at (a space, or a poetry line break), so the passage reads as if it
+  // was never split; hand splits keep a line break.
+  const allSpans = spec.propBodyDisplaySpans || bodies.reduce((acc, body, idx) => {
+    if (idx > 0) acc.push({ text: spec.propJoins?.[idx - 1] === ' ' ? ' ' : '\n', bold: false });
+    return acc.concat(body);
   }, []);
 
   const bodyRtf   = rtf.rtfBody(allSpans, prs);

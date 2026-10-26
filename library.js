@@ -325,16 +325,24 @@ function duplicateDeck(id, newId) {
 // 'noQr'/'qr' for the two files a paired QR export writes — since those are
 // genuinely separate files that could each be independently hand-edited in
 // Pro7. Stored as one JSON map so a single column covers all roles.
+// Each snapshot also records the file it was written to (`<role>Path`): a
+// snapshot is only a valid baseline for that exact file. Comparing it with a
+// file DeckPro wrote later (say a QR-pair export after a single one) made
+// every style difference between the two exports look like a hand edit.
 function getDeckSnapshot(deckId, role = 'single') {
   const row = db.prepare('SELECT last_export_snapshot FROM decks WHERE id = ?').get(deckId);
   if (!row || !row.last_export_snapshot) return null;
   try { return (JSON.parse(row.last_export_snapshot) || {})[role] || null; } catch (_) { return null; }
 }
-function setDeckSnapshot(deckId, role, snapshot) {
+function getDeckSnapshotPath(deckId, role = 'single') {
   const row = db.prepare('SELECT last_export_snapshot FROM decks WHERE id = ?').get(deckId);
-  let all = {};
-  try { all = JSON.parse(row?.last_export_snapshot || '{}') || {}; } catch (_) {}
-  all[role] = snapshot || null;
+  try { return (JSON.parse(row?.last_export_snapshot || '{}') || {})[`${role}Path`] || null; } catch (_) { return null; }
+}
+// `roles`: { role: { snapshot, path } } written together; every role not
+// listed is cleared, since a new export replaces the deck's files.
+function setDeckSnapshots(deckId, roles) {
+  const all = {};
+  for (const [role, r] of Object.entries(roles)) { all[role] = r.snapshot || null; all[`${role}Path`] = r.path || null; }
   db.prepare('UPDATE decks SET last_export_snapshot = ? WHERE id = ?').run(JSON.stringify(all), deckId);
 }
 
@@ -562,6 +570,6 @@ module.exports = {
   listDecks, getDeck, saveDeck, updateDeckInfo, touchOpened,
   setStatus, setTemplate, hardDelete, duplicateDeck,
   recordGeneration, listGenerations,
-  getDeckSnapshot, setDeckSnapshot, setDeckPairedExportPaths,
+  getDeckSnapshot, getDeckSnapshotPath, setDeckSnapshots, setDeckPairedExportPaths,
   importLegacy, setLocation, resetLocation,
 };

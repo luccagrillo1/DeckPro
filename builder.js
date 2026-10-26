@@ -1158,9 +1158,9 @@ function stripNewlineSpans(spans) {
 /** Returns an ARRAY of cues — one per body in spec.bodies. */
 function buildScriptureCues(spec, rs) {
   // Per-slide body bounds override spec values take precedence over scheme defaults
-  const bx = spec.bodyX ?? rs.bodyX ?? 0;
+  const bx0 = spec.bodyX ?? rs.bodyX ?? 0;
   const by = rs.bodyY ?? 0;
-  const bw = spec.bodyW ?? rs.bodyW ?? rs.canvasW ?? 1920;
+  const bw0 = spec.bodyW ?? rs.bodyW ?? rs.canvasW ?? 1920;
   const bh = rs.bodyH ?? 100;
   const bodyYOff = rs.bodyFontAdv?.yOffset ?? 0;
 
@@ -1173,6 +1173,11 @@ function buildScriptureCues(spec, rs) {
   const followReveal = spec.followReveal || 'single';
 
   return allBodies.map((body, idx) => {
+    // Parts 2+ of a split slide carry their own Fit Width box/lines/breaks.
+    const fit = idx > 0 ? (spec.bodyFits?.[idx] || null) : null;
+    const bx = idx === 0 ? bx0 : (fit?.bodyX ?? rs.bodyX ?? 0);
+    const bw = idx === 0 ? bw0 : (fit?.bodyW ?? rs.bodyW ?? rs.canvasW ?? 1920);
+    const partLines = idx > 0 ? (fit?.lines ?? null) : spec.bodyLines;
     // Strip newlines for main slide if requested (prop always keeps them).
     // Verse numbers (if any) live as { verseNum, super } spans in the body content already.
     // bodies[0] uses Fit Width's hard-break override when one won and its
@@ -1182,6 +1187,8 @@ function buildScriptureCues(spec, rs) {
     // breaks Fit Width just chose back into spaces).
     const displayBody = (idx === 0 && spec.bodyDisplaySpans)
       ? spec.bodyDisplaySpans
+      : fit?.displaySpans
+        ? fit.displaySpans
       : spec.stripNewlines
         ? stripNewlineSpans(body || [])
         : (body || []);
@@ -1197,7 +1204,7 @@ function buildScriptureCues(spec, rs) {
     // export over one unfinished slide elsewhere in the deck.
     const hasBodyText = displayBody.some(s => (s.text || '').trim());
     const computedTitleY = rs.autoTitleY
-      ? estimateTitleY(displayBody, bw, rs, spec.bodyLines, { ascent: spec.ascent, descent: spec.descent, capAscent: spec.capAscent, titleAscent: spec.titleAscent, titleDescent: spec.titleDescent }, hasBodyText)
+      ? estimateTitleY(displayBody, bw, rs, partLines, { ascent: spec.ascent, descent: spec.descent, capAscent: spec.capAscent, titleAscent: spec.titleAscent, titleDescent: spec.titleDescent }, hasBodyText)
       : (rs.titleY ?? 0);
     const titleEl = makeTitleElement({ reference: spec.reference, titleY: computedTitleY }, rs);
     const bodyEl  = makeBodyElement({ x: bx, y: by + bodyYOff, w: bw, h: bh, rtfData: bodyRtf, charCount: plainBody.length, spans: displayBody }, rs);

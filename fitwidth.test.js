@@ -415,5 +415,40 @@ ok('Case 6 (John 14:27) Display 1 titleY matches the reviewed value',
 ok('Case 6 (John 14:27) Display 2 titleY matches the reviewed value (genuinely different line count)',
    propCaseTitleY(2, D2_METRICS) === 971, { got: propCaseTitleY(2, D2_METRICS) });
 
+// ── Split scripture: each main-screen part has its own box (spec.bodyFits) ──
+
+(() => {
+  const bodyOf = cue => cue.actions.find(x => x.type === 'ACTION_TYPE_PRESENTATION_SLIDE')
+    .slide.presentation.baseSlide.elements.find(e => e.element.name === 'body').element;
+  const spec = scriptureSpec(2);
+  Object.assign(spec.slides[0], {
+    bodies: [[{ text: 'part one text' }], [{ text: 'part two is a longer passage' }]],
+    bodyW: 1200, bodyX: 360,
+    bodyFits: [null, { bodyW: 1600, bodyX: 160, lines: 4, displaySpans: [{ text: 'part two is\na longer passage' }] }],
+  });
+  const cues = buildPresentation(spec).cues.filter(c => c.actions.some(a => a.slide?.presentation?.baseSlide?.elements?.some(e => e.element.name === 'body')));
+  const [b1, b2] = cues.map(bodyOf);
+  ok('split part 1 keeps the part-1 Fit Width box', b1.bounds.size.width === 1200 && b1.bounds.origin.x === 360, b1.bounds);
+  ok('split part 2 uses its own Fit Width box', b2.bounds.size.width === 1600 && b2.bounds.origin.x === 160, b2.bounds);
+  const rtf2 = Buffer.from(b2.text.rtfData, 'base64').toString('latin1');
+  ok('split part 2 uses its own hard-break layout', /part two is\\\na longer passage/.test(rtf2), rtf2.slice(-80));
+  ok('split part 2 places its title from its own line count', titleYOf(cues[1]) < titleYOf(cues[0]),
+     { y1: titleYOf(cues[0]), y2: titleYOf(cues[1]) });
+})();
+
+// ── LED wall: all parts at once, joined as the passage was (spec.propJoins) ──
+
+(() => {
+  const rtfOf = spec => {
+    const cue = buildScripturePropCue({ propName: 't', reference: 'R', ...spec }, {});
+    const el = cue.actions[0].slide.prop.baseSlide.elements.find(e => e.element.name === 'body');
+    return Buffer.from(el.element.text.rtfData, 'base64').toString('latin1');
+  };
+  const bodies = [[{ text: 'eternal life.' }], [{ text: 'For God did not' }]];
+  ok('hand-split parts keep a line break on the LED wall', /life\.\\\nFor God/.test(rtfOf({ bodies })));
+  ok('"Split for main screen" parts flow back together on the LED wall',
+     /life\. For God/.test(rtfOf({ bodies, propJoins: [' '] })));
+})();
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

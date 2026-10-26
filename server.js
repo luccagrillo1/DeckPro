@@ -1304,9 +1304,16 @@ async function checkForHandEdits(deckId, role = 'single', installedPathOverride)
   if (!installedPath || !fs.existsSync(installedPath)) return [];
   const baseline = library.getDeckSnapshot(deckId, role);
   if (!baseline) return [];
+  // Only a baseline for this exact file counts (see getDeckSnapshotPath).
+  const basePath = library.getDeckSnapshotPath(deckId, role);
+  if (basePath && path.resolve(basePath) !== path.resolve(installedPath)) return [];
   let installed;
   try { installed = await decodePresentationBuffer(fs.readFileSync(installedPath)); }
   catch (_) { return []; } // unreadable — nothing DeckPro can compare against
+  // Same presentation? DeckPro mints a new presentation UUID on every export
+  // and Pro7 keeps it when it saves, so a different one means the file was
+  // replaced by another export, not hand-edited — nothing to merge.
+  if (baseline.uuid?.string && installed.uuid?.string && baseline.uuid.string !== installed.uuid.string) return [];
   return diffPresentations(baseline, installed);
 }
 
@@ -1391,8 +1398,10 @@ app.post('/api/generate', async (req, res) => {
 
       if (spec.deckId && result.presentations?.length === 2) {
         library.setDeckPairedExportPaths(spec.deckId, result.presentations[0].path, result.presentations[1].path);
-        library.setDeckSnapshot(spec.deckId, 'noQr', result.presentations[0].snapshot);
-        library.setDeckSnapshot(spec.deckId, 'qr',   result.presentations[1].snapshot);
+        library.setDeckSnapshots(spec.deckId, {
+          noQr: { snapshot: result.presentations[0].snapshot, path: result.presentations[0].path },
+          qr:   { snapshot: result.presentations[1].snapshot, path: result.presentations[1].path },
+        });
       }
 
       return res.json({
@@ -1458,7 +1467,9 @@ app.post('/api/generate', async (req, res) => {
       // Role 'single' — matches checkForHandEdits(deckId) default. Was missing
       // the role argument, so the snapshot landed under a junk key and the
       // single-export hand-edit check never had a baseline to compare against.
-      library.setDeckSnapshot(spec.deckId, 'single', result.presentationSnapshot);
+      library.setDeckSnapshots(spec.deckId, {
+        single: { snapshot: result.presentationSnapshot, path: result.presentationPath || outputPath },
+      });
     }
 
     res.json({

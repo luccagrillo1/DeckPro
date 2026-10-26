@@ -13,9 +13,14 @@
  * nothing meaningful actually is.
  *
  * Matching across two independently-generated files (no shared UUIDs):
- *  - cues matched by INDEX — DeckPro and a normal Pro7 editing session both
- *    preserve cue order/count; a count mismatch (slide added/removed in
- *    Pro7) is reported as a single structural change rather than guessed at.
+ *  - cues read in SLIDE order — the order of the presentation's cue groups,
+ *    not the `cues` array: ProPresenter re-saves a file (e.g. when it opens
+ *    it in a newer version) with `cues` in no particular order.
+ *  - cues matched by their UUID — DeckPro mints it, Pro7 keeps it — so a
+ *    slide added, deleted or moved in Pro7 is reported as just that. Cues
+ *    without a shared UUID fall back to matching by label, in order
+ *    (longest common subsequence). Matching by array index compared every
+ *    slide with an unrelated one, producing pages of meaningless changes.
  *  - elements within a slide's `elements` array matched by NAME (title/
  *    body/live/queue/atem_gradient/"this slide") — the one place order
  *    could plausibly differ, and the one stable identifier DeckPro always
@@ -43,19 +48,75 @@ function isUuidValue(v) {
   return isPlainObject(v) && typeof v.string === 'string' && Object.keys(v).length === 1 && UUID_RE.test(v.string);
 }
 
-// Good enough for a human-readable diff, not a full RTF parser: strips
-// control words/braces/hex-escapes, leaving the visible text run.
+// Windows-1252 bytes 0x80–0x9F that differ from Latin-1 (\'xx escapes).
+const CP1252 = { 0x80: '€', 0x82: '‚', 0x83: 'ƒ', 0x84: '„', 0x85: '…', 0x86: '†', 0x87: '‡', 0x88: 'ˆ', 0x89: '‰',
+  0x8A: 'Š', 0x8B: '‹', 0x8C: 'Œ', 0x8E: 'Ž', 0x91: '‘', 0x92: '’', 0x93: '“', 0x94: '”', 0x95: '•', 0x96: '–',
+  0x97: '—', 0x98: '˜', 0x99: '™', 0x9A: 'š', 0x9B: '›', 0x9C: 'œ', 0x9E: 'ž', 0x9F: 'Ÿ' };
+// Groups whose content is never visible text.
+const RTF_SKIP_DEST = new Set(['fonttbl', 'colortbl', 'expandedcolortbl', 'stylesheet', 'info', 'pict', 'listtable', 'listoverridetable']);
+
+// The visible text of any RTF — DeckPro's own or ProPresenter's re-encoding
+// of it (which writes the same words with different control words: \uN
+// escapes, other font tables, leftovers in an emptied box), so the same
+// words always come out the same. Line breaks become '\n'.
 function friendlyRtf(rtfData) {
   if (!rtfData) return '';
   const raw = rtfString(rtfData);
-  const bodyStart = raw.indexOf('\\pard');
-  const tail = bodyStart >= 0 ? raw.slice(bodyStart) : raw;
-  return tail
-    .replace(/\\'[0-9a-fA-F]{2}/g, '')
-    .replace(/\\[a-zA-Z]+-?\d*/g, ' ')
-    .replace(/[{}]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  let out = '', i = 0, ucSkip = 1, pendingSkip = 0;
+  const stack = [];
+  let skip = false;
+  const put = ch => { if (pendingSkip > 0) { pendingSkip--; return; } if (!skip) out += ch; };
+  while (i < raw.length) {
+    const c = raw[i];
+    if (c === '{') { stack.push({ skip, ucSkip }); i++; continue; }
+    if (c === '}') { const st = stack.pop(); if (st) ({ skip, ucSkip } = st); i++; continue; }
+    if (c === '\r' || c === '\n') { i++; continue; }
+    if (c !== '\\') { put(c); i++; continue; }
+    const nx = raw[i + 1];
+    if (nx === '\\' || nx === '{' || nx === '}') { put(nx); i += 2; continue; }
+    if (nx === '\n' || nx === '\r') { put('\n'); i += 2; continue; }      // "\<newline>" = line break
+    if (nx === '~') { put(' '); i += 2; continue; }
+    if (nx === '*') { skip = true; i += 2; continue; }                      // {\* ...} ignorable destination
+    if (nx === "'") { const b = parseInt(raw.substr(i + 2, 2), 16); put(CP1252[b] || String.fromCharCode(b)); i += 4; continue; }
+    const m = /^\\([a-zA-Z]+)(-?\d+)? ?/.exec(raw.slice(i, i + 40));
+    if (!m) { i += 2; continue; }
+    const [all, word, arg] = m;
+    i += all.length;
+    if (RTF_SKIP_DEST.has(word)) skip = true;
+    else if (word === 'uc') ucSkip = +arg;
+    else if (word === 'u') { let n = +arg; if (n < 0) n += 65536; put(String.fromCharCode(n)); pendingSkip = ucSkip; }
+    else if (word === 'par' || word === 'line') put('\n');
+    else if (word === 'tab') put('\t');
+  }
+  return out.replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').trim();
+}
+
+// Same words? Ignores spacing and curly-vs-straight quotes, which Pro7's
+// re-save may change without anyone touching the text.
+function sameText(a, b) {
+  const norm = t => (t || '').replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, '');
+  return norm(a) === norm(b);
+}
+
+// Things DeckPro rewrites on every export, or Pro7 rewrites whenever it saves,
+// that never carry a hand edit worth keeping:
+//  - the `queue` (upcoming-slides list) and `live` badge elements — rebuilt
+//    from the deck on every export, so an edit there would be lost anyway;
+//  - a text box's `attributes` block (font, kerning, alignment, underline…):
+//    Pro7 re-derives it from the text itself whenever it saves, so it
+//    changes on a plain re-save. The text (rtfData) is what's shown, and is
+//    compared below;
+//  - customAttributes (Pro7's own run ranges), label colour, and the
+//    build-order chain.
+const IGNORED_ELEMENTS = new Set(['queue', 'live']);
+const IGNORED_PATH_RE = /(^|\.)(customAttributes|elementBuildOrder)(\[|\.|$)|\.text\.attributes(\.|$)|(^|\.)label\.color$/;
+
+// A label or notes field Pro7 wrote out empty is the same as one it left out.
+function isBlankField(path, v) {
+  if (v == null) return true;
+  if (/(^|\.)label$/.test(path)) return !v.text;
+  if (/(^|\.)notes$/.test(path)) return !v.rtfData || !friendlyRtf(v.rtfData);
+  return false;
 }
 
 function valuesEqual(a, b) {
@@ -91,18 +152,26 @@ function classifyElements(names) {
  *  if any, can safely reapply an rtfData change on this element; governs
  *  whether the change captures reapplicable spans or stays display-only. */
 function deepDiff(a, b, path, out, ctx = {}) {
+  if (IGNORED_PATH_RE.test(path)) return;
   if (/(^|\.)rtfData$/.test(path)) {
     const ta = friendlyRtf(a), tb = friendlyRtf(b);
-    if (ta === tb) return;
+    if (sameText(ta, tb)) return;
     if (ctx.textMergeKind) {
       // Parsed as spans/plain text per the element's own renderer (not just
       // flattened display text) so a real edit — including bold/emphasis
       // boundaries where the renderer supports them — can be reapplied by
       // re-running it back through that renderer, rather than risking a
       // hand-spliced RTF string. See TEXT_MERGE_KIND for what's parsed how.
-      const mergeData = ctx.textMergeKind === 'pointBody' ? { spans: rtf.parsePointBodySpans(b) }
-        : (ctx.textMergeKind === 'title' || ctx.textMergeKind === 'startEnd') ? { text: tb }
-        : { spans: rtf.parseRtfSpans(b) };
+      // DeckPro's span parsers only read DeckPro's own RTF layout. Text
+      // retyped in Pro7 comes back in Pro7's encoding, which they'd return
+      // as raw RTF code — so check the parse reproduces the words, and fall
+      // back to the plain words (formatting dropped) when it doesn't.
+      const parsed = ctx.textMergeKind === 'pointBody' ? rtf.parsePointBodySpans(b)
+        : (ctx.textMergeKind === 'title' || ctx.textMergeKind === 'startEnd') ? null
+        : rtf.parseRtfSpans(b);
+      const spans = parsed && sameText(parsed.map(x => x.text || '').join(''), tb) ? parsed
+        : [{ text: tb, bold: ctx.textMergeKind === 'pointBody' }];
+      const mergeData = parsed ? { spans } : { text: tb };
       out.push({
         path: path.replace(/rtfData$/, 'text'), oldValue: ta, newValue: tb,
         mergeable: true, mergeData: { kind: ctx.textMergeKind, ...mergeData },
@@ -118,6 +187,7 @@ function deepDiff(a, b, path, out, ctx = {}) {
     return;
   }
   if (a === b) return;
+  if ((a == null || b == null) && isBlankField(path, a) && isBlankField(path, b)) return;
   if (a == null || b == null) {
     if (a !== b) out.push({ path, oldValue: a ?? null, newValue: b ?? null });
     return;
@@ -188,6 +258,7 @@ function diffElementsArray(a, b, path, out) {
   const names = new Set([...Object.keys(baseEls), ...Object.keys(curEls)]);
   const slideType = classifyElements([...names]);
   for (const name of names) {
+    if (IGNORED_ELEMENTS.has(name)) continue;
     const be = baseEls[name], ce = curEls[name];
     // oldValue/newValue stay as short display strings ('present'/null) —
     // mergeData carries the actual element object applyChanges needs to
@@ -206,37 +277,100 @@ function cueLabel(cue) {
   return (slideAction && slideAction.label && slideAction.label.text) || cue?.name || '(untitled)';
 }
 
+// A cue's identity across two files: its label plus which occurrence of that
+// label it is (blanks and repeated slides share labels).
+function cueKeys(cues) {
+  const seen = {};
+  return cues.map(c => {
+    const label = cueLabel(c);
+    const occ = seen[label] = (seen[label] ?? -1) + 1;
+    return { label, occ };
+  });
+}
+
+// A presentation's cues in slide order: as its cue groups list them, then
+// any cue no group mentions.
+function orderedCues(doc) {
+  const cues = doc?.cues || [];
+  const byId = new Map(cues.map(c => [c?.uuid?.string, c]));
+  const out = [], used = new Set();
+  for (const g of doc?.cueGroups || []) {
+    for (const id of g?.cueIdentifiers || []) {
+      const c = byId.get(id?.string);
+      if (c && !used.has(c)) { out.push(c); used.add(c); }
+    }
+  }
+  for (const c of cues) if (!used.has(c)) out.push(c);
+  return out;
+}
+
+// Pairs of [baseIndex, curIndex] for cues that are the same slide in both:
+// same UUID, else (for the rest) a longest-common-subsequence over labels,
+// so inserted, deleted and moved slides drop out instead of shifting every
+// later comparison.
+function alignCues(baseCues, curCues) {
+  const curById = new Map();
+  curCues.forEach((c, j) => { if (c?.uuid?.string) curById.set(c.uuid.string, j); });
+  const pairs = [], takenA = new Set(), takenB = new Set();
+  baseCues.forEach((c, i) => {
+    const j = curById.get(c?.uuid?.string);
+    if (j !== undefined && !takenB.has(j)) { pairs.push([i, j]); takenA.add(i); takenB.add(j); }
+  });
+  const restA = baseCues.map((_, i) => i).filter(i => !takenA.has(i));
+  const restB = curCues.map((_, j) => j).filter(j => !takenB.has(j));
+  for (const [x, y] of lcsByLabel(restA.map(i => baseCues[i]), restB.map(j => curCues[j]))) pairs.push([restA[x], restB[y]]);
+  return pairs;
+}
+
+function lcsByLabel(baseCues, curCues) {
+  const a = baseCues.map(cueLabel), b = curCues.map(cueLabel);
+  const n = a.length, m = b.length;
+  const L = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) {
+    L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  }
+  const pairs = [];
+  for (let i = 0, j = 0; i < n && j < m;) {
+    if (a[i] === b[j]) { pairs.push([i, j]); i++; j++; }
+    else if (L[i + 1][j] >= L[i][j + 1]) i++;
+    else j++;
+  }
+  return pairs;
+}
+
 /**
  * Deep-diff two decoded .pro Presentation objects. Returns a flat array of
- * change records: { slideIndex, slideLabel, elementName, path, oldValue,
- * newValue, kind } — kind is 'changed' | 'added' | 'removed' | 'structural'.
- * elementName is null for changes outside a specific named element (cue/
- * action-level fields — macros, props, transitions, build order, etc).
+ * change records: { slideIndex, slideLabel, cueKey, elementName, path,
+ * oldValue, newValue, kind } — kind is 'changed' | 'added' | 'removed' for
+ * element/field changes, or 'slideAdded' | 'slideRemoved' for whole slides
+ * added or deleted in Pro7 (shown, never merged). slideIndex is the slide's
+ * position in Pro7's copy; cueKey ({ label, occ }) is what applyChanges uses
+ * to find the same slide in a fresh export. elementName is null for changes
+ * outside a specific named element (cue/action-level fields).
  */
 function diffPresentations(baseline, current) {
   const changes = [];
-  const baseCues = baseline?.cues || [];
-  const curCues  = current?.cues  || [];
+  const baseCues = orderedCues(baseline);
+  const curCues  = orderedCues(current);
+  const baseKeys = cueKeys(baseCues);
+  const pairs = alignCues(baseCues, curCues);
+  const matchedBase = new Set(pairs.map(p => p[0])), matchedCur = new Set(pairs.map(p => p[1]));
 
-  if (baseCues.length !== curCues.length) {
-    changes.push({
-      slideIndex: null, slideLabel: null, elementName: null,
-      path: 'cues.length', oldValue: baseCues.length, newValue: curCues.length,
-      kind: 'structural',
-    });
-  }
+  baseCues.forEach((c, i) => {
+    if (!matchedBase.has(i)) changes.push({ slideIndex: null, slideLabel: baseKeys[i].label, cueKey: baseKeys[i],
+      elementName: null, path: '', oldValue: 'present', newValue: null, kind: 'slideRemoved', mergeable: false });
+  });
+  curCues.forEach((c, j) => {
+    if (!matchedCur.has(j)) changes.push({ slideIndex: j + 1, slideLabel: cueLabel(c), cueKey: null,
+      elementName: null, path: '', oldValue: null, newValue: 'present', kind: 'slideAdded', mergeable: false });
+  });
 
-  const n = Math.min(baseCues.length, curCues.length);
-  for (let i = 0; i < n; i++) {
-    const baseCue = baseCues[i], curCue = curCues[i];
-    const slideLabel = cueLabel(curCue) || cueLabel(baseCue);
-    const slideIndex = i + 1;
-
+  for (const [i, j] of pairs) {
     const local = [];
-    deepDiff(baseCue, curCue, '', local);
+    deepDiff(baseCues[i], curCues[j], '', local);
     for (const d of local) {
       changes.push({
-        slideIndex, slideLabel,
+        slideIndex: j + 1, slideLabel: baseKeys[i].label, cueKey: baseKeys[i],
         elementName: d.elementName ?? null,
         path: d.path, oldValue: d.oldValue, newValue: d.newValue,
         kind: d.kind || 'changed',
@@ -245,7 +379,8 @@ function diffPresentations(baseline, current) {
       });
     }
   }
-  return changes;
+  // Slide order, so the list reads top to bottom like the deck.
+  return changes.sort((x, y) => (x.slideIndex ?? Infinity) - (y.slideIndex ?? Infinity));
 }
 
 // ─── Merge: reapply detected changes onto a freshly-generated structure ───
@@ -289,20 +424,28 @@ function resolvePath(root, tokens) {
 
 /**
  * Reapplies changes (from diffPresentations) onto `target` — a freshly
- * generated decoded structure — IN PLACE, using the same cue-index +
- * element-name matching as the diff. Skips: structural changes (cue count
- * mismatches — nothing sensible to reapply), changes whose target cue
- * doesn't exist, and mergeable:false changes (text content outside the one
+ * generated decoded structure — IN PLACE, finding each slide by its label
+ * (cueKey) and each element by name, like the diff. Skips: whole slides
+ * added/deleted in Pro7, changes whose slide isn't in the new export, and mergeable:false changes (text content outside the one
  * supported case — see deepDiff's rtfData handling for why). `style` is the
  * resolved style scheme (builder.js's resolveStyle output) — needed only for
  * reapplying a Scripture body text-content change through rtfBody, which
  * this is a no-op without. Returns `target` for convenience.
  */
 function applyChanges(target, changes, style = {}) {
+  const targetCues = orderedCues(target);
+  const targetKeys = cueKeys(targetCues);
+  const findCue = key => {
+    const i = targetKeys.findIndex(k => k.label === key.label && k.occ === key.occ);
+    return i === -1 ? null : targetCues[i];
+  };
   for (const change of changes) {
-    if (change.kind === 'structural' || change.slideIndex == null) continue;
-    if (change.mergeable === false) continue;
-    const cue = target?.cues?.[change.slideIndex - 1];
+    if (change.mergeable === false || !change.cueKey) continue;
+    if (change.kind === 'slideAdded' || change.kind === 'slideRemoved' || change.kind === 'structural') continue;
+    // The same slide in the new export (matched by label, like the diff) —
+    // the deck may have gained or lost slides in DeckPro since, so its
+    // position isn't reliable.
+    const cue = findCue(change.cueKey);
     if (!cue) continue;
 
     // Text-content change: the diff's path is a cosmetic rename
