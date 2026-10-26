@@ -296,6 +296,22 @@ function resolveMargins(adv, defaults = {}) {
   };
 }
 
+// Mirrors bodyBlockTop in builder.js — keep both in sync.
+// Top edge of a body text block of `blockH` px, where Pro7 actually draws it:
+// inside the box's top/bottom margins, placed by the row's vertical
+// alignment (BOTTOM when unset — same default the body element is written
+// with). Auto Title Y used to assume bottom-flush with no margin, landing the
+// title a full bottom margin (60px by default) too low — into the text — and
+// nowhere near it for a middle- or top-aligned body.
+function bodyBlockTop(by, bh, adv, marginDefaults, blockH) {
+  const m = resolveMargins(adv, marginDefaults);
+  const top = by + m.top, bottom = by + bh - m.bottom;
+  const va = resolveVertAlign(adv, 'VERTICAL_ALIGNMENT_BOTTOM');
+  if (va === 'VERTICAL_ALIGNMENT_TOP') return top;
+  if (va === 'VERTICAL_ALIGNMENT_MIDDLE') return top + (bottom - top - blockH) / 2;
+  return bottom - blockH;
+}
+
 function resolveScaleBehavior(adv, defaultVal) {
   const v = adv?.scaleBehavior;
   if (!v) return defaultVal;
@@ -420,7 +436,9 @@ function estimatePropTitleY(spans, bw, prs, knownLines, metrics) {
   // Display-1-inheriting prs.bodyFontAdv), title uses prs.titleFontAdv
   // (already resolved/inheriting by makePropStyle).
   const lineH    = (metrics.ascent + metrics.descent) * (prs.propBodyFontAdv?.lineHeight ?? 1);
-  const blockTop = (by + bh) - knownLines * lineH;
+  // Same box, margins and alignment buildScripturePropCue writes (incl. yOffset).
+  const blockTop = bodyBlockTop(by + (prs.propBodyFontAdv?.yOffset ?? 0), bh, prs.propBodyFontAdv, { bottom: 60 },
+    knownLines * lineH);
   const inkTop   = blockTop + (metrics.ascent - metrics.capAscent);
 
   // See estimateTitleY's scale-down note: when titleH is shorter than the

@@ -156,5 +156,16 @@ test('empty rtf', rtfEmpty(),
 {\\*\\expandedcolortbl;;}
 }`);
 
+// A Fit Width hard break inserts a plain '\n' span between all-bold point
+// words. It must not flip the point onto the two-font "mixed" path (which drew
+// it in a synthesized bold of the body font) — it stays in the point font.
+{
+  const doc = Buffer.from(rtfPointBody([{ text: 'Fill me,', bold: true }, { text: '\n', bold: false }, { text: 'send me.', bold: true }],
+    { bodyFont: 'Montserrat-Medium', pointFont: 'Montserrat-Black' }), 'base64').toString('utf8');
+  const single = /\\fonttbl\\f0\\fnil\\fcharset0 Montserrat-Black;\}/.test(doc) && !/\\b /.test(doc) && /Fill me,\\\n/.test(doc);
+  if (single) { console.log('✅ hard-broken point stays in the point font'); pass++; }
+  else { console.log('❌ hard-broken point stays in the point font\n' + doc); fail++; }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

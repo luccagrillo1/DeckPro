@@ -427,7 +427,8 @@ async function main() {
     // from the main screen's (729.98/350.02/50.51).
     const m2 = { ascent: 77, descent: 20, capAscent: 56, titleAscent: 106, titleDescent: 28 };
     const th2 = 60, t2LineH = Math.min(m2.titleAscent + m2.titleDescent, th2);
-    const inkTop2 = (853 + 427) - S.fitPropBodyLines * (m2.ascent + m2.descent) + (m2.ascent - m2.capAscent);
+    // Bottom-aligned body inside its default 60px bottom margin (bodyBlockTop).
+    const inkTop2 = (853 + 427 - 60) - S.fitPropBodyLines * (m2.ascent + m2.descent) + (m2.ascent - m2.capAscent);
     const expectedPropTitleY = Math.round(inkTop2 - 16 - (th2 + t2LineH) / 2);
     const propTitleY = propTitleEl && propTitleEl.bounds && propTitleEl.bounds.origin && propTitleEl.bounds.origin.y;
     check('P0', 'layout', `Auto Title Y (Display 2) uses the known line count (${S.fitPropBodyLines}), not doubled`,

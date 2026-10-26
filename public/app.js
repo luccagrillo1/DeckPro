@@ -2,9 +2,23 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.0-beta.12';
+const APP_VERSION = '4.41.0-beta.13';
 
 const CHANGELOG = [
+  {
+    version: '4.41.0-beta.13',
+    date: '2026-10-25',
+    changes: [
+      "Fit Width overhaul, checked line for line against the macOS text engine ProPresenter uses (300+ test slides, both displays): every fitted box now wraps in Pro7 exactly the way DeckPro planned.",
+      "Fitted boxes now leave real breathing room (about half the font size) instead of 0–3px. A box fitted to the pixel used to drop a word onto an extra line in Pro7 at the slightest rendering difference. Where the extra room would let a word ride up a line, DeckPro locks the planned line breaks in.",
+      "Emphasis (your highlight font) is now measured in that font, and kept when Fit Width adds line breaks. Before, emphasized words were measured in the plain font, and a slide with Fit Width line breaks could lose its emphasis and verse-number formatting, or run two words together.",
+      "Points are measured in the point font they're actually drawn in, and a point with Fit Width line breaks no longer comes out in a heavier, synthesized bold.",
+      "Fit Width now respects the text box's left/right margins and stays inside your Styles box, aligned the way the text is, instead of re-centring on the screen.",
+      "Auto Title Y now accounts for the body's margins and vertical alignment. The reference bar sat a full bottom margin (60px by default) too low — on the LED wall it could run into the first line — and was way off for a middle- or top-aligned body.",
+      "Styles → Text preview now shows body and point text bottom-aligned when no alignment is set, matching what exports.",
+      "Every slide's Fit Width is re-measured once on your next export so these fixes apply to existing decks.",
+    ],
+  },
   {
     version: '4.41.0-beta.12',
     date: '2026-10-25',
@@ -4256,8 +4270,12 @@ const FIT_WEIGHTS = {
   highlightSplit:  40,   // an emphasis (bold) run straddling two lines
   raggedPerPx:    0.04,  // penalty per px of line-width std-deviation — every type
   maxLines:         6,   // hard cap on line count
-  pad:             24,   // breathing room added to the winning width
+  pad:             24,   // minimum breathing room added to the winning width
+  padPerPt:       0.5,   // ...or this much per point of font size, if larger
 };
+// Bump when Fit Width's output changes for the same inputs, so every cached
+// result (see _fitHash) is treated as stale and re-measured at next export.
+const FIT_REV = 2;
 
 // Function words that read badly ending a line ("...your heart and",
 // "...all things through") — ending a line on one of these with no
@@ -4269,36 +4287,71 @@ const FIT_FUNCTION_WORDS = new Set([
   'the','of','and','a','an','to','in','for','with','on','at','by','from','as',
 ]);
 
-// Flatten spans into words, tagging each with style, the punctuation that ends
-// it (rates break quality), and whether it's a runt (rates line-end quality).
-// Assumes no explicit newlines.
-// `mtext` carries the capitalization-transformed text used ONLY for rendering
-// into the measurement DOM (see _fitCaseText) — `text` stays the real,
-// original string. Keeping them separate matters: `text` is what ends up in
-// `best.broken` → slide._fitBrokenText → bodyDisplayText at export, and a
-// cased `text` would silently fail the case-sensitive equality guard there,
-// discarding the hard breaks Fit Width just computed.
-function _fitWordList(spans, baseCap = '', boldCap = '') {
+// Flatten spans into words. A word is a maximal run of non-whitespace and can
+// cross span boundaries (emphasis can start mid-word), so each word keeps the
+// formatted pieces it's made of in `segs` — that's what gets measured, and
+// what _fitSpansFromWinningLayout writes back out, so a hard-broken layout
+// keeps every span property (alt emphasis, bold, italic, underline, verse
+// numbers) instead of only the three it used to know about.
+// `emph` marks a word as part of an emphasis run (the alt font for scripture,
+// bold for points — see _fitSegFmt), which the scorer avoids splitting.
+// `mtext` on each segment carries the capitalization-transformed text used
+// ONLY for rendering into the measurement DOM (see _fitCaseText) — `text`
+// stays the real, original string. Keeping them separate matters: `text` is
+// what ends up in slide._fitBrokenText → bodyDisplayText at export, and a
+// cased `text` would fail the equality guard there and drop the hard breaks.
+function _fitWordList(spans, baseCap = '', boldCap = '', type = 'body') {
   const words = [];
+  let cur = null;
+  const flush = () => { if (cur) { words.push(cur); cur = null; } };
   for (const s of (spans || [])) {
     if (!s || !s.text) continue;
-    for (const tok of String(s.text).split(/\s+/)) {
-      if (!tok) continue;
-      // Three punctuation tiers, ranked best→worst: sentence-final beats a
-      // clause mark (; : ,) beats a dash. No trailing punctuation at all
-      // (rank 0) is worse than any of them — that's breakMidClause.
-      const m = tok.match(/[.!?…:;,—–-]+$/);
-      const end = m ? m[0] : '';
-      const rank = /[.!?…]$/.test(end) ? 3 : /[:;,]$/.test(end) ? 2 : /[—–-]$/.test(end) ? 1 : 0;
-      const bare = tok.replace(/[^A-Za-z']/g, '').toLowerCase();
-      // A runt only if it carries no trailing punctuation of its own — a comma or
-      // period after the word already makes it a legitimate place to break.
-      const runt = rank === 0 && FIT_FUNCTION_WORDS.has(bare);
-      const mtext = _fitCaseText(tok, s.bold ? boldCap : baseCap);
-      words.push({ text: tok, mtext, bold: !!s.bold, italic: !!s.italic, underline: !!s.underline, punctRank: rank, runt });
+    const fmt = _fitSegFmt(s, type);
+    for (const piece of String(s.text).split(/(\s+)/)) {
+      if (!piece) continue;
+      if (/^\s+$/.test(piece)) { flush(); continue; }
+      if (!cur) cur = { segs: [] };
+      cur.segs.push({ text: piece, mtext: _fitCaseText(piece, fmt.emph ? boldCap : baseCap), fmt, src: s });
     }
   }
+  flush();
+  for (const w of words) {
+    w.text = w.segs.map(g => g.text).join('');
+    w.emph = w.segs.some(g => g.fmt.emph);
+    // Three punctuation tiers, ranked best→worst: sentence-final beats a
+    // clause mark (; : ,) beats a dash. No trailing punctuation at all
+    // (rank 0) is worse than any of them — that's breakMidClause.
+    const m = w.text.match(/[.!?…:;,—–-]+["'”’)\]]*$/);
+    const end = m ? m[0].replace(/["'”’)\]]+$/, '') : '';
+    w.punctRank = /[.!?…]$/.test(end) ? 3 : /[:;,]$/.test(end) ? 2 : /[—–-]$/.test(end) ? 1 : 0;
+    const bare = w.text.replace(/[^A-Za-z']/g, '').toLowerCase();
+    // A runt only if it carries no trailing punctuation of its own — a comma or
+    // period after the word already makes it a legitimate place to break.
+    w.runt = w.punctRank === 0 && FIT_FUNCTION_WORDS.has(bare);
+  }
   return words;
+}
+
+// How one span renders, reduced to what changes its width. Scripture/body
+// emphasis is `alt` (a switch to the bold row's font — rtf.buildSpanContent);
+// `bold` there is a plain \b on whichever font is current. Points have no
+// alt: rtf.rtfPointBody switches to the point font on `bold`, so for points
+// `bold` IS the emphasis switch.
+function _fitSegFmt(s, type) {
+  const emph = type === 'point' ? !!s.bold : !!s.alt;
+  return { emph, bold: type === 'point' ? false : !!s.bold, italic: !!s.italic, underline: !!s.underline };
+}
+
+// One word's measurement HTML — its segments with no spaces between them.
+function _fitWordHtml(wd) {
+  return wd.segs.map(g => {
+    let h = esc(g.mtext ?? g.text);
+    if (g.fmt.underline) h = `<u>${h}</u>`;
+    if (g.fmt.italic)    h = `<em>${h}</em>`;
+    if (g.fmt.bold)      h = `<b>${h}</b>`;
+    if (g.fmt.emph)      h = `<strong>${h}</strong>`;
+    return h;
+  }).join('');
 }
 
 // Render the word list at a given box width and read back the actual line
@@ -4307,13 +4360,7 @@ function _fitLinesAtWidth(inner, words, w) {
   inner.style.whiteSpace = 'normal';
   inner.style.display    = 'block';
   inner.style.width      = `${w}px`;
-  inner.innerHTML = words.map((wd, i) => {
-    let h = esc(wd.mtext ?? wd.text);
-    if (wd.underline) h = `<u>${h}</u>`;
-    if (wd.italic)    h = `<em>${h}</em>`;
-    if (wd.bold)      h = `<strong>${h}</strong>`;
-    return `<span class="_fw" data-i="${i}">${h}</span>`;
-  }).join(' ');
+  inner.innerHTML = words.map((wd, i) => `<span class="_fw" data-i="${i}">${_fitWordHtml(wd)}</span>`).join(' ');
 
   const els   = inner.querySelectorAll('span._fw');
   const lines = [];
@@ -4373,13 +4420,13 @@ function _fitScore(lines, words, boxW) {
 
   // Splitting an emphasis phrase across lines — only meaningful when the block
   // is NOT entirely bold (a fully-bold point has no "highlight" to protect).
-  if (!words.every(w => w.bold)) {
+  if (!words.every(w => w.emph)) {
     const lineOf = new Map();
     lines.forEach((ln, li) => ln.words.forEach(w => lineOf.set(w, li)));
     let i = 0;
     while (i < words.length) {
-      if (words[i].bold) {
-        let j = i; while (j < words.length && words[j].bold) j++;
+      if (words[i].emph) {
+        let j = i; while (j < words.length && words[j].emph) j++;
         const a = lineOf.get(words[i]), b = lineOf.get(words[j - 1]);
         if (a !== undefined && b !== undefined && b > a) cost += W.highlightSplit * (b - a);
         i = j;
@@ -4406,13 +4453,7 @@ function _fitLineWidth(inner, lineWords) {
   inner.style.whiteSpace = 'nowrap';
   inner.style.display    = 'inline-block';
   inner.style.width      = 'auto';
-  inner.innerHTML = lineWords.map(wd => {
-    let h = esc(wd.mtext ?? wd.text);
-    if (wd.underline) h = `<u>${h}</u>`;
-    if (wd.italic)    h = `<em>${h}</em>`;
-    if (wd.bold)      h = `<strong>${h}</strong>`;
-    return h;
-  }).join(' ');
+  inner.innerHTML = lineWords.map(_fitWordHtml).join(' ');
   return inner.scrollWidth;
 }
 
@@ -4505,7 +4546,7 @@ function _fitFontMetrics(desc, size) {
 // _fitHash (a cheap fingerprint used to decide whether a cached result is
 // stale, with none of the expensive part). Splitting this out guarantees the
 // two always agree on what a Fit Width result actually depends on.
-function _fitResolveContext(rs, type, display) {
+function _fitResolveContext(rs, type, display, spans = null) {
   // Resolve the scheme so inherited body width / sizes are real numbers, not
   // nulls — otherwise the cap silently falls back to the full canvas and the
   // measurement font size is wrong (the two long-standing Fit Width bugs).
@@ -4521,7 +4562,7 @@ function _fitResolveContext(rs, type, display) {
   const cap     = (isProp
     ? (type === 'point' ? st.propPointW : st.propBodyW)
     : (type === 'point' ? st.pointW     : st.bodyW)) || canvasW;
-  const maxW    = Math.max(1, Math.min(cap, canvasW));
+  const boxW    = Math.max(1, Math.min(cap, canvasW));
   // Resolve the real per-row typography (family/weight/italic/capitalization/
   // character spacing) for the base text and for bold spans, instead of a
   // fixed Montserrat-at-a-guessed-weight assumption — see _fitFontDescriptor.
@@ -4531,9 +4572,48 @@ function _fitResolveContext(rs, type, display) {
                                           : (isProp ? 'propBodyFontAdv'  : 'bodyFontAdv');
   const boldFontField = isProp ? 'propBoldFont'    : 'boldFont';
   const boldAdvField  = isProp ? 'propBoldFontAdv' : 'boldFontAdv';
-  const baseDesc = _fitFontDescriptor(st[baseFontField], st[baseAdvField]);
-  const boldDesc = _fitFontDescriptor(st[boldFontField] || st[baseFontField], st[boldAdvField] || st[baseAdvField]);
-  return { st, isProp, canvasW, size, maxW, baseDesc, boldDesc };
+  // The row's own advanced styling — points fall back to the bold row, same
+  // as builder.js/buildProp.js do when they write the element.
+  const adv = st[baseAdvField] || (type === 'point' ? st[boldAdvField] : null) || {};
+  let baseDesc, boldDesc;
+  if (type === 'point') {
+    // Mirror rtf.rtfPointBody: a point is drawn entirely in the point font
+    // unless it genuinely mixes bold and plain words, in which case plain
+    // words use the body font and bold words the point font with \b.
+    // Measuring a plain point in the bold row's font sized the box for text
+    // Pro7 never draws whenever the point and bold fonts differ.
+    const bodyFontField = isProp ? 'propBodyFont' : 'bodyFont';
+    const bodyAdvField  = isProp ? 'propBodyFontAdv' : 'bodyFontAdv';
+    baseDesc = _fitPointMixed(spans)
+      ? _fitFontDescriptor(st[bodyFontField], st[bodyAdvField])
+      : _fitFontDescriptor(st[baseFontField] || st[boldFontField], adv);
+    boldDesc = _fitFontDescriptor(st[baseFontField] || st[boldFontField], { ...adv, bold: true });
+  } else {
+    baseDesc = _fitFontDescriptor(st[baseFontField], st[baseAdvField]);
+    boldDesc = _fitFontDescriptor(st[boldFontField] || st[baseFontField], st[boldAdvField] || st[baseAdvField]);
+  }
+  // Left/right text margins sit inside the box: Pro7 wraps at box width minus
+  // both, so the search runs on that inner width and adds them back after.
+  const fbL = isProp ? 0 : type === 'point' ? (st.pointMarginLeft ?? st.bodyMarginLeft) : st.bodyMarginLeft;
+  const fbR = isProp ? 0 : type === 'point' ? (st.pointMarginRight ?? st.bodyMarginRight) : st.bodyMarginRight;
+  const marginL = Math.max(0, adv.marginLeft  ?? fbL ?? 0);
+  const marginR = Math.max(0, adv.marginRight ?? fbR ?? 0);
+  const maxW    = Math.max(1, boxW - marginL - marginR);
+  // Where the Styles box sits, so a fitted box shrinks inside it instead of
+  // re-centering on the canvas (an off-centre box used to jump to the middle).
+  const palX = isProp
+    ? (type === 'point' ? (st.propPointX ?? st.propBodyX) : st.propBodyX)
+    : (type === 'point' ? (st.pointX ?? st.bodyX) : st.bodyX);
+  const align = adv.alignment || 'center';
+  return { st, isProp, canvasW, size, maxW, boxW, marginL, marginR, palX: palX ?? null, align, baseDesc, boldDesc };
+}
+
+// True when a point's spans genuinely mix bold and plain words — the only
+// case rtf.rtfPointBody draws in two fonts. Whitespace-only spans (the '\n'
+// a hard break inserts) don't count either way.
+function _fitPointMixed(spans) {
+  const real = (spans || []).filter(s => s && s.text && s.text.trim());
+  return real.some(s => s.bold) && real.some(s => !s.bold);
 }
 
 // Real font metrics for the title/reference bar's own font — needed because
@@ -4569,7 +4649,8 @@ function _fitTitleMetrics(rs, display) {
 function _fitHash(spans, ctx) {
   const spanKey = (spans || []).map(s => `${s.text || ''}|${!!s.bold}|${!!s.italic}|${!!s.underline}`).join('');
   const descKey = d => `${d.fontFamily}|${d.fontWeight}|${d.fontStyle}|${d.letterSpacing}|${d.fontVariant}|${d.cap}`;
-  return [spanKey, descKey(ctx.baseDesc), descKey(ctx.boldDesc), ctx.size, ctx.maxW].join('');
+  return [spanKey, descKey(ctx.baseDesc), descKey(ctx.boldDesc), ctx.size, ctx.maxW,
+          ctx.marginL, ctx.marginR, ctx.palX, ctx.boxW, ctx.align, FIT_REV].join('');
 }
 
 // What _fitHash WOULD compute for this slide's current spans/scheme right
@@ -4585,7 +4666,7 @@ function _fitCurrentBodyHash(slide, scheme, display) {
   if (slide.type === 'scripture') {
     const rawSpans = (slide.bodies || [[]])[0] || [];
     const spans = (!isProp && slide.stripNewlines) ? stripNewlineSpans(rawSpans) : rawSpans;
-    return _fitHash(spans, _fitResolveContext(scheme, 'scripture', display));
+    return _fitHash(spans, _fitResolveContext(scheme, 'scripture', display, spans));
   }
   if (slide.type === 'point' && slide.mode !== 'revealing') {
     // Split mode: Display 2 (prop) has its own independent text, so its
@@ -4593,7 +4674,7 @@ function _fitCurrentBodyHash(slide, scheme, display) {
     // editing one field wouldn't correctly invalidate/preserve the other's cache.
     const text = (isProp && slide.mode === 'split') ? (slide.propBodyText || '') : (slide.bodyText || '');
     const spans = [{ text, bold: true }];
-    return _fitHash(spans, _fitResolveContext(scheme, 'point', display));
+    return _fitHash(spans, _fitResolveContext(scheme, 'point', display, spans));
   }
   return null;
 }
@@ -4617,12 +4698,6 @@ function _fitCaseText(text, cap) {
   }
   return text;
 }
-// Case-transform each span's text using its own row's capitalization — bold
-// spans (emphasis) use the bold row's setting, everything else uses the base
-// row's, matching the split the `strong` CSS rule already makes for weight.
-function _fitCasedSpans(spans, baseCap, boldCap) {
-  return (spans || []).map(s => ({ ...s, text: _fitCaseText(s.text, s.bold ? boldCap : baseCap) }));
-}
 
 // Guard used before trusting a cached _fitBrokenText against the live
 // bodyText at export (collapsing the hard breaks back to spaces should
@@ -4632,7 +4707,11 @@ function _fitCasedSpans(spans, baseCap, boldCap) {
 // fail merely because a row's capitalization setting cased the two sides
 // differently upstream.
 function _fitTextsMatch(a, b) {
-  return String(a || '').toLowerCase() === String(b || '').toLowerCase();
+  // Whitespace-insensitive too: Fit Width tokenizes on any run of spaces or
+  // newlines, so text with a double space or a Strip-removed line break
+  // could never match and its hard breaks were silently dropped.
+  const norm = t => String(t || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  return norm(a) === norm(b);
 }
 
 // Enumerate line partitions that break ONLY after punctuation words (comma,
@@ -4671,20 +4750,26 @@ function _fitPunctPartitions(words) {
 // the note on _fitWordList).
 function _fitSpansFromWinningLayout(words, lineWordCounts) {
   const out = [];
-  let idx = 0;
+  // Each piece keeps its source span's own properties (alt, bold, italic,
+  // underline, verseNum, super, ...) — only the text changes. A separator
+  // (space or the line break) takes the formatting of the text before it,
+  // minus verse-number/superscript, so an all-emphasis body stays all-emphasis
+  // and rtf.js keeps its single-font path.
+  const push = (src, text) => {
+    const { text: _t, ...props } = src;
+    const last = out[out.length - 1];
+    const same = last && Object.keys({ ...props, ...last }).every(k => k === 'text' || last[k] === props[k]);
+    if (same) last.text += text; else out.push({ ...props, text });
+  };
+  const sepProps = src => { const { text: _t, verseNum: _v, super: _s, ...rest } = src; return rest; };
+  let idx = 0, prevSrc = null;
   lineWordCounts.forEach((count, li) => {
-    if (li > 0) out.push({ text: '\n', bold: false, italic: false, underline: false });
-    let run = null;
+    if (li > 0) push({ ...sepProps(prevSrc || {}), text: '' }, '\n');
     for (let k = 0; k < count; k++) {
       const w = words[idx++];
-      if (run && run.bold === w.bold && run.italic === w.italic && run.underline === w.underline) {
-        run.text += ' ' + w.text;
-      } else {
-        if (run) out.push(run);
-        run = { text: w.text, bold: w.bold, italic: w.italic, underline: w.underline };
-      }
+      if (k > 0) push({ ...sepProps(prevSrc || {}), text: '' }, ' ');
+      for (const g of w.segs) { push(g.src, g.text); prevSrc = g.src; }
     }
-    if (run) out.push(run);
   });
   return out;
 }
@@ -4716,9 +4801,14 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
   // Resolve the scheme, row typography, and width ceiling — shared with the
   // cheap staleness check at export (_fitCurrentHash) so both always agree
   // on what a Fit Width result depends on. See _fitResolveContext.
-  const ctx = _fitResolveContext(rs, type, display);
-  const { canvasW, size, maxW, baseDesc, boldDesc } = ctx;
+  const ctx = _fitResolveContext(rs, type, display, spans);
+  const { canvasW, size, maxW, boxW, marginL, marginR, palX, align, baseDesc, boldDesc } = ctx;
   const padding = 80; // breathing room for the poetry branch
+  // Slack between the longest line and the box edge. Chromium and CoreText
+  // agree to within a few px, but a box fitted with 0–3px to spare (what the
+  // narrowest-width sweep used to produce) wraps a word in Pro7 at the first
+  // rendering difference — kerning, stroke, a font build. Scales with size.
+  const pad = Math.max(FIT_WEIGHTS.pad, Math.round(size * FIT_WEIGHTS.padPerPt));
 
   const hasExplicit = (spans || []).some(s => s.text?.includes('\n'));
   // `lines` is the REAL measured line count at the winning width — Auto Title Y
@@ -4727,13 +4817,27 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
   // `metrics` (ascent/descent/capAscent) and `fitHash` (staleness fingerprint,
   // see _fitHash) are assigned right below, before `centered` is ever called.
   let metrics = null, fitHash = null;
-  const centered = (w, brokenText = null, lines = null, brokenSpans = null) =>
-    ({ bodyW: w, bodyX: Math.round((canvasW - w) / 2), brokenText, brokenSpans, lines, fitHash, ...metrics });
+  // `w` is the text width; the box adds the row's left/right margins back on
+  // and sits inside the Styles box per the row's alignment (centred on that
+  // box, not on the canvas, so an off-centre layout keeps its position).
+  const centered = (w, brokenText = null, lines = null, brokenSpans = null) => {
+    const bw = Math.min(Math.round(w + marginL + marginR), boxW);
+    const left = palX ?? Math.round((canvasW - boxW) / 2);
+    let bx = align === 'left' ? left : align === 'right' ? left + boxW - bw : left + (boxW - bw) / 2;
+    bx = Math.round(Math.max(0, Math.min(bx, canvasW - bw)));
+    return { bodyW: bw, bodyX: bx, brokenText, brokenSpans, lines, fitHash, ...metrics };
+  };
 
   metrics = _fitFontMetrics(baseDesc, size);
   fitHash = _fitHash(spans, ctx);
+  // A plain point is drawn entirely in the point font, never bolded (see
+  // _fitResolveContext) — measure it that way too.
+  if (type === 'point' && !_fitPointMixed(spans)) spans = (spans || []).map(s => ({ ...s, bold: false }));
+  const fmtType = type === 'point' ? 'point' : 'body';
+  // Plain \b inside a span: the current font's bold weight (Medium → Bold).
+  const boldOf = d => String(Math.max(Number(d.fontWeight) || 400, 700));
   // Capitalization is applied only to what gets *rendered* into the
-  // measurement DOM (spansToHtml(_fitCasedSpans(...)) below, and `mtext` in
+  // measurement DOM (each segment's `mtext`, see
   // _fitWordList) — never to `spans`/`words[].text` themselves. Those flow
   // into best.broken → slide._fitBrokenText → bodyDisplayText at export,
   // where a case-transformed value would fail the equality guard against the
@@ -4754,7 +4858,8 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
   // Hidden measurement container — 1:1 canvas coordinate space.
   const msr   = document.createElement('div');
   const style = document.createElement('style');
-  style.textContent = `._msr strong{${_fitDescriptorCss(boldDesc)}}._msr em{font-style:italic}._msr ._fw{display:inline}`;
+  style.textContent = `._msr strong{${_fitDescriptorCss(boldDesc)}}._msr b{font-weight:${boldOf(baseDesc)}}`
+    + `._msr strong b,._msr b strong{font-weight:${boldOf(boldDesc)}}._msr em{font-style:italic}._msr ._fw{display:inline}`;
   const inner = document.createElement('div');
   inner.className = '_msr';
   msr.appendChild(style);
@@ -4787,26 +4892,34 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
       for (const line of lines) {
         if (!line.length) continue;
         lineCount++;
-        inner.innerHTML = spansToHtml(_fitCasedSpans(line, baseDesc.cap, boldDesc.cap));
+        inner.innerHTML = _fitWordList(line, baseDesc.cap, boldDesc.cap, fmtType).map(_fitWordHtml).join(' ');
         widest = Math.max(widest, inner.scrollWidth);
       }
-      return centered(Math.min(Math.ceil(widest) + padding, maxW), null, Math.max(1, lineCount));
+      const n = Math.max(1, lineCount);
+      return { ...centered(Math.min(Math.ceil(widest) + padding, maxW), null, n), staticLines: n };
     }
 
     // ── Balance mode: weighted candidate search ──
-    const words = _fitWordList(spans, baseDesc.cap, boldDesc.cap);
-    if (!words.length) return centered(maxW);
+    const words = _fitWordList(spans, baseDesc.cap, boldDesc.cap, fmtType);
+    if (!words.length) return { ...centered(maxW), staticLines: null };
 
     // Floor: never narrower than the widest single word (would force overflow).
     let widestWord = 0;
     inner.style.whiteSpace = 'nowrap';
     inner.style.display    = 'inline-block';
     for (const wd of words) {
-      const mh = esc(wd.mtext);
-      inner.innerHTML = wd.bold ? `<strong>${mh}</strong>` : mh;
+      inner.innerHTML = _fitWordHtml(wd);
       widestWord = Math.max(widestWord, inner.scrollWidth);
     }
     const floorW = Math.min(Math.ceil(widestWord) + 4, maxW);
+    // Plan every layout within the box minus the slack, so even text that
+    // fills the whole Styles box keeps `pad` px spare. Planning right up to
+    // the edge let Chromium fit a last word that CoreText (Pro7) wraps — a
+    // few px of disagreement became an extra line on screen.
+    const planW = Math.max(floorW, maxW - pad);
+    // What Pro7 shows when this box ISN'T fitted: its own natural wrap at the
+    // full Styles width (Auto Title Y needs that count for unfitted boxes).
+    const staticLines = _fitLinesAtWidth(inner, words, maxW).length;
 
     // Line count is a TIER, not a scored term. Fit Width may only ever
     // shrink the box (the Styles width is a hard ceiling — see the module
@@ -4816,7 +4929,7 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
     // other — a two-line layout can no longer out-score a one-line layout by
     // accumulating enough break-quality/evenness credit, because they're
     // never compared to begin with.
-    const N = _fitLinesAtWidth(inner, words, maxW).length;
+    const N = _fitLinesAtWidth(inner, words, planW).length;
 
     // Sweep widths from floor → maxW; keep the narrowest width that yields each
     // distinct line layout, score it, and track the best. A fine step matters:
@@ -4829,18 +4942,20 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
       if (lines.length !== N) return;
       const cost = _fitScore(lines, words, boxW);
       if (cost === Infinity) return;
-      const tight = Math.min(Math.max(...lines.map(l => l.width)) + FIT_WEIGHTS.pad, boxW, maxW);
-      if (!best || cost < best.cost - 0.01) best = { cost, width: Math.ceil(tight), broken, lineWordCounts, lineCount: lines.length };
+      if (!best || cost < best.cost - 0.01) best = {
+        cost, longest: Math.max(...lines.map(l => l.width)),
+        lineWordCounts: lineWordCounts || lines.map(l => l.words.length), lineCount: lines.length,
+      };
     };
-    for (let w = floorW; w <= maxW; w += STEP) {
+    for (let w = floorW; w <= planW; w += STEP) {
       const lines = _fitLinesAtWidth(inner, words, w);
       const sig = lines.map(l => l.words.length).join(',');
       if (seen.has(sig)) continue;
       seen.add(sig);
       consider(lines, w, null, null);
     }
-    // Always consider the full-width layout too (covers the single-line case).
-    consider(_fitLinesAtWidth(inner, words, maxW), maxW, null, null);
+    // Always consider the full planning-width layout too (covers the single-line case).
+    consider(_fitLinesAtWidth(inner, words, planW), planW, null, null);
 
     // Punctuation-break candidates — layouts that break only after sentence/
     // clause punctuation and can beat anything box-width alone produces. Every
@@ -4851,24 +4966,24 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
     for (const part of _fitPunctPartitions(words)) {
       if (part.length !== N) continue;
       const lines = part.map(lw => ({ words: lw, width: _fitLineWidth(inner, lw) }));
-      consider(lines, maxW, lines.map(l => l.words.map(w => w.text).join(' ')), part.map(lw => lw.length));
+      consider(lines, planW, lines.map(l => l.words.map(w => w.text).join(' ')), part.map(lw => lw.length));
     }
 
-    if (!best) return centered(maxW, null, N);
-    const width = Math.min(best.width, maxW);
-    // Emit hard breaks only when the winning layout can't be reproduced by the
-    // natural wrap at this width — otherwise box-width alone already gives it.
+    if (!best) return { ...centered(maxW, null, N), staticLines };
+    // Longest line plus real slack, never past the Styles box.
+    const width = Math.min(Math.ceil(best.longest + pad), maxW);
+    // The padded box can let a word ride up a line in the natural wrap. Lock
+    // the winning layout with hard breaks whenever that happens (or when it's
+    // a punctuation layout box width can't reproduce at all) — otherwise
+    // box width alone already gives it.
     let brokenText = null, brokenSpans = null;
-    if (best.broken) {
-      const nat = _fitLinesAtWidth(inner, words, width)
-        .map(l => l.words.map(w => w.text).join(' ')).join('\n');
-      const brk = best.broken.join('\n');
-      if (nat !== brk) {
-        brokenText = brk;
-        brokenSpans = _fitSpansFromWinningLayout(words, best.lineWordCounts);
-      }
+    const nat = _fitLinesAtWidth(inner, words, width).map(l => l.words.length).join(',');
+    if (nat !== best.lineWordCounts.join(',')) {
+      brokenSpans = _fitSpansFromWinningLayout(words, best.lineWordCounts);
+      let k = 0;
+      brokenText = best.lineWordCounts.map(c => words.slice(k, k += c).map(w => w.text).join(' ')).join('\n');
     }
-    return centered(width, brokenText, best.lineCount, brokenSpans);
+    return { ...centered(width, brokenText, best.lineCount, brokenSpans), staticLines };
   } finally {
     document.body.removeChild(msr);
   }
@@ -4949,7 +5064,9 @@ function computeSlideFitWidth(slide, scheme) {
     const propTitleM = _fitTitleMetrics(scheme, 'prop');
     return {
       ...main, bodyLines: main.lines, titleAscent: titleM.ascent, titleDescent: titleM.descent,
-      propBodyW: wantsProp ? prop.bodyW : null, propBodyX: wantsProp ? prop.bodyX : null, propBodyLines: prop.lines,
+      bodyStaticLines: main.staticLines ?? main.lines,
+      propBodyW: wantsProp ? prop.bodyW : null, propBodyX: wantsProp ? prop.bodyX : null,
+      propBodyLines: wantsProp ? prop.lines : (prop.staticLines ?? prop.lines),
       propBrokenText: wantsProp ? (prop.brokenText || null) : null, propBrokenSpans: wantsProp ? (prop.brokenSpans || null) : null,
       propAscent: prop.ascent, propDescent: prop.descent, propCapAscent: prop.capAscent,
       propTitleAscent: propTitleM.ascent, propTitleDescent: propTitleM.descent,
@@ -8686,7 +8803,7 @@ function _tpTextCss(font, size, adv, cw) {
 // One positioned text element. `spans` are [{text, alt}] — alt spans use the
 // alt (bold) row's font/adv at the base size, like the exporter does.
 function _tpEl(pv, cw, ch, o) {
-  const { row, box, font, size, adv, spans, altFont, altAdv, fill, sel, anchor, autoGap } = o;
+  const { row, box, font, size, adv, spans, altFont, altAdv, fill, sel, anchor, autoGap, va } = o;
   const [x, y, w, h] = box;
   if (!w || !h) return '';
   const a = adv || FONT_ADV_DEFAULTS();
@@ -8700,7 +8817,7 @@ function _tpEl(pv, cw, ch, o) {
     return sp.alt ? `<span style="${_tpTextCss(altFont || font, size, altAdv || a, cw)}">${txt}</span>` : txt;
   }).join('');
   return `<div class="tp-el${sel ? ' sel' : ''}" data-row="${row}"${a.scaleBehavior === 'none' ? '' : ' data-fit="1"'}${anchor ? ' data-anchor="1"' : ''}${autoGap != null ? ` data-autogap="${Number(autoGap) || 0}"` : ''}
-    style="left:${pct(x, cw)};top:${pct(y, ch)};width:${pct(w, cw)};height:${pct(h, ch)};justify-content:${VA[a.verticalAlignment ?? ''] || 'flex-start'};
+    style="left:${pct(x, cw)};top:${pct(y, ch)};width:${pct(w, cw)};height:${pct(h, ch)};justify-content:${VA[a.verticalAlignment || va || ''] || 'flex-start'};
       padding:${u(a.marginTop)} ${u(a.marginRight)} ${u(a.marginBottom)} ${u(a.marginLeft)};${fill ? `background:${_tpHex(fill, 'transparent')};` : ''}">
     <div class="tp-text" style="${_tpTextCss(font, size, a, cw)};text-align:${HA[a.alignment ?? ''] || 'left'};
       margin:${u(a.paragraphSpacingBefore)} 0 ${u(a.paragraphSpacingAfter)}">${inner}</div></div>`;
@@ -8725,19 +8842,19 @@ function renderTextPreview(pv, scene, selRow, hint, showStrip = true, showScenes
   const mainEls = [
     showContent ? ({ row: 'queue', box: box('queue'), font: pv.queueFont, size: pv.queueSize, adv: pv.queueFontAdv, spans: queueSpans }) : '',
     scene === 'scripture' || scene === 'notes'
-      ? ({ row: 'body1', alsoSel: ['bold1'], anchor: true, box: box('body'), font: pv.bodyFont, size: pv.bodySize, adv: pv.bodyFontAdv,
+      ? ({ row: 'body1', alsoSel: ['bold1'], anchor: true, va: 'bottom', box: box('body'), font: pv.bodyFont, size: pv.bodySize, adv: pv.bodyFontAdv,
             spans: bodySpans, altFont: pv.boldFont, altAdv: pv.boldFontAdv }) : '',
     scene === 'scripture' || scene === 'notes'
-      ? ({ row: 'title1', box: box('title'), font: pv.titleFont, size: pv.titleSize, adv: pv.titleFontAdv,
+      ? ({ row: 'title1', va: 'middle', box: box('title'), font: pv.titleFont, size: pv.titleSize, adv: pv.titleFontAdv,
             spans: [{ text: smp.reference }], fill: pv.fillEnabled ? pv.titleFill : null, autoGap: pv.autoTitleY ? (pv.titleAutoGap ?? 16) : null })
       : '',
     scene === 'point' || scene === 'stacked'
-      ? ({ row: 'point1', box: box('point', 'body'), font: pv.pointFont, size: pv.pointSize, adv: pv.pointFontAdv, spans: [{ text: smp.point }] })
+      ? ({ row: 'point1', va: 'bottom', box: box('point', 'body'), font: pv.pointFont, size: pv.pointSize, adv: pv.pointFontAdv, spans: [{ text: smp.point }] })
       : '',
     scene === 'utility'
-      ? ({ row: 'se', box: box('startEnd'), font: pv.startEndFont, size: pv.startEndSize, adv: pv.startEndFontAdv, spans: [{ text: smp.seText || 'Start of Notes' }] })
+      ? ({ row: 'se', va: 'middle', box: box('startEnd'), font: pv.startEndFont, size: pv.startEndSize, adv: pv.startEndFontAdv, spans: [{ text: smp.seText || 'Start of Notes' }] })
       : '',
-    showContent ? ({ row: 'live', box: box('live'), font: pv.liveFont, size: pv.liveSize, adv: pv.liveFontAdv, spans: [{ text: 'live' }] }) : '',
+    showContent ? ({ row: 'live', va: 'middle', box: box('live'), font: pv.liveFont, size: pv.liveSize, adv: pv.liveFontAdv, spans: [{ text: 'live' }] }) : '',
   ].filter(Boolean);
   const onMain  = mainEls.filter(o => o.box[1] < mainH);
   const offMain = mainEls.filter(o => o.box[1] >= mainH && o.box[2] && o.box[3]);
@@ -8754,14 +8871,14 @@ function renderTextPreview(pv, scene, selRow, hint, showStrip = true, showScenes
 
   let led = '';
   if (scene === 'scripture' || scene === 'notes') {
-    led = L({ row: 'body2', alsoSel: ['bold2'], anchor: true, box: box('propBody'), font: pv.propBodyFont, size: pv.propBodySize, adv: pv.propBodyFontAdv,
+    led = L({ row: 'body2', alsoSel: ['bold2'], anchor: true, va: 'bottom', box: box('propBody'), font: pv.propBodyFont, size: pv.propBodySize, adv: pv.propBodyFontAdv,
               spans: propBodySpans, altFont: pv.propBoldFont, altAdv: pv.propBoldFontAdv })
-        + L({ row: 'title2', box: box('propTitle'), font: pv.propTitleFont, size: pv.propTitleSize, adv: pv.propTitleFontAdv,
+        + L({ row: 'title2', va: 'middle', box: box('propTitle'), font: pv.propTitleFont, size: pv.propTitleSize, adv: pv.propTitleFontAdv,
               spans: [{ text: smp.reference }], fill: pv.fillEnabled ? pv.titleFill : null, autoGap: pv.propAutoTitleY ? (pv.propTitleAutoGap ?? 16) : null });
   } else if (scene === 'point') {
-    led = L({ row: 'point2', box: box('propPoint', 'propBody'), font: pv.propPointFont, size: pv.propPointSize, adv: pv.propPointFontAdv, spans: [{ text: smp.propPoint ?? smp.point }] });
+    led = L({ row: 'point2', va: 'bottom', box: box('propPoint', 'propBody'), font: pv.propPointFont, size: pv.propPointSize, adv: pv.propPointFontAdv, spans: [{ text: smp.propPoint ?? smp.point }] });
   } else if (scene === 'stacked') {
-    led = L({ row: 'pointStacked', box: box('propPoint', 'propBody'), font: pv.pointStackedFont, size: pv.pointStackedSize, adv: pv.pointStackedFontAdv,
+    led = L({ row: 'pointStacked', va: 'bottom', box: box('propPoint', 'propBody'), font: pv.pointStackedFont, size: pv.pointStackedSize, adv: pv.pointStackedFontAdv,
               spans: [{ text: smp.bullets.join('\n') }] });
   }
 
@@ -12570,7 +12687,8 @@ async function generate() {
       if (!bodyStale && !propStale) continue;
       const r = computeSlideFitWidth(slide, scheme);
       if (r) {
-        slide.bodyLines = r.bodyLines ?? null;
+        // An unfitted box shows Pro7's natural wrap at the full Styles width.
+        slide.bodyLines = (measureOnly ? r.bodyStaticLines : r.bodyLines) ?? null;
         slide.propBodyLines = r.propBodyLines ?? null;
         if (!measureOnly) {
           slide.bodyW = r.bodyW; slide.bodyX = r.bodyX;

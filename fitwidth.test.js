@@ -159,6 +159,27 @@ function propTitleYOf(propBodyLines, rsExtra = {}) {
      !threw, { threw, msg });
 })();
 
+(() => {
+  // Auto Title Y must place the title above where Pro7 actually draws the
+  // body: inside its bottom margin, and per its vertical alignment. It used
+  // to assume bottom-flush with no margin, landing the title a full margin
+  // (60px by default) too low — into the first line.
+  const y0   = titleYOf(buildPresentation(scriptureSpec(2)).cues[0]);
+  const yMB  = titleYOf(buildPresentation(scriptureSpec(2, { bodyFontAdv: { marginBottom: 60 } })).cues[0]);
+  ok('a 60px body bottom margin raises the auto title by exactly 60px', y0 - yMB === 60, { y0, yMB });
+  const yTop = titleYOf(buildPresentation(scriptureSpec(2, { bodyFontAdv: { verticalAlignment: 'top' } })).cues[0]);
+  const yMid = titleYOf(buildPresentation(scriptureSpec(2, { bodyFontAdv: { verticalAlignment: 'middle' } })).cues[0]);
+  ok('a top-aligned body puts the title above the box top, a middle one halfway down',
+     yTop < yMid && yMid < y0 && Math.abs((y0 - yTop) / 2 - (y0 - yMid)) <= 1, { yTop, yMid, y0 });
+})();
+
+(() => {
+  // Same for Display 2, whose body element defaults to a 60px bottom margin.
+  const yDefault = propTitleYOf(2);
+  const yNoMB    = propTitleYOf(2, { propBodyFontAdv: { marginBottom: 0 } });
+  ok('Display 2 auto title honours the body\'s default 60px bottom margin', yNoMB - yDefault === 60, { yDefault, yNoMB });
+})();
+
 // ── Display 2 independence (invariant: never derives from Display 1) ──────
 
 (() => {
@@ -384,6 +405,10 @@ const D2_TITLE_METRICS = { ascent: 106, descent: 28 };  // size 110, measured li
 //   Case 2 D1: 889 -> 864   Case 2 D2: 917 -> 934
 //   Case 5 D1: 757 -> 702   Case 5 D2: 813 -> 837
 //   Case 6 D1: 889 -> 864   Case 6 D2: 1021 -> 1031
+// v4.41.0-beta.13 then made Auto Title Y honour the body's margins and
+// vertical alignment (see bodyBlockTop). These cases use no Display 1 margin,
+// so D1 is unchanged; Display 2's body has a 60px default bottom margin, so
+// D2 moves up 60: 934 -> 874, 837 -> 777, 1031 -> 971.
 ok('Case 2 (Psalm 23:1-2) Display 1 titleY matches the reviewed value',
    mainCaseTitleY(3, D1_METRICS) === 889, { got: mainCaseTitleY(3, D1_METRICS) });
 ok('Case 2 (Psalm 23:1-2) Display 2 titleY matches the reviewed value',

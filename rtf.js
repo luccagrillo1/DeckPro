@@ -580,7 +580,11 @@ function rtfPointBody(bullet, style = {}) {
   // genuinely mixes bold and non-bold words. A plain point (no bold markup) is
   // NOT "body text" — it should still use the point font, so treat no-bold and
   // all-bold the same: single point-font path.
-  const single   = !(spans.some(s => s.bold) && spans.some(s => !s.bold));
+  // Whitespace-only spans (the '\n' Fit Width inserts between lines) carry no
+  // weight of their own — counting them flipped every hard-broken point onto
+  // the mixed path, drawing it in a synthesized bold.
+  const real     = spans.filter(s => s.text && s.text.trim());
+  const single   = !(real.some(s => s.bold) && real.some(s => !s.bold));
   if (single) {
     // Single-font path — whole point in the point font, bold
     const fonttbl = `{\\fonttbl\\f0\\fnil\\fcharset0 ${boldFont};}`;

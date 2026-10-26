@@ -342,6 +342,21 @@ function resolveMargins(adv, defaults = {}) {
   };
 }
 
+// Top edge of a body text block of `blockH` px, where Pro7 actually draws it:
+// inside the box's top/bottom margins, placed by the row's vertical
+// alignment (BOTTOM when unset — same default the body element is written
+// with). Auto Title Y used to assume bottom-flush with no margin, landing the
+// title a full bottom margin (60px by default) too low — into the text — and
+// nowhere near it for a middle- or top-aligned body.
+function bodyBlockTop(by, bh, adv, marginDefaults, blockH) {
+  const m = resolveMargins(adv, marginDefaults);
+  const top = by + m.top, bottom = by + bh - m.bottom;
+  const va = resolveVertAlign(adv, 'VERTICAL_ALIGNMENT_BOTTOM');
+  if (va === 'VERTICAL_ALIGNMENT_TOP') return top;
+  if (va === 'VERTICAL_ALIGNMENT_MIDDLE') return top + (bottom - top - blockH) / 2;
+  return bottom - blockH;
+}
+
 function resolveScaleBehavior(adv, defaultVal) {
   const v = adv?.scaleBehavior;
   if (!v) return defaultVal;
@@ -701,15 +716,17 @@ function estimateTitleY(displayBody, bw, rs, knownLines, metrics, strict = false
   }
 
   if (hasReal) {
-    // Body block is bottom-anchored (verticalAlignment BOTTOM — see
-    // makeBodyElement), so N lines of real line-box height sit flush with the
-    // box's bottom edge. lineH is the font's own measured ascent+descent
+    // N lines of real line-box height, placed where Pro7 puts the body block
+    // (see bodyBlockTop). lineH is the font's own measured ascent+descent
     // scaled by the scheme's "line height" (LINE) setting — makeBodyElement
     // now writes that value into the real export's lineHeightMultiple field
     // (previously hardcoded to 1 regardless of the setting), so this must
     // match what actually renders.
     const lineH    = (metrics.ascent + metrics.descent) * (rs.bodyFontAdv?.lineHeight ?? 1);
-    const blockTop = (by + bh) - knownLines * lineH;
+    // Same box, margins and alignment makeBodyElement writes (incl. yOffset).
+    const blockTop = bodyBlockTop(by + (rs.bodyFontAdv?.yOffset ?? 0), bh, rs.bodyFontAdv, {
+      top: rs.bodyMarginTop ?? 0, bottom: rs.bodyMarginBottom ?? 0,
+    }, knownLines * lineH);
     const inkTop   = blockTop + (metrics.ascent - metrics.capAscent);
 
     // Title block is NOT bottom-anchored like the body — its own
