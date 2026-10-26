@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.6';
+const APP_VERSION = '4.41.7';
 
 const CHANGELOG = [
+  {
+    version: '4.41.7',
+    date: '2026-10-26',
+    changes: [
+      "Fixed: LED wall title and body blowing up and overlapping in ProPresenter. The \"Grow or shrink\" Overflow option is gone — it let ProPresenter resize the text to fill the whole box, which broke Fit Width and the title position. Styles that had it now export as Shrink to fit, so just re-export.",
+      "Fixed: titles showed left-aligned in DeckPro but centred in ProPresenter. A title with no alignment set exports centred, so the preview and the Styles editor now show it centred too; pick Left to really left-align it.",
+    ],
+  },
   {
     version: '4.41.6',
     date: '2026-10-26',
@@ -8395,8 +8403,7 @@ function fontAdvPanel(schemeKey, label, scheme, locked, extraColorFields = []) {
           <label>Scaling</label>
           <select class="fav-select fav-scale-sel" data-scheme="${schemeKey}" data-field="scaleBehavior" ${dis}>
             <option value="" ${!adv.scaleBehavior ? 'selected' : ''}>Default</option>
-            <option value="SCALE_BEHAVIOR_SCALE_FONT_DOWN" ${adv.scaleBehavior === 'SCALE_BEHAVIOR_SCALE_FONT_DOWN' ? 'selected' : ''}>Scale down</option>
-            <option value="SCALE_BEHAVIOR_SCALE_FONT_UP_DOWN" ${adv.scaleBehavior === 'SCALE_BEHAVIOR_SCALE_FONT_UP_DOWN' ? 'selected' : ''}>Text up or down</option>
+            <option value="SCALE_BEHAVIOR_SCALE_FONT_DOWN" ${/SCALE_FONT_(UP_)?DOWN/.test(adv.scaleBehavior || '') ? 'selected' : ''}>Scale down</option>
             <option value="none" ${adv.scaleBehavior === 'none' ? 'selected' : ''}>None</option>
           </select>
         </div>
@@ -9125,7 +9132,7 @@ function _tpTextCss(font, size, adv, cw) {
 // One positioned text element. `spans` are [{text, alt}] — alt spans use the
 // alt (bold) row's font/adv at the base size, like the exporter does.
 function _tpEl(pv, cw, ch, o) {
-  const { row, box, font, size, adv, spans, altFont, altAdv, fill, sel, anchor, autoGap, va } = o;
+  const { row, box, font, size, adv, spans, altFont, altAdv, fill, sel, anchor, autoGap, va, ha } = o;
   const [x, y, w, h] = box;
   if (!w || !h) return '';
   const a = adv || FONT_ADV_DEFAULTS();
@@ -9138,10 +9145,10 @@ function _tpEl(pv, cw, ch, o) {
     const txt = esc(_fitCaseText(sp.text, sa.capitalization || '')).replace(/\n/g, '<br>');
     return sp.alt ? `<span style="${_tpTextCss(altFont || font, size, altAdv || a, cw)}">${txt}</span>` : txt;
   }).join('');
-  return `<div class="tp-el${sel ? ' sel' : ''}" data-row="${row}"${a.scaleBehavior === 'none' ? '' : a.scaleBehavior === 'SCALE_BEHAVIOR_SCALE_FONT_UP_DOWN' ? ' data-fit="grow"' : ' data-fit="1"'}${anchor ? ' data-anchor="1"' : ''}${autoGap != null ? ` data-autogap="${Number(autoGap) || 0}"` : ''}
+  return `<div class="tp-el${sel ? ' sel' : ''}" data-row="${row}"${a.scaleBehavior === 'none' ? '' : ' data-fit="1"'}${anchor ? ' data-anchor="1"' : ''}${autoGap != null ? ` data-autogap="${Number(autoGap) || 0}"` : ''}
     style="left:${pct(x, cw)};top:${pct(y, ch)};width:${pct(w, cw)};height:${pct(h, ch)};justify-content:${VA[a.verticalAlignment || va || ''] || 'flex-start'};
       padding:${u(a.marginTop)} ${u(a.marginRight)} ${u(a.marginBottom)} ${u(a.marginLeft)};${fill ? `background:${_tpHex(fill, 'transparent')};` : ''}">
-    <div class="tp-text" style="${_tpTextCss(font, size, a, cw)};text-align:${HA[a.alignment ?? ''] || 'left'};
+    <div class="tp-text" style="${_tpTextCss(font, size, a, cw)};text-align:${HA[a.alignment || ha || ''] || 'left'};
       margin:${u(a.paragraphSpacingBefore)} 0 ${u(a.paragraphSpacingAfter)}">${inner}</div></div>`;
 }
 
@@ -9167,7 +9174,7 @@ function renderTextPreview(pv, scene, selRow, hint, showStrip = true, showScenes
       ? ({ row: 'body1', alsoSel: ['bold1'], anchor: true, va: 'bottom', box: box('body'), font: pv.bodyFont, size: pv.bodySize, adv: pv.bodyFontAdv,
             spans: bodySpans, altFont: pv.boldFont, altAdv: pv.boldFontAdv }) : '',
     scene === 'scripture' || scene === 'notes'
-      ? ({ row: 'title1', va: 'middle', box: box('title'), font: pv.titleFont, size: pv.titleSize, adv: pv.titleFontAdv,
+      ? ({ row: 'title1', va: 'middle', ha: 'center', box: box('title'), font: pv.titleFont, size: pv.titleSize, adv: pv.titleFontAdv,
             spans: [{ text: smp.reference }], fill: pv.fillEnabled ? pv.titleFill : null, autoGap: pv.autoTitleY ? (pv.titleAutoGap ?? 16) : null })
       : '',
     scene === 'point' || scene === 'stacked'
@@ -9195,7 +9202,7 @@ function renderTextPreview(pv, scene, selRow, hint, showStrip = true, showScenes
   if (scene === 'scripture' || scene === 'notes') {
     led = L({ row: 'body2', alsoSel: ['bold2'], anchor: true, va: 'bottom', box: box('propBody'), font: pv.propBodyFont, size: pv.propBodySize, adv: pv.propBodyFontAdv,
               spans: propBodySpans, altFont: pv.propBoldFont, altAdv: pv.propBoldFontAdv })
-        + L({ row: 'title2', va: 'middle', box: box('propTitle'), font: pv.propTitleFont, size: pv.propTitleSize, adv: pv.propTitleFontAdv,
+        + L({ row: 'title2', va: 'middle', ha: 'center', box: box('propTitle'), font: pv.propTitleFont, size: pv.propTitleSize, adv: pv.propTitleFontAdv,
               spans: [{ text: smp.reference }], fill: pv.fillEnabled ? pv.titleFill : null, autoGap: pv.propAutoTitleY ? (pv.propTitleAutoGap ?? 16) : null });
   } else if (scene === 'point') {
     led = L({ row: 'point2', va: 'bottom', box: box('propPoint', 'propBody'), font: pv.propPointFont, size: pv.propPointSize, adv: pv.propPointFontAdv, spans: [{ text: smp.propPoint ?? smp.point }] });
@@ -9316,7 +9323,12 @@ function renderSchemeGrid(sv, rs, dis, pv) {
     `<div class="tp-num">${label}${cell(field, `<input type="number" class="fav-num sg-num tp-input" data-scheme="${advK}" data-field="${field}" value="${adv[field] ?? dflt}" step="${step}" ${dis}>${unit ? `<span class="tp-unit">${unit}</span>` : ''}`)}</div>`;
   const color = (field, fb, title) =>
     cell(field, `<input type="color" class="sg-adv-color tp-color" data-scheme="${advK}" data-field="${field}" value="${_tpHex(adv[field], fb)}" title="${title}" ${dis}>`);
-  const HA = [['', 'Left'], ['center', 'Center'], ['right', 'Right'], ['justify', 'Justify']];
+  // Titles export centred unless set otherwise (rtfTitle), so for them the
+  // unset value is the Centre button and Left is an explicit 'left'.
+  const isTitleAdv = advK === 'titleFontAdv' || advK === 'propTitleFontAdv';
+  const HA = isTitleAdv
+    ? [['left', 'Left'], ['', 'Center'], ['right', 'Right'], ['justify', 'Justify']]
+    : [['', 'Left'], ['center', 'Center'], ['right', 'Right'], ['justify', 'Justify']];
   const VA = [['', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']];
   const HA_ICONS = {
     '':      '<path d="M1 2h12M1 5.5h7M1 9h9" stroke-width="1.4"/>',
@@ -9324,13 +9336,15 @@ function renderSchemeGrid(sv, rs, dis, pv) {
     right:   '<path d="M1 2h12M6 5.5h7M4 9h9" stroke-width="1.4"/>',
     justify: '<path d="M1 2h12M1 5.5h12M1 9h9" stroke-width="1.4"/>',
   };
+  if (isTitleAdv) { HA_ICONS.left = HA_ICONS['']; HA_ICONS[''] = HA_ICONS.center; }
   const VA_ICONS = {
     '':     '<path d="M1 1.5h12" stroke-width="2"/><path d="M4 5h6M4 8h6" stroke-width="1.4"/>',
     middle: '<path d="M4 3h6M4 9h6" stroke-width="1.4"/><path d="M1 6h12" stroke-width="1" stroke-dasharray="1.5 1.5"/>',
     bottom: '<path d="M4 3h6M4 6.5h6" stroke-width="1.4"/><path d="M1 10.5h12" stroke-width="2"/>',
   };
+  const _alignIs = (cur, v) => (cur ?? '') === v || (isTitleAdv && v === '' && cur === 'center');
   const alignBtns = (cls, field, opts, icons) => cell(field, opts.map(([v, title]) =>
-    `<button type="button" class="${cls} sg-align-cell tp-align${adv[field] === v ? ' on' : ''}${(_globalAdv[field] ?? '') === v ? ' sg-align-global' : ''}" data-scheme="${advK}" data-val="${v}" title="${title}" ${dis}><svg viewBox="0 0 14 12" fill="none" stroke="currentColor" stroke-linecap="round" width="14" height="12">${icons[v]}</svg></button>`
+    `<button type="button" class="${cls} sg-align-cell tp-align${_alignIs(adv[field], v) ? ' on' : ''}${_alignIs(_globalAdv[field], v) ? ' sg-align-global' : ''}" data-scheme="${advK}" data-val="${v}" title="${title}" ${dis}><svg viewBox="0 0 14 12" fill="none" stroke="currentColor" stroke-linecap="round" width="14" height="12">${icons[v]}</svg></button>`
   ).join(''), ' tp-seg');
 
   const inheritsD1 = D2_ADV_INHERIT[advK] && rs[advK] == null;
@@ -9368,11 +9382,10 @@ function renderSchemeGrid(sv, rs, dis, pv) {
             `<option value="${v}" ${(adv.capitalization || '') === v ? 'selected' : ''}>${l}</option>`).join('')}
         </select>`)}</div>
         <div class="tp-num" title="What ProPresenter does when text doesn't fit the box">Overflow ${cell('scaleBehavior', `<select class="fav-select sg-scale tp-select" data-scheme="${advK}" data-field="scaleBehavior" ${dis}>
-          ${[['', 'Shrink to fit (default)'], ['SCALE_BEHAVIOR_SCALE_FONT_DOWN', 'Shrink to fit'], ['SCALE_BEHAVIOR_SCALE_FONT_UP_DOWN', 'Grow or shrink'], ['none', 'Never resize']].map(([v, l]) =>
-            `<option value="${v}" ${(adv.scaleBehavior || '') === v ? 'selected' : ''}>${l}</option>`).join('')}
+          ${[['', 'Shrink to fit (default)'], ['SCALE_BEHAVIOR_SCALE_FONT_DOWN', 'Shrink to fit'], ['none', 'Never resize']].map(([v, l]) =>
+            `<option value="${v}" ${(adv.scaleBehavior === 'SCALE_BEHAVIOR_SCALE_FONT_UP_DOWN' ? 'SCALE_BEHAVIOR_SCALE_FONT_DOWN' : adv.scaleBehavior || '') === v ? 'selected' : ''}>${l}</option>`).join('')}
         </select>`)}</div>
       </div>
-      ${adv.scaleBehavior === 'SCALE_BEHAVIOR_SCALE_FONT_UP_DOWN' ? `<div class="ss-note">Grow or shrink: ProPresenter makes the text as big as fits the whole box, ignoring the size above (and Fit Width). Short text gets huge — pick Shrink to fit to keep this size.</div>` : ''}
     </div>
 
     <div class="tp-group">
@@ -9434,24 +9447,8 @@ function renderSchemeGrid(sv, rs, dis, pv) {
 
 // Export defaults every text box to ProPresenter's "shrink to fit" (only
 // "Never resize" turns it off), so overflowing preview text shrinks the same way.
-// "Grow or shrink" boxes are sized like Pro7 does them: the largest text that
-// still fits the whole box — however small the style's own size is.
 function _tpShrinkToFit(root) {
-  root.querySelectorAll('.tp-el[data-fit="grow"]').forEach(el => {
-    const txt = el.querySelector('.tp-text');
-    const sized = [txt, ...txt.querySelectorAll('span')];
-    const base = sized.map(n => parseFloat(getComputedStyle(n).fontSize));
-    const cs = getComputedStyle(el);
-    const availH = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-    const availW = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-    if (availH <= 0 || availW <= 0) return;
-    const apply = k => sized.forEach((n, i) => { n.style.fontSize = `${base[i] * k}px`; });
-    const fits = k => { apply(k); return txt.scrollHeight <= availH + 0.5 && txt.scrollWidth <= availW + 0.5; };
-    let lo = 0.1, hi = 8;
-    for (let i = 0; i < 14; i++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; }
-    apply(lo);
-  });
-  root.querySelectorAll('.tp-el[data-fit="1"]').forEach(el => {
+  root.querySelectorAll('.tp-el[data-fit]').forEach(el => {
     const txt = el.querySelector('.tp-text');
     const sized = [txt, ...txt.querySelectorAll('span')];
     for (let i = 0; i < 8; i++) {

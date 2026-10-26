@@ -316,6 +316,10 @@ function resolveScaleBehavior(adv, defaultVal) {
   const v = adv?.scaleBehavior;
   if (!v) return defaultVal;
   if (v === 'none') return undefined;
+  // "Grow or shrink" is no longer offered: Pro7 then sizes the text to fill the
+  // whole box, which throws out Fit Width and Auto Title Y (title and body blew
+  // up and overlapped on the LED wall). Styles that still carry it shrink only.
+  if (v === 'SCALE_BEHAVIOR_SCALE_FONT_UP_DOWN') return 'SCALE_BEHAVIOR_SCALE_FONT_DOWN';
   return v;
 }
 

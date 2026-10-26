@@ -207,6 +207,17 @@ function rtfOf(el) {
   ok('reference propTitleFontAdv.scaleBehavior override reaches element', scaleBehaviorOf(refAdv) === 'SCALE_BEHAVIOR_SHRINK_TO_FIT');
 })();
 
+// ── 7b. Retired "Grow or shrink" exports as shrink-only ─────────────────────────
+// Pro7 grows UP_DOWN text to fill the whole box, which overlapped the LED title
+// and body; styles that still carry it must never write it.
+(() => {
+  const up = { scaleBehavior: 'SCALE_BEHAVIOR_SCALE_FONT_UP_DOWN' };
+  const cues = cuesOf([{ type: 'scripture', propName: 'G', reference: 'G', bodies: [[{ text: 'g' }]] }],
+    { propBodyFontAdv: up, propTitleFontAdv: up });
+  ok('grow-or-shrink body exports as SCALE_FONT_DOWN', scaleBehaviorOf(elByName(cues[0], 'body')) === 'SCALE_BEHAVIOR_SCALE_FONT_DOWN');
+  ok('grow-or-shrink title exports as SCALE_FONT_DOWN', scaleBehaviorOf(elByName(cues[0], 'reference')) === 'SCALE_BEHAVIOR_SCALE_FONT_DOWN');
+})();
+
 // ── 8. Multi-body scripture: one cue per body ─────────────────────────────────
 (() => {
   const specs = [

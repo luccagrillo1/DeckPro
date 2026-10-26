@@ -361,6 +361,10 @@ function resolveScaleBehavior(adv, defaultVal) {
   const v = adv?.scaleBehavior;
   if (!v) return defaultVal;
   if (v === 'none') return undefined;
+  // "Grow or shrink" is no longer offered: Pro7 then sizes the text to fill the
+  // whole box, which throws out Fit Width and Auto Title Y (title and body blew
+  // up and overlapped on the LED wall). Styles that still carry it shrink only.
+  if (v === 'SCALE_BEHAVIOR_SCALE_FONT_UP_DOWN') return 'SCALE_BEHAVIOR_SCALE_FONT_DOWN';
   return v;
 }
 
@@ -822,7 +826,7 @@ function makeTitleElement({ reference, titleY }, rs = {}) {
         ...capitalizationAttr(adv),
         textSolidFill: (rs.titleFontAdv && rs.titleFontAdv.color) ? hexToColor(rs.titleFontAdv.color) : C_WHITE,
         underlineStyle: {},
-        paragraphStyle: { alignment: 'ALIGNMENT_CENTER', lineHeightMultiple: adv.lineHeight ?? 1, paragraphSpacing: 20, defaultTabInterval: 84, textList: {} },
+        paragraphStyle: { ...(adv.alignment === 'left' ? {} : { alignment: adv.alignment === 'right' ? 'ALIGNMENT_RIGHT' : 'ALIGNMENT_CENTER' }), lineHeightMultiple: adv.lineHeight ?? 1, paragraphSpacing: 20, defaultTabInterval: 84, textList: {} },
         strikethroughStyle: {},
         ...resolveTextStroke(rs.titleFontAdv),
         customAttributes: capitalizationCustomAttributes(adv, charCount),
