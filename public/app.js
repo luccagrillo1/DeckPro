@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.3';
+const APP_VERSION = '4.41.4';
 
 const CHANGELOG = [
+  {
+    version: '4.41.4',
+    date: '2026-10-26',
+    changes: [
+      "Arrow keys in more places. Styles element lists and Help sections: after clicking one, Up/Down move to the previous or next. Deck Library: Up/Down (in the search box or after clicking the list) highlight a deck, Enter opens it. Macro and stage-layout pickers: Up/Down from the search box highlight a row, Enter picks it.",
+      "Fixed: the update banner showed the release page's download instructions, with stray ** marks, instead of what's new.",
+    ],
+  },
   {
     version: '4.41.3',
     date: '2026-10-26',
@@ -6579,6 +6587,7 @@ function showMacroPicker(onSelect, singleSelect = false) {
   setTimeout(() => search.focus(), 40);
 
   search.addEventListener('input', () => renderRows(search.value));
+  attachPickerKeys(search, list);
 
   list.addEventListener('click', e => {
     const row = e.target.closest('.macro-picker-row');
@@ -12178,11 +12187,11 @@ function attachHeaderHandlers() {
   document.getElementById('gen-modal-close')?.addEventListener('click', () => {
     document.getElementById('gen-modal')?.classList.remove('open');
   });
-  // Up/Down step through the sidebar after a click in it — until the next
-  // click anywhere else. Tracked by a flag rather than focus because every
-  // selection re-renders the sidebar (the clicked row is a fresh element).
+  // Up/Down step through a list after a click in it — until the next click
+  // anywhere else. Tracked by which list was clicked rather than by focus,
+  // because a selection re-renders the list (the clicked row is a fresh element).
   document.addEventListener('mousedown', e => {
-    _sidebarKeyNav = !!e.target.closest?.('#slide-queue');
+    _keyNavList = Object.keys(KEY_NAV_LISTS).find(k => e.target.closest?.(KEY_NAV_LISTS[k].container)) || null;
   }, true);
   document.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable) return;
@@ -12190,28 +12199,48 @@ function attachHeaderHandlers() {
       if (e.shiftKey) applyRedo(); else applyUndo();
       e.preventDefault();
     }
-    if (_sidebarKeyNav && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-      if (document.querySelector('.warn-overlay, .modal.open, #gen-modal.open')) return;
+    const list = KEY_NAV_LISTS[_keyNavList];
+    if (list && (e.key === 'ArrowUp' || e.key === 'ArrowDown' || (e.key === 'Enter' && list.onEnter)) && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      if (list.blockedBy && document.querySelector(list.blockedBy)) return;
       e.preventDefault();
-      stepSidebarSelection(e.key === 'ArrowDown' ? 1 : -1);
+      if (e.key === 'Enter') list.onEnter();
+      else list.step(e.key === 'ArrowDown' ? 1 : -1);
     }
   });
 }
 
-let _sidebarKeyNav = false;
-
-// Select the sidebar row `dir` rows from the active one (as if clicked),
-// skipping anything collapsed or hidden and the sub-rows under a slide or the
-// Response Card (clicking one just selects its parent row again).
-function stepSidebarSelection(dir) {
-  const rows = [...document.querySelectorAll('#slide-queue .slide-item[data-id]:not(.rc-subitem)')]
-    .filter(el => el.offsetParent !== null);
-  const at = rows.findIndex(el => el.classList.contains('active'));
-  const next = rows[at === -1 ? (dir > 0 ? 0 : rows.length - 1) : at + dir];
-  if (!next) return;
-  next.click();
-  document.querySelector(`#slide-queue .slide-item.active`)?.scrollIntoView({ block: 'nearest' });
+// The row `dir` rows away from the selected (or keyboard-highlighted) one in
+// `rows`, skipping anything hidden; the first/last row when none is. Null at
+// either end — the lists stop there rather than wrapping.
+function nextListRow(rows, dir, isCurrent = el => el.classList.contains('active')) {
+  const visible = rows.filter(el => el.offsetParent !== null);
+  const at = visible.findIndex(isCurrent);
+  return visible[at === -1 ? (dir > 0 ? 0 : visible.length - 1) : at + dir] || null;
 }
+
+// Click the next row (it selects itself and re-renders), then keep the newly
+// selected row in view.
+function stepListByClick(rowSel, dir) {
+  const next = nextListRow([...document.querySelectorAll(rowSel)], dir);
+  if (!next) return;
+  const hadFocus = document.activeElement?.matches?.(rowSel);
+  next.click();
+  const active = [...document.querySelectorAll(rowSel)].find(el => el.classList.contains('active'));
+  active?.scrollIntoView({ block: 'nearest' });
+  if (hadFocus) active?.focus({ preventScroll: true }); // the focus ring follows the selection
+}
+
+// Lists the arrow keys step through after a click in them. The sidebar skips
+// the sub-rows under a slide or the Response Card (clicking one just selects
+// its parent row again).
+const KEY_NAV_LISTS = {
+  sidebar: { container: '#slide-queue', blockedBy: '.warn-overlay, #gen-modal.open, .help-modal.open',
+             step: dir => stepListByClick('#slide-queue .slide-item[data-id]:not(.rc-subitem)', dir) },
+  styles:  { container: '.tp-list', step: dir => stepListByClick('.tp-list .tp-list-item', dir) },
+  help:    { container: '#help-nav', step: dir => stepListByClick('#help-nav .help-nav-btn', dir) },
+  decks:   { container: '#decks-list', step: dir => stepDeckHighlight(dir), onEnter: () => openHighlightedDeck() },
+};
+let _keyNavList = null;
 
 // ─── Spec builder ─────────────────────────────────────────────────────────────
 
@@ -13899,6 +13928,31 @@ async function importStyleSample(onDone) {
   saveState();
   onDone?.();
   toast('success', choice === 'update' ? 'Style updated' : 'New style created', `${target.name}: ${edits.length} change${edits.length === 1 ? '' : 's'} from ProPresenter`);
+}
+
+// Macro / stage-layout pickers: Up/Down in the search box move a highlight
+// through the rows (skipping ones already added), Enter clicks it — picks it
+// in a single pick, ticks/unticks it in a multi pick.
+function attachPickerKeys(search, list) {
+  search.addEventListener('keydown', e => {
+    const rows = [...list.querySelectorAll('.macro-picker-row:not(.existing)')];
+    const cur = el => el.classList.contains('kbd-focus');
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const next = nextListRow(rows, e.key === 'ArrowDown' ? 1 : -1, cur);
+      if (!next) return;
+      rows.forEach(el => el.classList.toggle('kbd-focus', el === next));
+      next.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      const row = rows.find(cur) || (rows.length === 1 ? rows[0] : null);
+      if (!row) return;
+      e.preventDefault();
+      const uuid = row.dataset.uuid;
+      row.click();
+      // A multi pick re-uses the row; keep the highlight where it was.
+      list.querySelector(`.macro-picker-row[data-uuid="${CSS.escape(uuid)}"]`)?.classList.add('kbd-focus');
+    }
+  });
 }
 
 function showProRunningModal() {
@@ -15729,6 +15783,7 @@ function showStageLayoutPicker(field, anchorEl, cb, singleSelect = true, opts = 
   setTimeout(() => search.focus(), 40);
 
   search.addEventListener('input', () => renderRows(search.value));
+  attachPickerKeys(search, list);
 
   list.addEventListener('click', e => {
     const row = e.target.closest('.macro-picker-row');
@@ -16515,6 +16570,22 @@ function deckEditFormHtml(deck) {
     </div>`;
 }
 
+// Deck Library keyboard highlight: Up/Down (from the search box, or after a
+// click in the list) move it, Enter opens that deck. Kept by id so it
+// survives the list re-rendering as you type a search.
+let _deckKbdId = null;
+function stepDeckHighlight(dir) {
+  const rows = [...document.querySelectorAll('#decks-list .deck-item[data-id]:not(.deck-item--editing)')];
+  const next = nextListRow(rows, dir, el => el.dataset.id === _deckKbdId);
+  if (!next) return;
+  rows.forEach(el => el.classList.toggle('deck-item--kbd', el === next));
+  _deckKbdId = next.dataset.id;
+  next.scrollIntoView({ block: 'nearest' });
+}
+function openHighlightedDeck() {
+  document.querySelector(`#decks-list .deck-item--kbd .btn-deck-load`)?.click();
+}
+
 function deckRowHtml(deck) {
   if (deck.id === _editingDeckId) return deckEditFormHtml(deck);
 
@@ -16559,7 +16630,7 @@ function deckRowHtml(deck) {
   `;
 
   return `
-    <div class="deck-item${isCurrent ? ' deck-item--current' : ''}" data-id="${deck.id}">
+    <div class="deck-item${isCurrent ? ' deck-item--current' : ''}${deck.id === _deckKbdId ? ' deck-item--kbd' : ''}" data-id="${deck.id}">
       <div class="deck-item-info">
         <div class="deck-item-name">
           ${series ? `<span class="deck-item-series">${esc(series)}</span>` : ''}
@@ -16711,6 +16782,10 @@ function initDecks() {
   modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('open'); });
 
   // Search
+  document.getElementById('deck-search')?.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); stepDeckHighlight(e.key === 'ArrowDown' ? 1 : -1); }
+    else if (e.key === 'Enter' && _deckKbdId) { e.preventDefault(); openHighlightedDeck(); }
+  });
   document.getElementById('deck-search')?.addEventListener('input', e => {
     _deckSearch = e.target.value;
     _openMenuId = null;
@@ -16944,7 +17019,7 @@ function formatUpdateNotes(md, maxItems = 5) {
     .map(l => l.trim())
     .filter(l => /^[-*] /.test(l))
     .slice(0, maxItems)
-    .map(l => `<li>${esc(l.replace(/^[-*] /, ''))}</li>`);
+    .map(l => `<li>${esc(l.replace(/^[-*] /, '').replace(/\*\*/g, ''))}</li>`);
   return items.length ? `<ul class="update-notes-list">${items.join('')}</ul>` : '';
 }
 
