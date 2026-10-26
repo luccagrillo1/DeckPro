@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.2';
+const APP_VERSION = '4.41.3';
 
 const CHANGELOG = [
+  {
+    version: '4.41.3',
+    date: '2026-10-26',
+    changes: [
+      "New: after clicking a slide in the sidebar, the Up and Down arrow keys move to the previous or next slide (including the Response Card). Click anywhere else, or into a text field, and the arrows go back to their usual job.",
+    ],
+  },
   {
     version: '4.41.2',
     date: '2026-10-26',
@@ -12171,13 +12178,39 @@ function attachHeaderHandlers() {
   document.getElementById('gen-modal-close')?.addEventListener('click', () => {
     document.getElementById('gen-modal')?.classList.remove('open');
   });
+  // Up/Down step through the sidebar after a click in it — until the next
+  // click anywhere else. Tracked by a flag rather than focus because every
+  // selection re-renders the sidebar (the clicked row is a fresh element).
+  document.addEventListener('mousedown', e => {
+    _sidebarKeyNav = !!e.target.closest?.('#slide-queue');
+  }, true);
   document.addEventListener('keydown', e => {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable) return;
     if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
       if (e.shiftKey) applyRedo(); else applyUndo();
       e.preventDefault();
     }
+    if (_sidebarKeyNav && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      if (document.querySelector('.warn-overlay, .modal.open, #gen-modal.open')) return;
+      e.preventDefault();
+      stepSidebarSelection(e.key === 'ArrowDown' ? 1 : -1);
+    }
   });
+}
+
+let _sidebarKeyNav = false;
+
+// Select the sidebar row `dir` rows from the active one (as if clicked),
+// skipping anything collapsed or hidden and the sub-rows under a slide or the
+// Response Card (clicking one just selects its parent row again).
+function stepSidebarSelection(dir) {
+  const rows = [...document.querySelectorAll('#slide-queue .slide-item[data-id]:not(.rc-subitem)')]
+    .filter(el => el.offsetParent !== null);
+  const at = rows.findIndex(el => el.classList.contains('active'));
+  const next = rows[at === -1 ? (dir > 0 ? 0 : rows.length - 1) : at + dir];
+  if (!next) return;
+  next.click();
+  document.querySelector(`#slide-queue .slide-item.active`)?.scrollIntoView({ block: 'nearest' });
 }
 
 // ─── Spec builder ─────────────────────────────────────────────────────────────
