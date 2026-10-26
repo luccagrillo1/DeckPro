@@ -2,9 +2,18 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.0-beta.16';
+const APP_VERSION = '4.41.0-beta.17';
 
 const CHANGELOG = [
+  {
+    version: '4.41.0-beta.17',
+    date: '2026-10-25',
+    changes: [
+      "New: Style sample round trip. In Styles, the new \"Export Style Sample\" sends a short sample deck in the selected style to ProPresenter (Start, scripture, point, blank, Response Card, End, plus its LED wall props in their own \"DeckPro Style Sample\" prop collection). Restyle it there, then click \"Import Style Sample\": DeckPro lists what you changed in plain words (fonts, sizes, colours, alignment, spacing, shadow, outline, box positions, slide transition) and saves it to the original style or as a new style.",
+      "The style sample never fires macros or stage layouts, and never touches your Slot 1 / Slot 2 props.",
+      "Not read from the sample yet: Response Card styling and the confidence-monitor text.",
+    ],
+  },
   {
     version: '4.41.0-beta.16',
     date: '2026-10-25',
@@ -2924,6 +2933,8 @@ const TOOLTIPS = {
   'scheme-dupe':              'Duplicate\nCopy this style into a new editable one — the usual way to make your own look.',
   'scheme-import':            'Import Style\nLoad a style JSON file (from Export, or shared by someone else) as a new style.',
   'scheme-export':            'Export Style\nSave this style as a JSON file — share it, or back it up.',
+  'scheme-sample-export':     'Export Style Sample\nSend a short sample deck in this style to ProPresenter. Restyle it there, then Import Style Sample.',
+  'scheme-sample-import':     'Import Style Sample\nRead what you changed on the style sample in ProPresenter, and save it to this style or a new one.',
   // Rich-text toolbar
   'bold':                     'Bold\nBold weight of the body font for the selected words. Shortcut: ⌘B.',
   'italic':                   'Italic\nItalicizes the selected words. Shortcut: ⌘I.',
@@ -9499,6 +9510,13 @@ function renderStylePanel(panel) {
           <button class="btn-scheme-icon" id="btn-scheme-export" data-tip-key="scheme-export">
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 8.5V1M3.5 4.5l3-3.5 3 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 9.5v1.5A1 1 0 0 0 2 12h9a1 1 0 0 0 1-1V9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
           </button>
+          <span class="scheme-tb-sep"></span>
+          <button class="btn-scheme-icon" id="btn-scheme-sample-export" data-tip-key="scheme-sample-export">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="1" y="2" width="11" height="7.5" rx="1.2" stroke="currentColor" stroke-width="1.3"/><path d="M6.5 4v3.5M5 5.5l1.5-1.5L8 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 11.5h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          </button>
+          <button class="btn-scheme-icon" id="btn-scheme-sample-import" data-tip-key="scheme-sample-import">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="1" y="2" width="11" height="7.5" rx="1.2" stroke="currentColor" stroke-width="1.3"/><path d="M6.5 3.5V7M5 5.5l1.5 1.5L8 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 11.5h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          </button>
           <button class="btn-scheme-icon btn-scheme-icon-danger" id="btn-scheme-delete" title="Delete style"
             ${state.styleSchemes.length <= 1 ? 'disabled' : ''}>
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 3.5h9M5 3.5V2h3v1.5M4 3.5l.5 7h4l.5-7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -9665,6 +9683,8 @@ function renderStylePanel(panel) {
   document.getElementById('btn-scheme-import').addEventListener('click', () => {
     document.getElementById('scheme-import-file').click();
   });
+  document.getElementById('btn-scheme-sample-export').addEventListener('click', () => exportStyleSample(getScheme()));
+  document.getElementById('btn-scheme-sample-import').addEventListener('click', () => importStyleSample(() => renderStylePanel(panel)));
   document.getElementById('scheme-import-file').addEventListener('change', async e => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -12480,11 +12500,14 @@ function schemeStageScreen() {
   return { screenName: ss.screenName || '', screenUuid: ss.screenUuid || '' };
 }
 
-function buildSpec() {
+// opts.slides / opts.scheme / opts.name build a spec for something other than
+// the open deck in its active style (the style sample — see exportStyleSample).
+function buildSpec(opts = {}) {
   const { includeResponseCard, outputFolder, responses } = state.config;
+  const deckSlides = opts.slides || state.slides;
 
   // Resolve active style scheme (strip UI-only fields)
-  const activeScheme = (state.styleSchemes || []).find(p => p.id === state.activeSchemeId)
+  const activeScheme = opts.scheme || (state.styleSchemes || []).find(p => p.id === state.activeSchemeId)
     || DEFAULT_STYLE_SCHEME();
   const style = styleForExport(activeScheme);
 
@@ -12728,8 +12751,8 @@ function buildSpec() {
   // whole deck) — content slides there get the QR-version Gradient macro when
   // this export's QR toggle is on. The marker itself is sent along so the
   // builder can turn it into the Questions (QR) + plain blank pair.
-  const markerIdx = state.slides.findIndex(s => s.type === 'qrmarker');
-  const slides = state.slides
+  const markerIdx = deckSlides.findIndex(s => s.type === 'qrmarker');
+  const slides = deckSlides
     .map((slide, i) => {
       if (slide.type === 'qrmarker') return i === markerIdx ? { type: 'qrmarker' } : null;
       const out = slide.type === 'alias' ? exportAlias(slide) : exportSlide(slide);
@@ -12739,8 +12762,8 @@ function buildSpec() {
     .filter(Boolean);
 
   return {
-    name:                buildFileName(),
-    deckId:              state.currentDeckId || null,
+    name:                opts.name || buildFileName(),
+    deckId:              opts.slides ? null : (state.currentDeckId || null),
     qrCode:              !!state.config.qrCode,
     qrMacro:             state.config.qrMacro || null,
     gradientMacro:       state.config.gradientMacro || null,
@@ -12996,6 +13019,51 @@ function preflightWarnings() {
   return items;
 }
 
+// Recompute fit-width for a slide whose cache is actually stale (see generate).
+function measureSlideForExport(slide, scheme) {
+  // Scripture is always measured — both displays' Auto Title Y need the
+  // real line count + metrics even when Fit Width isn't resizing the box
+  // (measureOnly: keep the static box, take only the measurements).
+  const measureOnly = !slide.fitWidth && slide.type === 'scripture';
+  if (!slide.fitWidth && !measureOnly) return;
+  const needsProp = slide.propFitWidth || slide.type === 'scripture';
+  const bodyStale = slide.bodyFitHash == null || slide.bodyFitHash !== _fitCurrentBodyHash(slide, scheme, 'main');
+  const propStale = needsProp &&
+    (slide.propBodyFitHash == null || slide.propBodyFitHash !== _fitCurrentBodyHash(slide, scheme, 'prop'));
+  if (!bodyStale && !propStale) return;
+  const r = computeSlideFitWidth(slide, scheme);
+  if (r) {
+    // An unfitted box shows Pro7's natural wrap at the full Styles width.
+    slide.bodyLines = (measureOnly ? r.bodyStaticLines : r.bodyLines) ?? null;
+    slide.propBodyLines = r.propBodyLines ?? null;
+    if (!measureOnly) {
+      slide.bodyW = r.bodyW; slide.bodyX = r.bodyX;
+      slide.propBodyW = r.propBodyW ?? null; slide.propBodyX = r.propBodyX ?? null;
+    }
+    // Hard punctuation breaks apply to single-mode point body text and to
+    // scripture — never to revealing points (see computeSlideFitWidth) —
+    // and only when Fit Width is actually fitting the box.
+    const carriesBreaks = !measureOnly && (slide.type === 'scripture' || (slide.type === 'point' && slide.mode !== 'revealing'));
+    slide._fitBrokenText = carriesBreaks ? (r.brokenText || null) : null;
+    slide._fitBrokenSpans = carriesBreaks ? (r.brokenSpans || null) : null;
+    slide._fitPropBrokenText = carriesBreaks ? (r.propBrokenText || null) : null;
+    slide._fitPropBrokenSpans = carriesBreaks ? (r.propBrokenSpans || null) : null;
+    slide.bodyAscent = r.ascent ?? null;
+    slide.bodyDescent = r.descent ?? null;
+    slide.bodyCapAscent = r.capAscent ?? null;
+    slide.propAscent = r.propAscent ?? null;
+    slide.propDescent = r.propDescent ?? null;
+    slide.propCapAscent = r.propCapAscent ?? null;
+    slide.titleAscent = r.titleAscent ?? null;
+    slide.titleDescent = r.titleDescent ?? null;
+    slide.propTitleAscent = r.propTitleAscent ?? null;
+    slide.propTitleDescent = r.propTitleDescent ?? null;
+    slide.bodyFitHash = r.fitHash ?? null;
+    slide.propBodyFitHash = r.propFitHash ?? null;
+    storeFitCapacity(slide, r);
+  }
+}
+
 async function generate() {
   const btn = document.getElementById('btn-generate');
 
@@ -13026,49 +13094,7 @@ async function generate() {
   // re-measuring every fitWidth slide on every export.
   try {
     const scheme = activeStyleScheme();
-    for (const slide of state.slides) {
-      // Scripture is always measured — both displays' Auto Title Y need the
-      // real line count + metrics even when Fit Width isn't resizing the box
-      // (measureOnly: keep the static box, take only the measurements).
-      const measureOnly = !slide.fitWidth && slide.type === 'scripture';
-      if (!slide.fitWidth && !measureOnly) continue;
-      const needsProp = slide.propFitWidth || slide.type === 'scripture';
-      const bodyStale = slide.bodyFitHash == null || slide.bodyFitHash !== _fitCurrentBodyHash(slide, scheme, 'main');
-      const propStale = needsProp &&
-        (slide.propBodyFitHash == null || slide.propBodyFitHash !== _fitCurrentBodyHash(slide, scheme, 'prop'));
-      if (!bodyStale && !propStale) continue;
-      const r = computeSlideFitWidth(slide, scheme);
-      if (r) {
-        // An unfitted box shows Pro7's natural wrap at the full Styles width.
-        slide.bodyLines = (measureOnly ? r.bodyStaticLines : r.bodyLines) ?? null;
-        slide.propBodyLines = r.propBodyLines ?? null;
-        if (!measureOnly) {
-          slide.bodyW = r.bodyW; slide.bodyX = r.bodyX;
-          slide.propBodyW = r.propBodyW ?? null; slide.propBodyX = r.propBodyX ?? null;
-        }
-        // Hard punctuation breaks apply to single-mode point body text and to
-        // scripture — never to revealing points (see computeSlideFitWidth) —
-        // and only when Fit Width is actually fitting the box.
-        const carriesBreaks = !measureOnly && (slide.type === 'scripture' || (slide.type === 'point' && slide.mode !== 'revealing'));
-        slide._fitBrokenText = carriesBreaks ? (r.brokenText || null) : null;
-        slide._fitBrokenSpans = carriesBreaks ? (r.brokenSpans || null) : null;
-        slide._fitPropBrokenText = carriesBreaks ? (r.propBrokenText || null) : null;
-        slide._fitPropBrokenSpans = carriesBreaks ? (r.propBrokenSpans || null) : null;
-        slide.bodyAscent = r.ascent ?? null;
-        slide.bodyDescent = r.descent ?? null;
-        slide.bodyCapAscent = r.capAscent ?? null;
-        slide.propAscent = r.propAscent ?? null;
-        slide.propDescent = r.propDescent ?? null;
-        slide.propCapAscent = r.propCapAscent ?? null;
-        slide.titleAscent = r.titleAscent ?? null;
-        slide.titleDescent = r.titleDescent ?? null;
-        slide.propTitleAscent = r.propTitleAscent ?? null;
-        slide.propTitleDescent = r.propTitleDescent ?? null;
-        slide.bodyFitHash = r.fitHash ?? null;
-        slide.propBodyFitHash = r.propFitHash ?? null;
-        storeFitCapacity(slide, r);
-      }
-    }
+    for (const slide of state.slides) measureSlideForExport(slide, scheme);
   } catch (_) { /* non-fatal — export continues without fit-width pre-computation */ }
 
   // Always export directly to Pro7
@@ -13558,6 +13584,260 @@ function showMergeDecisionModal(changes) {
     overlay.querySelector('#merge-decision-merge')?.addEventListener('click', () => { overlay.remove(); resolve('merge'); });
     overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); resolve(null); } });
   });
+}
+
+// ─── Style sample round trip ─────────────────────────────────────────────────
+// "Export style sample" sends a small deck in one style to Pro7; after it's
+// restyled there, "Import style sample" reads what changed (styleSample.js on
+// the server) and turns it into edits on that style — or on a copy of it.
+
+// Must match SAMPLE_LABELS / SAMPLE_EMPHASIS_WORD in styleSample.js.
+const STYLE_SAMPLE_LABELS = { start: 'Start of Notes', scripture: 'Sample Scripture', point: 'Sample Point' };
+const STYLE_SAMPLE_EMPHASIS = 'loved';
+
+function buildStyleSampleSlides() {
+  return [
+    { id: 'ss-start', type: 'start', label: STYLE_SAMPLE_LABELS.start, text: 'Start of Notes' },
+    { id: 'ss-scripture', type: 'scripture', label: STYLE_SAMPLE_LABELS.scripture, reference: 'John 3:16', propName: 'Sample Scripture',
+      bodies: [[
+        { text: '16 ', verseNum: true, super: true, alt: false, bold: false, italic: false, underline: false },
+        { text: 'For God so ' }, { text: STYLE_SAMPLE_EMPHASIS, alt: true },
+        { text: ' the world, that he gave his only Son, that whoever believes in him should not perish but have eternal life.' },
+      ]],
+      fitWidth: false },
+    { id: 'ss-point', type: 'point', mode: 'single', label: STYLE_SAMPLE_LABELS.point, bodyText: 'Love goes first', propName: 'Sample Point', fitWidth: false },
+    { id: 'ss-blank', type: 'blank', label: 'Sample Blank', spans: [{ text: 'Blank slide' }] },
+    { id: 'ss-end', type: 'end', label: 'End of Notes', text: 'End of Notes' },
+  ];
+}
+
+async function exportStyleSample(scheme) {
+  if (!scheme) return;
+  const autoManage = state.config.autoManagePro7 === true;
+  try {
+    const { running } = await (await fetch('/api/pro7/process')).json();
+    if (running && !autoManage) { showProRunningModal(); return; }
+  } catch (_) { /* can't check — try anyway */ }
+
+  const slides = buildStyleSampleSlides();
+  try { for (const s of slides) measureSlideForExport(s, scheme); } catch (_) {}
+  const spec = buildSpec({ slides, scheme, name: 'DeckPro Style Sample' });
+  spec.includeResponseCard = true;
+  spec.autoManagePro7 = autoManage;
+
+  const steps = ['Building style sample', 'Writing to ProPresenter library', 'Writing props'];
+  if (autoManage) { steps.unshift('Closing ProPresenter (if open)'); steps.push('Relaunching ProPresenter'); }
+  showDeliveryOverlay(steps, { title: 'Exporting style sample', subtitle: scheme.name || 'Style', ...(autoManage ? { onCancel: requestExportCancel } : {}) });
+  updateDeliveryStep(0, false);
+  try {
+    const data = await fetch('/api/style-sample/export', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spec, styleId: scheme.id, styleName: scheme.name }),
+    }).then(r => r.json());
+    if (data.cancelled) { hideDeliveryOverlay(); toast('info', 'Style sample cancelled', 'Nothing was written.'); return; }
+    if (!data.ok) { hideDeliveryOverlay(); toast('error', 'Style sample failed', data.error || 'Unknown error'); return; }
+    for (let i = 0; i < steps.length; i++) { updateDeliveryStep(i, true); await new Promise(r => setTimeout(r, 200)); }
+    hideDeliveryOverlay();
+    toast('success', 'Style sample is in ProPresenter',
+      `Open “DeckPro Style Sample”, restyle it (LED wall: the “DeckPro Style Sample” props), then click Import style sample.`);
+    if (data.propsInstalled === false) toast('warn', 'LED wall props not installed', data.propsError || 'Configuration/Props not found');
+  } catch (err) {
+    hideDeliveryOverlay();
+    toast('error', 'Style sample failed', err.message);
+  }
+}
+
+// What each element of the sample is in a style: its font field, size field,
+// advanced-styling row and layout-box prefix.
+const STYLE_SAMPLE_ROLES = {
+  body:      { label: 'Scripture text',            font: 'bodyFont',      size: 'bodySize',      adv: 'bodyFontAdv',      box: 'body' },
+  bold:      { label: 'Emphasis words',            font: 'boldFont',                             adv: 'boldFontAdv' },
+  title:     { label: 'Scripture reference',       font: 'titleFont',     size: 'titleSize',     adv: 'titleFontAdv',     box: 'title' },
+  live:      { label: 'Live badge',                font: 'liveFont',      size: 'liveSize',      adv: 'liveFontAdv',      box: 'live' },
+  queue:     { label: 'Queue',                     font: 'queueFont',     size: 'queueSize',     adv: 'queueFontAdv',     box: 'queue' },
+  point:     { label: 'Point text',                font: 'pointFont',     size: 'pointSize',     adv: 'pointFontAdv',     box: 'point' },
+  startEnd:  { label: 'Start / End banner',        font: 'startEndFont',  size: 'startEndSize',  adv: 'startEndFontAdv',  box: 'startEnd' },
+  propBody:  { label: 'LED wall scripture text',   font: 'propBodyFont',  size: 'propBodySize',  adv: 'propBodyFontAdv',  box: 'propBody' },
+  propBold:  { label: 'LED wall emphasis words',   font: 'propBoldFont',                         adv: 'propBoldFontAdv' },
+  propTitle: { label: 'LED wall reference',        font: 'propTitleFont', size: 'propTitleSize', adv: 'propTitleFontAdv', box: 'propTitle' },
+  propPoint: { label: 'LED wall point text',       font: 'propPointFont', size: 'propPointSize', adv: 'propPointFontAdv', box: 'propPoint' },
+};
+const STYLE_SAMPLE_AUTO_TITLE = { title: ['autoTitleY', 'titleAutoGap', 'body'], propTitle: ['propAutoTitleY', 'propTitleAutoGap', 'propBody'] };
+
+// Pro7 observations → [{ role, text, apply(scheme) }]: plain-language rows
+// for the review dialog, each knowing how to write itself into a style.
+// Box moves/resizes are deltas on the style's own (resolved) values, so
+// anything DeckPro adds on export (yOffset, centring) carries over unchanged.
+function styleSampleEdits(observations, scheme) {
+  const resolved = styleForExport(scheme);
+  const edits = [];
+  const byRole = {};
+  for (const o of observations) (byRole[o.role] ||= {})[o.prop] = o;
+  const r1 = n => Math.round(n * 10) / 10;
+  const px = n => `${r1(Math.abs(n))} px`;
+  const advSet = (key, fields) => sch => { Object.assign(forkAdv(sch, key), fields); };
+
+  for (const [role, props] of Object.entries(byRole)) {
+    if (role === 'transition') continue;
+    const def = STYLE_SAMPLE_ROLES[role];
+    if (!def) continue;
+    const add = (text, apply) => edits.push({ role, label: def.label, text, apply });
+    const dy = (props.y?.newValue ?? 0) - (props.y?.oldValue ?? 0);
+    for (const [prop, o] of Object.entries(props)) {
+      const d = (typeof o.newValue === 'number' && typeof o.oldValue === 'number') ? o.newValue - o.oldValue : 0;
+      if (['x', 'y', 'w', 'h'].includes(prop)) {
+        if (!def.box) continue;
+        const auto = STYLE_SAMPLE_AUTO_TITLE[role];
+        if (prop === 'y' && auto && resolved[auto[0]]) {
+          // Auto Title Y: the title follows the text, so only the part of the
+          // move that isn't the text moving too changes the gap.
+          const bodyDy = byRole[auto[2]]?.y ? byRole[auto[2]].y.newValue - byRole[auto[2]].y.oldValue : 0;
+          const rel = dy - bodyDy;
+          if (Math.abs(rel) < 0.5) continue;
+          const gap = r1((resolved[auto[1]] ?? 16) - rel);
+          add(`moved ${rel < 0 ? 'up' : 'down'} ${px(rel)} (gap above the text → ${gap} px)`, sch => { sch[auto[1]] = gap; });
+          continue;
+        }
+        const field = def.box + prop.toUpperCase();
+        const v = r1((resolved[field] ?? 0) + d);
+        const what = prop === 'x' ? `moved ${d < 0 ? 'left' : 'right'} ${px(d)}` : prop === 'y' ? `moved ${d < 0 ? 'up' : 'down'} ${px(d)}`
+          : `${prop === 'w' ? 'width' : 'height'} ${d < 0 ? '−' : '+'}${px(d)}`;
+        add(what, sch => { sch[field] = v; });
+      } else if (prop === 'font') {
+        add(`font → ${o.newValue}`, sch => { sch.fontFields = { ...(sch.fontFields || {}), [def.font]: o.newValue }; });
+      } else if (prop === 'size') {
+        if (!def.size) continue;
+        add(`size ${o.oldValue} → ${o.newValue} pt`, sch => { sch.typography = { ...(sch.typography || {}), [def.size]: o.newValue }; });
+      } else if (prop === 'color') {
+        add(`colour → ${o.newValue}`, advSet(def.adv, { color: normalizeHexColor(o.newValue) }));
+      } else if (prop === 'align') {
+        if (o.newValue === 'justify') continue;
+        add(`aligned ${o.newValue}`, advSet(def.adv, { alignment: o.newValue }));
+      } else if (prop === 'italic' || prop === 'underline') {
+        add(`${prop} ${o.newValue ? 'on' : 'off'}`, advSet(def.adv, { [prop]: !!o.newValue }));
+      } else if (prop === 'caps') {
+        add(`all caps ${o.newValue ? 'on' : 'off'}`, advSet(def.adv, { capitalization: o.newValue ? 'allCaps' : '' }));
+      } else if (prop === 'charSpacing') {
+        add(`letter spacing ${o.oldValue} → ${o.newValue}`, advSet(def.adv, { charSpacing: o.newValue }));
+      } else if (prop === 'lineHeight') {
+        add(`line height ${o.oldValue} → ${o.newValue}`, advSet(def.adv, { lineHeight: o.newValue }));
+      } else if (prop === 'spaceBefore' || prop === 'spaceAfter') {
+        add(`space ${prop === 'spaceBefore' ? 'before' : 'after'} paragraphs ${o.oldValue} → ${o.newValue} pt`,
+          advSet(def.adv, { [prop === 'spaceBefore' ? 'paragraphSpacingBefore' : 'paragraphSpacingAfter']: o.newValue }));
+      } else if (prop === 'verticalAlignment') {
+        if (!o.newValue) continue;
+        add(`vertical alignment → ${o.newValue}`, advSet(def.adv, { verticalAlignment: o.newValue }));
+      } else if (/^margin/.test(prop)) {
+        add(`${prop.replace('margin', '').toLowerCase()} margin ${o.oldValue} → ${o.newValue}`, advSet(def.adv, { [prop]: o.newValue }));
+      } else if (prop === 'shadow') {
+        const s = o.newValue;
+        add(s.enabled ? `text shadow ${s.color}, offset ${s.offset}, blur ${s.blur}, ${s.opacity}%` : 'text shadow off',
+          advSet(def.adv, s.enabled
+            ? { shadowEnabled: true, shadowColor: s.color, shadowOffset: s.offset, shadowBlur: s.blur, shadowAngle: s.angle, shadowOpacity: s.opacity }
+            : { shadowEnabled: false }));
+      } else if (prop === 'stroke') {
+        const k = o.newValue;
+        add(k.width > 0 ? `outline ${k.width} px ${k.color || ''}`.trim() : 'outline off',
+          advSet(def.adv, k.width > 0 ? { strokeEnabled: true, strokeWidth: k.width, strokeColor: k.color || '#000000' } : { strokeEnabled: false }));
+      }
+    }
+  }
+  const tr = byRole.transition;
+  if (tr?.type?.newValue && TRANSITION_TYPES_FOR_SAMPLE.includes(tr.type.newValue)) {
+    edits.push({ role: 'transition', label: 'Slide transition', text: `→ ${tr.type.newValue}`, apply: sch => { sch.transitionType = tr.type.newValue; } });
+  }
+  if (tr?.duration) {
+    edits.push({ role: 'transition', label: 'Slide transition', text: `${tr.duration.oldValue}s → ${tr.duration.newValue}s`, apply: sch => { sch.transitionDuration = tr.duration.newValue; } });
+  }
+  return edits;
+}
+const TRANSITION_TYPES_FOR_SAMPLE = ['fade', 'dissolve', 'cut'];
+
+const STYLE_SAMPLE_MISSING_LABELS = {
+  scripture: 'the scripture slide', point: 'the point slide', start: 'the Start slide',
+  'prop:scripture': 'the LED wall scripture prop', 'prop:point': 'the LED wall point prop',
+};
+
+function showStyleSampleModal(edits, info) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'warn-overlay';
+    const groups = [];
+    for (const e of edits) {
+      const g = groups.find(x => x.label === e.label);
+      if (g) g.items.push(e.text); else groups.push({ label: e.label, items: [e.text] });
+    }
+    const rows = groups.map(g => `<li class="warn-item"><span class="warn-msg"><strong>${esc(g.label)}</strong> — ${g.items.map(esc).join(', ')}</span></li>`).join('');
+    const missing = (info.missing || []).map(m => STYLE_SAMPLE_MISSING_LABELS[m] || STYLE_SAMPLE_ROLES[m]?.label || m);
+    const notes = [
+      missing.length ? `Couldn’t find ${missing.map(esc).join(', ')} — deleted or renamed in Pro7, so nothing was read from ${missing.length > 1 ? 'them' : 'it'}.` : '',
+      info.propsMayBeStale ? 'ProPresenter is still open, so LED wall changes may not be saved yet — quit ProPresenter and import again to be sure.' : '',
+      'Not read yet: Response Card styling and the confidence-monitor text.',
+    ].filter(Boolean).map(t => `<p class="ss-note">${t}</p>`).join('');
+    const canUpdate = !!info.original && !info.original.isLocked;
+    overlay.innerHTML = `
+      <div class="warn-modal">
+        <div class="warn-hdr"><span>Changes from the style sample</span></div>
+        <p style="font-size:12.5px;color:var(--muted);margin:0 0 8px;line-height:1.4">
+          Restyled in ProPresenter from <b>${esc(info.styleName || 'a style')}</b>.
+          ${canUpdate ? '<b>Update original</b> changes that style; <b>New style</b> keeps it and saves these changes as a copy.'
+            : info.original ? 'That style is locked, so these changes can only be saved as a new style.'
+            : 'That style no longer exists, so these changes will be saved as a new style.'}
+        </p>
+        <ul class="warn-list">${rows}</ul>
+        ${notes}
+        <div class="warn-actions">
+          <button class="warn-btn-cancel">Cancel</button>
+          ${canUpdate ? '<button class="warn-btn-fixall" id="ss-update">Update original</button>' : ''}
+          <button class="warn-btn-ok" id="ss-new">New style</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const done = v => { overlay.remove(); resolve(v); };
+    overlay.querySelector('.warn-btn-cancel').addEventListener('click', () => done(null));
+    overlay.querySelector('#ss-update')?.addEventListener('click', () => done('update'));
+    overlay.querySelector('#ss-new').addEventListener('click', () => done('new'));
+    overlay.addEventListener('click', e => { if (e.target === overlay) done(null); });
+  });
+}
+
+async function importStyleSample(onDone) {
+  const autoManage = state.config.autoManagePro7 === true;
+  showDeliveryOverlay(autoManage ? ['Closing ProPresenter (if open)', 'Reading style sample', 'Relaunching ProPresenter'] : ['Reading style sample'],
+    { title: 'Importing style sample', subtitle: 'Reading your ProPresenter changes' });
+  let data;
+  try {
+    data = await fetch('/api/style-sample/read', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ autoManagePro7: autoManage, pro7RootFolder: state.config.pro7RootFolder || '' }),
+    }).then(r => r.json());
+  } catch (err) { data = { ok: false, error: err.message }; }
+  hideDeliveryOverlay();
+  if (!data.ok) { toast('error', 'Could not import style sample', data.error || 'Unknown error'); return; }
+
+  const original = state.styleSchemes.find(s => s.id === data.styleId) || null;
+  const base = original || state.styleSchemes.find(s => s.id === state.activeSchemeId) || state.styleSchemes[0];
+  const edits = styleSampleEdits(data.observations || [], base);
+  if (!edits.length) {
+    toast('info', 'No style changes found', (data.missing || []).length
+      ? 'Some sample slides were missing — export a new style sample and try again.'
+      : `The style sample still matches ${data.styleName || 'its style'}.`);
+    return;
+  }
+  const choice = await showStyleSampleModal(edits, { ...data, original });
+  if (!choice) return;
+  let target;
+  if (choice === 'update') {
+    target = original;
+  } else {
+    target = { ...deepClone(base), id: 'scheme_' + Date.now(), name: `${base.name || 'Style'} (from Pro7)`, isDefault: false, isLocked: false };
+    state.styleSchemes.push(target);
+  }
+  for (const e of edits) e.apply(target);
+  state.activeSchemeId = target.id;
+  saveState();
+  onDone?.();
+  toast('success', choice === 'update' ? 'Style updated' : 'New style created', `${target.name}: ${edits.length} change${edits.length === 1 ? '' : 's'} from ProPresenter`);
 }
 
 function showProRunningModal() {

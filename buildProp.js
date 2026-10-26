@@ -769,7 +769,16 @@ async function encodePropDocument(propDocObj) {
   return PropDocument.encode(msg).finish();
 }
 
+// A PropDocument buffer (a _Props.pro or Configuration/Props) as a plain
+// object, same options as encode.js's decodePresentationBuffer.
+async function decodePropDocument(buf) {
+  const root = await getRoot();
+  const PropDocument = root.lookupType('rv.data.PropDocument');
+  return PropDocument.toObject(PropDocument.decode(buf), { enums: String, defaults: true });
+}
+
 module.exports = {
+  decodePropDocument,
   buildScripturePropCue,
   buildPointSinglePropCue,
   buildRevealingPointPropCue,

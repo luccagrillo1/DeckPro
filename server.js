@@ -7,7 +7,8 @@ const os           = require('os');
 const http         = require('http');
 const https        = require('https');
 const { execSync } = require('child_process');
-const { encode, encodeDeliverPair, listPropsBackups, restorePropsBackup, decodePresentationBuffer } = require('./encode');
+const { encode, encodeDeliverPair, listPropsBackups, restorePropsBackup, decodePresentationBuffer, readConfigPropCues, propBank } = require('./encode');
+const { observeStyleChanges } = require('./styleSample');
 const { extractScheme, listPresentations } = require('./extractScheme');
 const { diffPresentations } = require('./diffPresentation');
 const library              = require('./library');
@@ -1486,6 +1487,100 @@ app.post('/api/generate', async (req, res) => {
     });
   } catch (err) {
     console.error('Generate error:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ─── Style sample round trip (see styleSample.js) ─────────────────────────
+// What the last "Export style sample" wrote — the baseline the import diffs
+// the user's Pro7 edits against.
+const STYLE_SAMPLE_FILE = path.join(DATA_DIR, 'style-sample.json');
+
+app.post('/api/style-sample/export', async (req, res) => {
+  try {
+    const { spec, styleId, styleName } = req.body || {};
+    if (!spec || !Array.isArray(spec.slides)) return res.status(400).json({ ok: false, error: 'Missing spec' });
+    const bank = propBank(3);
+    // A look-only deck: own prop collection, no deck history/merge, no macros.
+    Object.assign(spec, {
+      name: 'DeckPro Style Sample', deckId: null, deliverMode: true, propCollection: 3, styleSample: true,
+      qrCode: false, qrMacro: null, gradientMacro: null, gradientMacroQr: null, externalContent: false,
+      customMacros: [], stageDisplays: [],
+    });
+    _exportCancelRequested = false;
+    let pro7WasRunning = false, pro7Relaunched = false;
+    if (spec.autoManagePro7 === true && pro7IsRunning()) {
+      pro7WasRunning = true;
+      const quit = await quitPro7AndWait(60000, () => _exportCancelRequested);
+      if (quit === 'cancelled') { if (pro7IsRunning()) launchPro7(); return res.json({ ok: false, cancelled: true }); }
+      if (!quit) return res.status(409).json({ ok: false, error: 'Could not close ProPresenter — close it manually and retry.' });
+    }
+    let result;
+    try { result = await encode(spec); }
+    finally { if (pro7WasRunning) pro7Relaunched = launchPro7(); }
+
+    // Scripture takes the bank's first slot, the single point the second
+    // (collectPropSpecs hands slots out in slide order).
+    const cueFor = u => (result.propCuesSnapshot || []).find(c => c.uuid?.string === u) || null;
+    const record = {
+      styleId: styleId || null, styleName: styleName || '',
+      exportedAt: new Date().toISOString(),
+      path: result.presentationPath,
+      pro7RootFolder: spec.pro7RootFolder || '',
+      presentation: result.presentationSnapshot,
+      propUuids: { scripture: bank.slots[0].uuid, point: bank.slots[1].uuid },
+      props: { scripture: cueFor(bank.slots[0].uuid), point: cueFor(bank.slots[1].uuid) },
+    };
+    fs.writeFileSync(STYLE_SAMPLE_FILE, JSON.stringify(record));
+    res.json({ ok: true, path: result.presentationPath, propsInstalled: result.propsInstalled !== false, propsError: result.propsError || null, pro7Relaunched });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.get('/api/style-sample', (req, res) => {
+  try {
+    if (!fs.existsSync(STYLE_SAMPLE_FILE)) return res.json({ ok: true, sample: null });
+    const r = JSON.parse(fs.readFileSync(STYLE_SAMPLE_FILE, 'utf8'));
+    res.json({ ok: true, sample: { styleId: r.styleId, styleName: r.styleName, exportedAt: r.exportedAt, path: r.path, exists: fs.existsSync(r.path) } });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post('/api/style-sample/read', async (req, res) => {
+  try {
+    if (!fs.existsSync(STYLE_SAMPLE_FILE)) return res.json({ ok: false, error: 'No style sample has been exported yet.' });
+    const record = JSON.parse(fs.readFileSync(STYLE_SAMPLE_FILE, 'utf8'));
+    if (!record.path || !fs.existsSync(record.path)) {
+      return res.json({ ok: false, error: 'The style sample is no longer in your ProPresenter library — export a new one.' });
+    }
+    // Pro7 only writes the LED-wall props (Configuration/Props) when it quits,
+    // so close it first when DeckPro is allowed to; otherwise read what's on
+    // disk and say the LED wall may be behind.
+    const autoManage = req.body?.autoManagePro7 === true;
+    let pro7WasRunning = false, pro7Relaunched = false, propsMayBeStale = false;
+    if (pro7IsRunning()) {
+      if (autoManage) {
+        pro7WasRunning = true;
+        const quit = await quitPro7AndWait(60000);
+        if (!quit) return res.status(409).json({ ok: false, error: 'Could not close ProPresenter — close it manually and retry.' });
+      } else {
+        propsMayBeStale = true;
+      }
+    }
+    let cur;
+    try {
+      const pres = await decodePresentationBuffer(fs.readFileSync(record.path));
+      const uuids = Object.values(record.propUuids || {});
+      const propCues = await readConfigPropCues(uuids, req.body?.pro7RootFolder ?? record.pro7RootFolder ?? '') || {};
+      cur = { pres, props: { scripture: propCues[record.propUuids?.scripture] || null, point: propCues[record.propUuids?.point] || null } };
+    } finally {
+      if (pro7WasRunning) pro7Relaunched = launchPro7();
+    }
+    const { observations, missing } = observeStyleChanges({ pres: record.presentation, props: record.props || {} }, cur);
+    res.json({ ok: true, styleId: record.styleId, styleName: record.styleName, exportedAt: record.exportedAt, observations, missing, propsMayBeStale, pro7Relaunched });
+  } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
 });

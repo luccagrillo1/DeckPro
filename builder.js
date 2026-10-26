@@ -1825,6 +1825,9 @@ function buildPresentation(spec, propUuidMap = {}) {
     delete cue._isRcContent;
     delete cue._isRcHold;
     delete cue._slideTransition;
+    // The style sample is for looking at, never for running live — no macro
+    // (Companion/Resolume) or stage-layout triggers on any of its slides.
+    if (spec.styleSample) cue.actions = cue.actions.filter(a => a.type !== 'ACTION_TYPE_MACRO' && a.type !== 'ACTION_TYPE_STAGE_LAYOUT');
   }
 
   const presentationUuid = uuid();

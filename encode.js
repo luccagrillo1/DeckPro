@@ -17,7 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { buildPresentation, resolveStyle } = require('./builder');
-const { buildAllPropCues, encodePropDocument } = require('./buildProp');
+const { buildAllPropCues, encodePropDocument, decodePropDocument } = require('./buildProp');
 
 // ─── Pro7 config backup safety net ──────────────────────────────────────────
 // Before each export we patch Pro7's Configuration/Props in place. Keep a
@@ -279,11 +279,25 @@ const DECKPRO_PROP_SLOTS_2 = [
   { slot: 'prop2_50', uuid: '25B6576C-F1C6-439A-B9B3-7766F86AD289' },
 ];
 
+// Bank 3 is the style sample's own collection (see styleSample.js) — never
+// used by a real deck, so restyling the sample can't touch Slot 1/2 props.
+const STYLE_SAMPLE_PROP_SLOTS = [
+  { slot: 'sample_1', uuid: '83E3E74E-CA9F-488A-9A19-74B08E966EB3' },
+  { slot: 'sample_2', uuid: 'A5DD5D6F-8C0C-4F3E-8C60-90B2FE45B4AB' },
+  { slot: 'sample_3', uuid: 'C94A1D1B-4525-4474-8CC4-0B6BF6F8577D' },
+  { slot: 'sample_4', uuid: '4F5BA659-7EBC-4F26-AEA5-D8DC94B82C1F' },
+  { slot: 'sample_5', uuid: '3E11A4E1-4681-4D57-AE75-6A98D30253B4' },
+  { slot: 'sample_6', uuid: '985187C5-5760-4BE5-8ED2-EEE8897C56A7' },
+  { slot: 'sample_7', uuid: '16BA4E3E-A72A-4F4D-8CF9-E318E84B2CA8' },
+  { slot: 'sample_8', uuid: 'D354D729-1212-4C0A-94E5-F48F9A9A491B' },
+];
+
 const PROP_BANKS = {
   // legacyNames: earlier names for the same collection — matched so an existing
   // collection is renamed in place on the next export instead of duplicated.
   1: { name: 'DeckPro Slot 1', legacyNames: ['DeckPro'],   collectionUuid: 'DECADE00-CAFE-4000-8000-BABE00000001', slots: DECKPRO_PROP_SLOTS },
   2: { name: 'DeckPro Slot 2', legacyNames: ['DeckPro 2'], collectionUuid: 'DECADE00-CAFE-4000-8000-BABE00000002', slots: DECKPRO_PROP_SLOTS_2 },
+  3: { name: 'DeckPro Style Sample', legacyNames: [], collectionUuid: 'DECADE00-CAFE-4000-8000-BABE00000003', slots: STYLE_SAMPLE_PROP_SLOTS },
 };
 for (const b of Object.values(PROP_BANKS)) {
   b.uuidSet = new Set(b.slots.map(s => s.uuid));
@@ -291,7 +305,7 @@ for (const b of Object.values(PROP_BANKS)) {
 }
 
 function propBank(n) {
-  return PROP_BANKS[Number(n) === 2 ? 2 : 1];
+  return PROP_BANKS[Number(n)] || PROP_BANKS[1];
 }
 
 const PROTO_PATH = path.join(__dirname, 'ProPresenter7-Proto/proto/propresenter.proto');
@@ -966,7 +980,8 @@ async function encode(spec, outputPath, opts = {}) {
         propsError = r.reason || 'Configuration/Props not found';
       }
     }
-    return { presentationBytes: presentationBuf.length, props: writtenProps, presentationPath: presPath, delivered: true, propsBackup, propsInstalled, propsError, propCollectionName: bank.name, presentationSnapshot };
+    return { presentationBytes: presentationBuf.length, props: writtenProps, presentationPath: presPath, delivered: true, propsBackup, propsInstalled, propsError, propCollectionName: bank.name, presentationSnapshot,
+      propCuesSnapshot: propBuf ? (await decodePropDocument(propBuf)).cues || [] : null };
   }
 
   // Local file mode — write to disk
@@ -1067,4 +1082,17 @@ async function encodeDeliverPair(specA, specB, opts = {}) {
   };
 }
 
-module.exports = { encode, encodeDeliverPair, encodeToBuffer, encodeToBufferWithMerge, decodePresentationBuffer, listPropsBackups, restorePropsBackup, getPropsConfigPath };
+/**
+ * The prop cues with these UUIDs as Configuration/Props holds them right now
+ * (decoded like decodePresentationBuffer) — { uuid: cue }. Pro7 rewrites this
+ * file on quit, so read it with Pro7 closed to see the latest edits.
+ */
+async function readConfigPropCues(uuids, pro7RootFolder = '') {
+  const confPath = getPropsConfigPath(pro7RootFolder);
+  if (!fs.existsSync(confPath)) return null;
+  const doc = await decodePropDocument(fs.readFileSync(confPath));
+  const want = new Set(uuids);
+  return Object.fromEntries((doc.cues || []).filter(c => want.has(c.uuid?.string)).map(c => [c.uuid.string, c]));
+}
+
+module.exports = { encode, readConfigPropCues, propBank, encodeDeliverPair, encodeToBuffer, encodeToBufferWithMerge, decodePresentationBuffer, listPropsBackups, restorePropsBackup, getPropsConfigPath };
