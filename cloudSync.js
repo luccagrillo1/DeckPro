@@ -28,7 +28,7 @@ const CLOUD_URL = (process.env.DECKPRO_CLOUD_URL || 'https://deckpro-sync.luccag
 const ENABLED = !(process.env.DECKPRO_E2E === '1' && !process.env.DECKPRO_CLOUD_URL);
 
 const MACHINE_CONFIG_KEYS = [
-  'pro7Port', 'pro7Password', 'pro7RootFolder', 'pro7LibraryFolder', 'autoManagePro7',
+  'pro7Port', 'pro7Password', 'pro7RootFolder', 'pro7LibraryFolder', 'styleSampleLibraryFolder', 'autoManagePro7',
   'outputFolder', 'setupComplete', 'icloudSync', 'theme', 'updateChannel', 'bibleApiKey',
   // Stage screen UUIDs are made by each Mac's own Pro7 install.
   'stageScreen',

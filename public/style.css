@@ -5263,3 +5263,20 @@ details.settings-disclosure { border-top: 1px solid var(--border); background: t
    (Up/Down move it, Enter opens / picks it) */
 .deck-item.deck-item--kbd { box-shadow: inset 0 0 0 1.5px var(--blue); }
 .macro-picker-row.kbd-focus { box-shadow: inset 0 0 0 1.5px var(--blue, #3b82f6); }
+
+/* Settings → File Names block editor */
+.fn-editor { padding: 10px 0; border-top: 1px solid var(--border); }
+.fn-editor:first-of-type { border-top: none; }
+.fn-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.fn-head label { font-size: 13px; font-weight: 600; }
+.fn-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 8px; }
+.fn-chip { display: inline-flex; align-items: center; gap: 2px; padding: 3px 4px; border-radius: 6px; background: var(--surface2, rgba(127,127,127,.12)); border: 1px solid var(--border); font-size: 12.5px; font-weight: 600; }
+.fn-chip > span { padding: 0 4px; }
+.fn-chip button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; border-radius: 4px; }
+.fn-chip button:hover:not(:disabled) { color: var(--text); background: rgba(127,127,127,.18); }
+.fn-chip button:disabled { opacity: .25; cursor: default; }
+.fn-sep { color: var(--muted); font-family: ui-monospace, monospace; }
+.fn-add { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+.fn-add .fn-add-text { flex: 1 1 110px !important; }
+.fn-add select { min-width: 0; flex: 1 1 160px; }
+.fn-example { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--muted); word-break: break-all; }

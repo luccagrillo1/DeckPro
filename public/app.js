@@ -2,9 +2,18 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.10';
+const APP_VERSION = '4.41.11';
 
 const CHANGELOG = [
+  {
+    version: '4.41.11',
+    date: '2026-10-26',
+    changes: [
+      "File names are now building blocks: Settings → File Names lets you arrange Date, Time (24-hour), Series, Title, Style and your own text, separately for decks and style samples, with a live example. Version numbers (_v2) and _SAT always stay at the end.",
+      "Decks drop the \"Message_\" prefix and lead with the date: 26.11.01_Series_Title_v1. Because the name changed, the next export of an existing deck starts again at _v1. Add a \"Message\" text block in File Names if you want it back.",
+      "New Style Sample Library picker (Settings → Export) so style samples can go to a different ProPresenter library than your decks. Leave it on \"Same as Export Library\" to keep them together. It's per-Mac, like Export Library.",
+    ],
+  },
   {
     version: '4.41.10',
     date: '2026-10-26',
@@ -3415,6 +3424,9 @@ const DEFAULT_STATE = () => ({
     autoManagePro7:      false,
     pro7RootFolder:      '',
     pro7LibraryFolder:   '',
+    styleSampleLibraryFolder: '',
+    deckNameBlocks:      null,
+    sampleNameBlocks:    null,
     setupComplete:       false,
     icloudSync:          false, // machine-local: whether THIS Mac syncs portable settings via iCloud (never itself synced)
     theme:               '',
@@ -7458,6 +7470,19 @@ function renderConfigPanel(panel) {
         <div style="font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.5;margin-bottom:10px">
           Choose where DeckPro saves new .pro files. Auto-select follows Pro7's active library.
         </div>
+        <div class="settings-row" style="margin-top:8px;align-items:center">
+          <label style="min-width:110px">Style Sample Library</label>
+          <div class="folder-row" style="flex:1">
+            <select id="cfg-sample-library" style="flex:1;min-width:0">
+              <option value="">${cfg.pro7RootFolder ? 'Loading libraries...' : 'Choose Pro7 Folder first'}</option>
+            </select>
+            <button class="btn-browse" id="btn-sample-library-browse">Browse…</button>
+            ${cfg.styleSampleLibraryFolder ? `<button class="btn-browse" id="btn-sample-library-clear">Clear</button>` : ''}
+          </div>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.5;margin-bottom:10px">
+          Where Export Style Sample saves. Leave on "Same as Export Library" to keep samples with your decks.
+        </div>
         <div class="rc-toggle-row" id="automanage-row">
           <div class="toggle ${cfg.autoManagePro7 === true ? 'on' : ''}" id="automanage-toggle"></div>
           <span>Auto-manage ProPresenter on export</span>
@@ -7465,6 +7490,15 @@ function renderConfigPanel(panel) {
         <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
           When on, exporting will quit ProPresenter if it's open, write your deck and props, then relaunch it — so you never have to close it by hand. Turn off to be warned instead.
         </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>File Names</h3>
+        <div style="font-size:11.5px;color:var(--muted);line-height:1.5;margin-bottom:10px">
+          Build each file name from blocks, in order. Version numbers (_v2) and _SAT are always added at the end.
+        </div>
+        <div id="fn-editor-deck" class="fn-editor" data-kind="deck"></div>
+        <div id="fn-editor-sample" class="fn-editor" data-kind="sample"></div>
       </div>
 
       <div class="settings-section">
@@ -7730,7 +7764,7 @@ function renderConfigPanel(panel) {
       const data = await res.json();
       if (!data.ok || !data.folder) return;
       cfg.pro7RootFolder = normalizePro7RootFolder(data.folder);
-      if (!libraryBelongsToRoot(cfg.pro7LibraryFolder, cfg.pro7RootFolder)) cfg.pro7LibraryFolder = '';
+      clearForeignLibraries(cfg);
       saveState();
       const inp = document.getElementById('cfg-pro7-root');
       if (inp) inp.value = cfg.pro7RootFolder;
@@ -7742,6 +7776,7 @@ function renderConfigPanel(panel) {
   document.getElementById('btn-pro7-root-clear')?.addEventListener('click', () => {
     cfg.pro7RootFolder = '';
     cfg.pro7LibraryFolder = '';
+    cfg.styleSampleLibraryFolder = '';
     saveState();
     renderConfigPanel(document.getElementById('main-panel'));
   });
@@ -7769,6 +7804,32 @@ function renderConfigPanel(panel) {
     saveState();
     renderConfigPanel(document.getElementById('main-panel'));
   });
+
+  // Style sample library — blank means "same as Export Library"
+  loadPro7LibrarySelect(document.getElementById('cfg-sample-library'), cfg, cfg.pro7RootFolder, 'styleSampleLibraryFolder');
+  document.getElementById('cfg-sample-library')?.addEventListener('change', e => {
+    cfg.styleSampleLibraryFolder = e.target.value;
+    saveState();
+  });
+  document.getElementById('btn-sample-library-browse')?.addEventListener('click', async () => {
+    try {
+      const res = await fetch('/api/browse-folder');
+      const data = await res.json();
+      if (!data.ok || !data.folder) return;
+      cfg.styleSampleLibraryFolder = data.folder;
+      saveState();
+      renderConfigPanel(document.getElementById('main-panel'));
+    } catch (e) {
+      toast('error', 'Could not select folder', e.message || '');
+    }
+  });
+  document.getElementById('btn-sample-library-clear')?.addEventListener('click', () => {
+    cfg.styleSampleLibraryFolder = '';
+    saveState();
+    renderConfigPanel(document.getElementById('main-panel'));
+  });
+
+  document.querySelectorAll('.fn-editor').forEach(renderFileNameEditor);
 
   // Pro7 port + password
   document.getElementById('cfg-pro7port').addEventListener('change', e => {
@@ -7948,6 +8009,13 @@ function pathBaseName(p) {
   return parts[parts.length - 1] || '';
 }
 
+// A library picked under a different Pro7 folder no longer applies.
+function clearForeignLibraries(cfg) {
+  for (const k of ['pro7LibraryFolder', 'styleSampleLibraryFolder']) {
+    if (!libraryBelongsToRoot(cfg[k], cfg.pro7RootFolder)) cfg[k] = '';
+  }
+}
+
 function libraryBelongsToRoot(libraryPath, rootPath) {
   if (!libraryPath || !rootPath) return true;
   const root = normalizePro7RootFolder(rootPath).replace(/\/+$/, '');
@@ -8037,7 +8105,7 @@ function pro7LibraryOptionsForScan(data, rootPath) {
   })).filter(lib => lib.path);
 }
 
-function fillPro7LibrarySelect(select, cfg, data, rootPath) {
+function fillPro7LibrarySelect(select, cfg, data, rootPath, key = 'pro7LibraryFolder') {
   if (!select) return;
   const root = normalizePro7RootFolder(rootPath || cfg.pro7RootFolder || '');
   if (!root) {
@@ -8047,9 +8115,11 @@ function fillPro7LibrarySelect(select, cfg, data, rootPath) {
   }
 
   const options = pro7LibraryOptionsForScan(data, root);
-  const selected = cfg.pro7LibraryFolder || '';
+  const selected = cfg[key] || '';
   const active = options.find(o => o.active);
-  const autoLabel = active ? `Auto-select (${active.name})` : 'Auto-select active library';
+  const autoLabel = key === 'styleSampleLibraryFolder'
+    ? 'Same as Export Library'
+    : active ? `Auto-select (${active.name})` : 'Auto-select active library';
   const knownSelected = selected && options.some(o => o.path === selected);
 
   const rows = [
@@ -8065,22 +8135,85 @@ function fillPro7LibrarySelect(select, cfg, data, rootPath) {
   select.value = selected && (knownSelected || selected) ? selected : '';
 }
 
-async function loadPro7LibrarySelect(select, cfg, rootPath) {
+async function loadPro7LibrarySelect(select, cfg, rootPath, key = 'pro7LibraryFolder') {
   if (!select) return;
   if (!normalizePro7RootFolder(rootPath || cfg.pro7RootFolder || '')) {
-    fillPro7LibrarySelect(select, cfg, { pro7: { candidates: [] } }, rootPath);
+    fillPro7LibrarySelect(select, cfg, { pro7: { candidates: [] } }, rootPath, key);
     return;
   }
   select.innerHTML = '<option value="">Loading libraries...</option>';
   select.disabled = true;
   try {
-    fillPro7LibrarySelect(select, cfg, await fetchSetupScan(), rootPath);
+    fillPro7LibrarySelect(select, cfg, await fetchSetupScan(), rootPath, key);
   } catch (_) {
-    select.innerHTML = cfg.pro7LibraryFolder
-      ? `<option value="${esc(cfg.pro7LibraryFolder)}">${esc(pathBaseName(cfg.pro7LibraryFolder) || cfg.pro7LibraryFolder)}</option>`
+    select.innerHTML = cfg[key]
+      ? `<option value="${esc(cfg[key])}">${esc(pathBaseName(cfg[key]) || cfg[key])}</option>`
       : '<option value="">Could not scan libraries</option>';
-    select.disabled = !cfg.pro7LibraryFolder;
+    select.disabled = !cfg[key];
   }
+}
+
+// Settings → File Names: one row of blocks per kind, with a live example.
+function renderFileNameEditor(host) {
+  if (!host) return;
+  const kind = host.dataset.kind;
+  const cfg = state.config;
+  const key = FILE_NAME_CONFIG_KEY[kind];
+  const blocks = fileNameBlocks(kind);
+  const save = next => {
+    const isDefault = JSON.stringify(next) === JSON.stringify(DEFAULT_FILE_NAME_BLOCKS[kind]);
+    cfg[key] = isDefault ? null : next;
+    saveState();
+    renderFileNameEditor(host);
+  };
+  const label = b => b.startsWith('text:') ? `“${fileNameToken(b.slice(5))}”` : FILE_NAME_BLOCKS[b].label;
+  const example = kind === 'deck'
+    ? `${buildFileName()}_v1.pro`
+    : `${styleSampleFileName(activeStyleScheme())}.pro`;
+  const unused = Object.keys(FILE_NAME_BLOCKS).filter(b => !blocks.includes(b));
+  host.innerHTML = `
+    <div class="fn-head">
+      <label>${kind === 'deck' ? 'Decks' : 'Style samples'}</label>
+      ${cfg[key] ? '<button class="btn-browse fn-reset">Reset</button>' : ''}
+    </div>
+    <div class="fn-chips">
+      ${blocks.map((b, i) => `
+        <span class="fn-chip" data-i="${i}" title="${esc(b.startsWith('text:') ? 'Custom text' : FILE_NAME_BLOCKS[b].hint)}">
+          <button class="fn-move" data-dir="-1" ${i === 0 ? 'disabled' : ''} aria-label="Move left">‹</button>
+          <span>${esc(label(b))}</span>
+          <button class="fn-move" data-dir="1" ${i === blocks.length - 1 ? 'disabled' : ''} aria-label="Move right">›</button>
+          ${blocks.length > 1 ? '<button class="fn-del" aria-label="Remove">×</button>' : ''}
+        </span>`).join('<span class="fn-sep">_</span>')}
+    </div>
+    <div class="fn-add">
+      <select class="fn-add-block">
+        <option value="">+ Add block…</option>
+        ${unused.map(b => `<option value="${b}">${esc(FILE_NAME_BLOCKS[b].label)} — ${esc(FILE_NAME_BLOCKS[b].hint)}</option>`).join('')}
+      </select>
+      <input type="text" class="fn-add-text" placeholder="Custom text" style="flex:1;min-width:0">
+      <button class="btn-browse fn-add-text-btn">Add text</button>
+    </div>
+    <div class="fn-example">${esc(example)}</div>`;
+  host.querySelectorAll('.fn-move').forEach(btn => btn.addEventListener('click', () => {
+    const i = +btn.closest('.fn-chip').dataset.i, j = i + +btn.dataset.dir;
+    const next = blocks.slice();
+    [next[i], next[j]] = [next[j], next[i]];
+    save(next);
+  }));
+  host.querySelectorAll('.fn-del').forEach(btn => btn.addEventListener('click', () => {
+    const i = +btn.closest('.fn-chip').dataset.i;
+    save(blocks.filter((_, k) => k !== i));
+  }));
+  host.querySelector('.fn-add-block').addEventListener('change', e => {
+    if (e.target.value) save([...blocks, e.target.value]);
+  });
+  const addText = () => {
+    const raw = host.querySelector('.fn-add-text').value;
+    if (fileNameToken(raw)) save([...blocks, `text:${raw.trim()}`]);
+  };
+  host.querySelector('.fn-add-text-btn').addEventListener('click', addText);
+  host.querySelector('.fn-add-text').addEventListener('keydown', e => { if (e.key === 'Enter') addText(); });
+  host.querySelector('.fn-reset')?.addEventListener('click', () => save(DEFAULT_FILE_NAME_BLOCKS[kind].slice()));
 }
 
 async function showMachineSetup(force = false) {
@@ -8258,7 +8391,7 @@ async function showMachineSetup(force = false) {
         return;
       }
       cfg.pro7RootFolder = normalizePro7RootFolder(best.path);
-      if (!libraryBelongsToRoot(cfg.pro7LibraryFolder, cfg.pro7RootFolder)) cfg.pro7LibraryFolder = '';
+      clearForeignLibraries(cfg);
       saveState();
       toast('success', 'Pro7 folder detected', cfg.pro7RootFolder);
       reopen();
@@ -8276,7 +8409,7 @@ async function showMachineSetup(force = false) {
       const data = await res.json();
       if (!data.ok || !data.folder) return;
       cfg.pro7RootFolder = normalizePro7RootFolder(data.folder);
-      if (!libraryBelongsToRoot(cfg.pro7LibraryFolder, cfg.pro7RootFolder)) cfg.pro7LibraryFolder = '';
+      clearForeignLibraries(cfg);
       saveState();
       reopen();
     } catch (e) {
@@ -8286,6 +8419,7 @@ async function showMachineSetup(force = false) {
   overlay.querySelector('#setup-root-clear')?.addEventListener('click', () => {
     cfg.pro7RootFolder = '';
     cfg.pro7LibraryFolder = '';
+    cfg.styleSampleLibraryFolder = '';
     saveState();
     reopen();
   });
@@ -12337,30 +12471,69 @@ let _keyNavList = null;
 
 // ─── Spec builder ─────────────────────────────────────────────────────────────
 
-function buildFileName() {
-  const { seriesName, messageTitle, weekDate } = state.config;
-  const d = weekDate || new Date().toISOString().slice(0, 10);
-  const [yyyy, mm, dd] = d.split('-');
-  const yy = (yyyy || '').slice(-2);  // 2-digit year: 2026 → 26
-  const series = fileNameToken(seriesName || 'Untitled');
-  const title  = fileNameToken(messageTitle || '');
-  // No QR/SAT suffix baked in here — every export (QR or not, paired or not)
-  // gets a sequential _v{N} suffix appended in runGenerate(), so a Saturday/
-  // Sunday pair and a plain re-export all share one uniform naming scheme.
-  return title
-    ? `Message_${yy}.${mm}.${dd}_${series}_${title}`
-    : `Message_${yy}.${mm}.${dd}_${series}`;
+// ─── File names (building blocks) ──────────────────────────────────────────
+// Deck and style-sample file names are built from blocks the user arranges in
+// Settings → File Names. A block is a key below or 'text:Words' (custom text).
+// Modifiers (_v2, _SAT) are always added last by the exporter.
+const FILE_NAME_BLOCKS = {
+  date:   { label: 'Date',   hint: 'YY.MM.DD' },
+  time:   { label: 'Time',   hint: '24-hour HHMM' },
+  series: { label: 'Series', hint: 'Series name' },
+  title:  { label: 'Title',  hint: 'Message title' },
+  style:  { label: 'Style',  hint: 'Style name' },
+};
+const DEFAULT_FILE_NAME_BLOCKS = {
+  deck:   ['date', 'series', 'title'],
+  sample: ['date', 'time', 'text:StyleSample', 'style'],
+};
+const FILE_NAME_CONFIG_KEY = { deck: 'deckNameBlocks', sample: 'sampleNameBlocks' };
+
+function fileNameBlocks(kind) {
+  const saved = state.config[FILE_NAME_CONFIG_KEY[kind]];
+  const valid = Array.isArray(saved)
+    ? saved.filter(b => typeof b === 'string' && (FILE_NAME_BLOCKS[b] || (b.startsWith('text:') && fileNameToken(b.slice(5)))))
+    : [];
+  return valid.length ? valid : DEFAULT_FILE_NAME_BLOCKS[kind].slice();
 }
 
-// Style sample file name. Naming order: year.month.day, 24-hour time, category,
-// name, then any modifiers — so files sort by when they were made:
-// 26.10.26_1432_StyleSample_HotSeat.
-function styleSampleFileName(scheme, now = new Date()) {
+// ctx: { date: 'YYYY-MM-DD', now: Date, series, title, style }
+function composeFileName(blocks, ctx) {
   const p = n => String(n).padStart(2, '0');
-  const date = `${p(now.getFullYear() % 100)}.${p(now.getMonth() + 1)}.${p(now.getDate())}`;
-  const time = `${p(now.getHours())}${p(now.getMinutes())}`;
-  const style = fileNameToken(scheme?.name || '');
-  return style ? `${date}_${time}_StyleSample_${style}` : `${date}_${time}_StyleSample`;
+  const now = ctx.now || new Date();
+  const [yyyy, mm, dd] = (ctx.date || '').split('-');
+  const parts = blocks.map(b => {
+    if (b.startsWith('text:')) return fileNameToken(b.slice(5));
+    if (b === 'date') return yyyy ? `${yyyy.slice(-2)}.${mm}.${dd}` : `${p(now.getFullYear() % 100)}.${p(now.getMonth() + 1)}.${p(now.getDate())}`;
+    if (b === 'time') return `${p(now.getHours())}${p(now.getMinutes())}`;
+    return fileNameToken(ctx[b] || '');
+  }).filter(Boolean);
+  return parts.join('_') || 'Untitled';
+}
+
+function localIsoDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function fileNameContext(kind, scheme, now = new Date()) {
+  const { seriesName, messageTitle, weekDate } = state.config;
+  return {
+    now,
+    // Decks are dated by the week they're for; samples by when they were made.
+    date: kind === 'deck' ? (weekDate || localIsoDate(now)) : localIsoDate(now),
+    series: seriesName || (kind === 'deck' ? 'Untitled' : ''),
+    title: messageTitle || '',
+    style: (scheme || activeStyleScheme())?.name || '',
+  };
+}
+
+// No QR/SAT suffix baked in here — every export (QR or not, paired or not)
+// gets a sequential _v{N} suffix appended in runGenerate().
+function buildFileName() {
+  return composeFileName(fileNameBlocks('deck'), fileNameContext('deck'));
+}
+
+function styleSampleFileName(scheme, now = new Date()) {
+  return composeFileName(fileNameBlocks('sample'), fileNameContext('sample', scheme, now));
 }
 
 function fileNameToken(value) {
@@ -13817,6 +13990,7 @@ async function exportStyleSample(scheme) {
   try { for (const s of slides) measureSlideForExport(s, scheme); } catch (_) {}
   const sampleName = styleSampleFileName(scheme);
   const spec = buildSpec({ slides, scheme, name: sampleName });
+  spec.pro7LibraryFolder = state.config.styleSampleLibraryFolder || state.config.pro7LibraryFolder || '';
   spec.includeResponseCard = true;
   spec.autoManagePro7 = autoManage;
 
@@ -16522,7 +16696,7 @@ async function duplicateDeckAction(id) {
 // this," and response text is genuine per-week content, not a preference.
 const PERSISTENT_CONFIG_FIELDS = [
   // Pro7 / machine connection
-  'pro7Port', 'pro7Password', 'pro7RootFolder', 'pro7LibraryFolder',
+  'pro7Port', 'pro7Password', 'pro7RootFolder', 'pro7LibraryFolder', 'styleSampleLibraryFolder',
   'autoManagePro7', 'outputFolder', 'setupComplete', 'stageScreen',
   'qrMacro', 'qrExportPair', 'gradientMacro', 'gradientMacroQr', 'icloudSync', 'theme',
   'externalContent', 'externalStartMacro', 'externalEndMacro', 'updateChannel',
@@ -16531,7 +16705,7 @@ const PERSISTENT_CONFIG_FIELDS = [
   // App-wide preferences (mirrors SYNC_SECTIONS()'s portable-vs-deck split)
   'features', 'recentSeries', 'displayNames', 'bookNames', 'queueMode',
   'speakers', 'notesStyleMap', 'capitalizeDivinePronouns',
-  'notesMode', 'notesUseNearbyRefs', 'rcLocks',
+  'notesMode', 'notesUseNearbyRefs', 'rcLocks', 'deckNameBlocks', 'sampleNameBlocks',
 ];
 const PERSISTENT_STATE_FIELDS = [
   'styleSchemes', 'globalTypography', 'globalLayout', 'globalFontAdv',
@@ -17263,9 +17437,10 @@ function helpSections() {
     label: 'Building a Deck',
     html: `
       <h3>Deck identity &amp; the filename</h3>
-      <p>The header fields become the export filename, and every export gets a sequential <code>_v{N}</code> suffix (starting at <code>_v1</code>) — a plain re-export becomes <code>_v2</code>, <code>_v3</code>, and so on:</p>
-      <p class="help-pre">Message_YY.MM.DD_Series_Title_v1</p>
+      <p>The header fields become the export filename, and every export gets a sequential <code>_v{N}</code> suffix (starting at <code>_v1</code>) — a plain re-export becomes <code>_v2</code>, <code>_v3</code>, and so on. By default:</p>
+      <p class="help-pre">YY.MM.DD_Series_Title_v1</p>
       <ul>
+        <li><strong>Build your own</strong> in <strong>Settings → File Names</strong>: arrange Date, Time (24-hour), Series, Title, Style and custom text blocks, separately for decks and style samples. <code>_v{N}</code> and <code>_SAT</code> always go last.</li>
         <li><strong>Date</strong> → <code>YY.MM.DD</code> (2-digit year).</li>
         <li><strong>Series</strong> and <strong>Title</strong> → PascalCase tokens (spaces and punctuation stripped).</li>
         <li><strong>QR</strong> toggle (Decks → edit this deck) → sets the default for which blanks fire the QR macro (see <em>QR Code</em>). It no longer changes the filename by itself — see <strong>QR Export pair</strong> below.</li>
@@ -17654,7 +17829,7 @@ function helpSections() {
 
       <h4>What gets written</h4>
       <ul>
-        <li>A <code>Message_YY.MM.DD_Series_Title.pro</code> presentation in your chosen Pro7 library.</li>
+        <li>A <code>YY.MM.DD_Series_Title_v1.pro</code> presentation (name set in Settings → File Names) in your chosen Pro7 library.</li>
         <li>All prop slots in Pro7's Configuration/Props — active slides get real content, unused slots get empty placeholders.</li>
         <li>A <strong>DeckPro Slot 1</strong> collection folder in the Props panel, kept in sync. Your other prop collections are preserved byte-for-byte.</li>
         <li>A second, independent <strong>DeckPro Slot 2</strong> collection for decks set to <strong>Slot 2</strong> (the Slot 1 | 2 switch next to QR in the sidebar's Deck row; those decks show a Slot 2 badge in the Deck Library). Put two decks — say an event and a gathering — on different collections and both stay built and ready in ProPresenter at once; exporting one never touches the other's props.</li>
@@ -17976,6 +18151,8 @@ function SYNC_SECTIONS() {
     speakers:         { get: () => c.speakers,         set: v => { c.speakers = v || []; } },
     responses:        { get: () => c.responses,        set: v => { c.responses = v || {}; } },
     rcLocks:          { get: () => c.rcLocks,          set: v => { c.rcLocks = v || {}; } },
+    fileNames:        { get: () => ({ deck: c.deckNameBlocks || null, sample: c.sampleNameBlocks || null }),
+                        set: v => { c.deckNameBlocks = v?.deck || null; c.sampleNameBlocks = v?.sample || null; } },
     notesStyleMap:    { get: () => c.notesStyleMap,    set: v => { c.notesStyleMap = v || {}; } },
     qrMacro:          { get: () => c.qrMacro,          set: v => { c.qrMacro = v || null; } },
     qrExportPair:     { get: () => ({ v: c.qrExportPair }), set: v => { c.qrExportPair = !!v.v; } },
