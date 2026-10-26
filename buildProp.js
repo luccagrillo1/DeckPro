@@ -202,6 +202,7 @@ function makeTextElement({ name, x, y, w, h, rtfData, font, fontSize, center, ch
   const _al = adv && adv.alignment;
   const _alignEnum = _al === 'right' ? 'ALIGNMENT_RIGHT'
                    : _al === 'center' ? 'ALIGNMENT_CENTER'
+                   : _al === 'justify' ? 'ALIGNMENT_JUSTIFIED'
                    : _al === 'left' ? null
                    : (center ? 'ALIGNMENT_CENTER' : null);
   if (_alignEnum) paraStyle.alignment = _alignEnum;

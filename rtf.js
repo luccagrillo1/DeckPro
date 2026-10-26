@@ -344,6 +344,7 @@ function makePard(adv, forceCenter) {
     ? '\\qc'
     : (adv?.alignment === 'center' ? '\\qc'
        : adv?.alignment === 'right' ? '\\qr'
+       : adv?.alignment === 'justify' ? '\\qj'
        : '');  // left / '' = pardirnatural default
   const sl = (adv?.lineHeight && adv.lineHeight !== 1)
     ? `\\sl${Math.round(adv.lineHeight * 240)}\\slmult1`
@@ -399,10 +400,6 @@ function textStroke(adv, textHex, extraHexColors = []) {
 
 // Default color tables (used when no style is passed)
 const COLORTBL_WHITE_STROKE = makeColortbl(['#ffffff', '#ffffff', '#000000']);
-const COLORTBL_LIVE = [
-  '{\\colortbl;\\red255\\green255\\blue255;\\red255\\green255\\blue255;}',
-  '{\\*\\expandedcolortbl;;\\csgray\\c100000;}',
-].join('\n');
 const COLORTBL_TITLE = makeColortbl(['#ffffff', '#f6d046', '#000000']);
 
 function rtfDoc({ fonttbl, colortbl, pard, body }) {
@@ -485,7 +482,7 @@ function rtfTitle(text, style = {}) {
   const sl       = (adv.lineHeight && adv.lineHeight !== 1) ? `\\sl${Math.round(adv.lineHeight * 240)}\\slmult1` : '';
   const sb       = adv.paragraphSpacingBefore ? `\\sb${Math.round(adv.paragraphSpacingBefore * 20)}` : '';
   const sa       = adv.paragraphSpacingAfter ? `\\sa${Math.round(adv.paragraphSpacingAfter * 20)}` : '\\sa400';
-  const pard     = `\\pard\\pardeftab1680${sl}${sb}${sa}\\pardirnatural${adv.alignment === 'left' ? '' : adv.alignment === 'right' ? '\\qr' : '\\qc'}\\partightenfactor0`;
+  const pard     = `\\pard\\pardeftab1680${sl}${sb}${sa}\\pardirnatural${adv.alignment === 'left' ? '' : adv.alignment === 'right' ? '\\qr' : adv.alignment === 'justify' ? '\\qj' : '\\qc'}\\partightenfactor0`;
   const body     = `\\f0\\fs${fs} \\cf2 ${cf}\\CocoaLigature0 \\outl0\\strokewidth-${sw} \\strokec3 ${escapeRtf(text)}`;
   return toBase64(rtfDoc({ fonttbl, colortbl, pard, body }));
 }
@@ -493,15 +490,19 @@ function rtfTitle(text, style = {}) {
 /**
  * Live indicator (static "live" text, HelveticaNeue, centered, no stroke).
  */
-function rtfLive(style = {}) {
-  const font    = style.liveFont || 'HelveticaNeue';
-  const fs      = (style.liveSize || 42) * 2;
-  const adv     = style.liveFontAdv || {};
+// Live badge / START-END label / queue: styled by their own Styles row like any
+// other text (B/I/U/S, caps, spacing, alignment, outline) — they used to take
+// only font, size and colour. Unset alignment keeps their old look.
+function _utilityRtf(text, font, fs, adv, defaultAlign) {
+  const a = { ...adv, alignment: adv.alignment || defaultAlign };
+  const { colortbl, sw } = textStroke(a, a.color || '#ffffff');
   const fonttbl = `{\\fonttbl\\f0\\fnil\\fcharset0 ${font};}`;
-  const pard    = PARD_CENTER;
-  const body    = `\\f0\\fs${fs} \\cf2 \\CocoaLigature0 live`;
-  const colortbl = adv.color ? makeColortbl(['#ffffff', adv.color, '#000000']) : COLORTBL_LIVE;
-  return toBase64(rtfDoc({ fonttbl, colortbl, pard, body }));
+  const body    = `\\f0\\fs${fs} \\cf2 ${charFmt(a)}\\CocoaLigature0 \\outl0\\strokewidth-${sw} \\strokec3 ${text}`;
+  return toBase64(rtfDoc({ fonttbl, colortbl, pard: makePard(a, false), body }));
+}
+
+function rtfLive(style = {}) {
+  return _utilityRtf('live', style.liveFont || 'HelveticaNeue', (style.liveSize || 42) * 2, style.liveFontAdv || {}, 'center');
 }
 
 /**
@@ -509,14 +510,7 @@ function rtfLive(style = {}) {
  * Shows the slide label ("START", "End of Notes") below the canvas for confidence monitor.
  */
 function rtfLiveLabel(text, style = {}) {
-  const font    = style.liveFont || 'HelveticaNeue';
-  const fs      = (style.liveSize || 42) * 2;
-  const adv     = style.liveFontAdv || {};
-  const fonttbl = `{\\fonttbl\\f0\\fnil\\fcharset0 ${font};}`;
-  const pard    = PARD_CENTER;
-  const body    = `\\f0\\fs${fs} \\cf2 \\CocoaLigature0 ${escapeRtf(text || '')}`;
-  const colortbl = adv.color ? makeColortbl(['#ffffff', adv.color, '#000000']) : COLORTBL_LIVE;
-  return toBase64(rtfDoc({ fonttbl, colortbl, pard, body }));
+  return _utilityRtf(escapeRtf(text || ''), style.liveFont || 'HelveticaNeue', (style.liveSize || 42) * 2, style.liveFontAdv || {}, 'center');
 }
 
 /**
@@ -690,15 +684,8 @@ function rtfRevealingPoints(points, title, style = {}) {
  * HelveticaNeue, fs64 (32pt), white, plain text.
  */
 function rtfQueue(labels, style = {}) {
-  const font    = style.queueFont || 'HelveticaNeue';
-  const fs      = (style.queueSize || 32) * 2;
-  const adv     = style.queueFontAdv || {};
-  const fonttbl = `{\\fonttbl\\f0\\fnil\\fcharset0 ${font};}`;
-  const pard    = PARD_NORMAL;
   const content = labels.map(l => escapeRtf(l)).join('\\\n');
-  const body    = `\\f0\\fs${fs} \\cf2 \\CocoaLigature0 ${content}`;
-  const colortbl = adv.color ? makeColortbl(['#ffffff', adv.color, '#000000']) : COLORTBL_LIVE;
-  return toBase64(rtfDoc({ fonttbl, colortbl, pard, body }));
+  return _utilityRtf(content, style.queueFont || 'HelveticaNeue', (style.queueSize || 32) * 2, style.queueFontAdv || {}, 'left');
 }
 
 /**
@@ -750,6 +737,11 @@ function rtfNotes(spans, style = {}) {
   const fs         = (style.notesSize || 50) * 2;
   const adv        = style.notesFontAdv || {};
   const boldAdv    = style.notesBoldFontAdv || adv;
+  // Slide notes are plain RTF — ProPresenter has no Title/Start Case switch for
+  // them like it does for slide text — so those cases are applied to the words.
+  const caseOf = (t, a) => (a.capitalization === 'titleCase' || a.capitalization === 'startCase')
+    ? String(t).toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase()) : t;
+  spans = spans.map(sp => ({ ...sp, text: caseOf(sp.text || '', sp.alt ? boldAdv : adv) }));
   const cf         = charFmt(adv);
   const boldCf     = charFmt(boldAdv);
   const pard       = makePard(adv, false);
@@ -763,7 +755,11 @@ function rtfNotes(spans, style = {}) {
   const { content, allAlt, mixedAlt } = buildSpanContent(spans, { altStart, altEnd });
 
   const baseColor = allAlt ? boldColor : notesColor;
-  const colortbl  = makeColortbl(['#ffffff', baseColor, ...(mixedAlt && altDiffers ? [boldColor] : [])]);
+  const strokeAdv = allAlt ? boldAdv : adv;
+  const strokeOn  = !!strokeAdv.strokeEnabled;
+  const colortbl  = makeColortbl(['#ffffff', baseColor, ...(mixedAlt && altDiffers ? [boldColor] : []), ...(strokeOn ? [strokeAdv.strokeColor || '#000000'] : [])]);
+  const strokeIdx = 3 + (mixedAlt && altDiffers ? 1 : 0);
+  const stroke    = strokeOn ? `\\outl0\\strokewidth-${Math.round((strokeAdv.strokeWidth ?? 1) * 20)} \\strokec${strokeIdx} ` : '';
 
   let fonttbl, baseCf;
   if (mixedAlt) {
@@ -776,7 +772,7 @@ function rtfNotes(spans, style = {}) {
     fonttbl = `{\\fonttbl\\f0\\fnil\\fcharset0 ${notesFont};}`;
     baseCf  = cf;
   }
-  const body = `\\f0\\fs${fs} \\cf2 ${baseCf}\\CocoaLigature0 ${content}`;
+  const body = `\\f0\\fs${fs} \\cf2 ${baseCf}\\CocoaLigature0 ${stroke}${content}`;
 
   return toBase64(rtfDoc({ fonttbl, colortbl, pard, body }));
 }

@@ -2,9 +2,20 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.8';
+const APP_VERSION = '4.41.9';
 
 const CHANGELOG = [
+  {
+    version: '4.41.9',
+    date: '2026-10-26',
+    changes: [
+      "Every alignment and overflow setting is now a real value held by Global. Before, many were left blank and each export quietly picked its own (titles came out centred while Styles said Left; body text came out bottom-aligned while Styles said Top). Now exactly one Horizontal and one Vertical button is always lit, matching what goes to ProPresenter, and blank settings in existing styles follow Global. Your slides export the same as before.",
+      "Fixed controls that did nothing: Justify (every row), and on the Live Badge and Queue everything except font, size, colour and margins (bold, italic, underline, strikethrough, caps, spacing, alignment, outline, shadow, overflow now all work). Slide Notes now honour Title / Start Case and Outline.",
+      "Styles only shows controls ProPresenter can apply: Bold, Notes Alt and Point Stacked style words inside another row's box, so they no longer show box settings (alignment, overflow, margins, outline, shadow, line spacing) that never did anything — set those on Body, Slide Notes or Point. Slide Notes has no box, so no overflow, vertical alignment, shadow or margins.",
+      "Removed \"lowercase\" from Caps — ProPresenter has no lowercase mode, so it never worked. Styles that had it now use As typed.",
+      "New automatic check (styleControls.test.js) sets every Styles control on every row — plus each Macro and Stage trigger, each transition, build steps and Response Card elements — exports, and confirms ProPresenter's file changed the right way: 372 checks.",
+    ],
+  },
   {
     version: '4.41.8',
     date: '2026-10-26',
@@ -3200,7 +3211,33 @@ const REGULAR_ADV_FIELDS    = ['bodyFontAdv', 'propBodyFontAdv', 'pointFontAdv',
 const HIGHLIGHT_ADV_FIELDS  = ['titleFontAdv', 'propTitleFontAdv', 'rcTitleFontAdv'];
 const BOLD_ADV_FIELDS       = ['boldFontAdv', 'propBoldFontAdv', 'notesBoldFontAdv'];
 const ADV_SCHEME_KEYS = [...REGULAR_ADV_FIELDS, ...HIGHLIGHT_ADV_FIELDS, ...BOLD_ADV_FIELDS];
-const DEFAULT_GLOBAL_FONT_ADV = () => Object.fromEntries(ADV_SCHEME_KEYS.map(k => [k, FONT_ADV_DEFAULTS()]));
+// Every alignment / overflow setting is a real value held by Global — never a
+// blank that each exporter quietly fills with its own idea. These are what the
+// exporters always did for blank, so styles look exactly as they did. Span rows
+// (Bold, Notes Alt, Point Stacked) style runs inside another row's box and have
+// no box settings of their own; notes have no box either.
+const SHRINK = 'SCALE_BEHAVIOR_SCALE_FONT_DOWN';
+const ADV_ROW_DEFAULTS = {
+  bodyFontAdv:      { alignment: 'left',   verticalAlignment: 'bottom', scaleBehavior: SHRINK },
+  propBodyFontAdv:  { alignment: 'left',   verticalAlignment: 'bottom', scaleBehavior: SHRINK },
+  titleFontAdv:     { alignment: 'center', verticalAlignment: 'middle', scaleBehavior: SHRINK },
+  propTitleFontAdv: { alignment: 'center', verticalAlignment: 'middle', scaleBehavior: SHRINK },
+  pointFontAdv:     { alignment: 'center', verticalAlignment: 'bottom', scaleBehavior: SHRINK },
+  propPointFontAdv: { alignment: 'center', verticalAlignment: 'bottom', scaleBehavior: SHRINK },
+  startEndFontAdv:  { alignment: 'left',   verticalAlignment: 'middle', scaleBehavior: SHRINK },
+  liveFontAdv:      { alignment: 'center', verticalAlignment: 'middle', scaleBehavior: 'none' },
+  queueFontAdv:     { alignment: 'left',   verticalAlignment: 'top',    scaleBehavior: 'none' },
+  notesFontAdv:     { alignment: 'left' },
+  rcBodyFontAdv:    { alignment: 'center', verticalAlignment: 'middle', scaleBehavior: SHRINK },
+  rcTitleFontAdv:   { alignment: 'center', verticalAlignment: 'middle', scaleBehavior: SHRINK },
+};
+// Values the editor no longer offers, read as blank (→ Global): "Grow or
+// shrink" (exports as shrink anyway) and lowercase (ProPresenter has no such
+// mode, so it never did anything).
+const RETIRED_ADV = { scaleBehavior: ['SCALE_BEHAVIOR_SCALE_FONT_UP_DOWN'], capitalization: ['allLower'] };
+const _advBlank = (f, v) => v === '' && (f === 'alignment' || f === 'verticalAlignment' || f === 'scaleBehavior')
+  || (RETIRED_ADV[f] || []).includes(v);
+const DEFAULT_GLOBAL_FONT_ADV = () => Object.fromEntries(ADV_SCHEME_KEYS.map(k => [k, { ...FONT_ADV_DEFAULTS(), ...ADV_ROW_DEFAULTS[k] }]));
 function ensureGlobalFontAdv() {
   if (!state.globalFontAdv) state.globalFontAdv = DEFAULT_GLOBAL_FONT_ADV();
   // Fill gaps in place — never swap the objects out, so a caller holding
@@ -3208,7 +3245,11 @@ function ensureGlobalFontAdv() {
   const def = FONT_ADV_DEFAULTS();
   for (const k of ADV_SCHEME_KEYS) {
     const cur = state.globalFontAdv[k] || (state.globalFontAdv[k] = {});
-    for (const f in def) if (!(f in cur)) cur[f] = def[f];
+    const rowDef = ADV_ROW_DEFAULTS[k] || {};
+    for (const f in def) {
+      if (!(f in cur)) cur[f] = f in rowDef ? rowDef[f] : def[f];
+      else if (_advBlank(f, cur[f])) cur[f] = f in rowDef ? rowDef[f] : def[f];
+    }
   }
   return state.globalFontAdv;
 }
@@ -3511,7 +3552,8 @@ function resolveSchemeTypography(scheme, global = ensureGlobalTypography()) {
 // comes from the Style tab's palette slots unless the element sets its own.
 function resolveAdv(raw, glb) {
   const out = { ...FONT_ADV_DEFAULTS(), ...(glb || {}), color: '' };
-  for (const [f, v] of Object.entries(raw || {})) if (v != null) out[f] = v;
+  // A blank alignment/overflow in a style (or a retired value) follows Global.
+  for (const [f, v] of Object.entries(raw || {})) if (v != null && !_advBlank(f, v)) out[f] = v;
   return out;
 }
 // A fresh advanced-styling object that follows Global for every field.
@@ -9067,6 +9109,11 @@ const TEXT_TAB_SECTIONS = () => [
     { id: 'queue', lbl: 'Queue',       fontF: 'queueFont',     advK: 'queueFontAdv',     sizeF: 'queueSize' },
   ]},
 ];
+// Rows that aren't a text box of their own: 'span' rows style words inside
+// another row's box (Bold → Body, Notes Alt → Slide Notes, Point Stacked →
+// Point), 'notes' is slide-notes text with no box. The inspector only shows
+// the controls ProPresenter can apply to each (styleControls.test.js).
+const TEXT_ROW_KIND = { bold1: 'span', bold2: 'span', notesBold: 'span', pointStacked: 'span', notes: 'notes' };
 // Which preview scene shows each row best.
 const TEXT_ROW_SCENE = {
   body1: 'scripture', bold1: 'scripture', title1: 'scripture', point1: 'point',
@@ -9139,14 +9186,14 @@ function _tpTextCss(font, size, adv, cw) {
 // One positioned text element. `spans` are [{text, alt}] — alt spans use the
 // alt (bold) row's font/adv at the base size, like the exporter does.
 function _tpEl(pv, cw, ch, o) {
-  const { row, box, font, size, adv, spans, altFont, altAdv, fill, sel, anchor, autoGap, va, ha } = o;
+  const { row, box, font, size, adv, spans, altFont, altAdv, fill, sel, anchor, autoGap, va } = o;
   const [x, y, w, h] = box;
   if (!w || !h) return '';
   const a = adv || FONT_ADV_DEFAULTS();
   const pct = (v, d) => `${((Number(v) || 0) / d * 100).toFixed(3)}%`;
   const u = v => `${((Number(v) || 0) / cw * 100).toFixed(4)}cqw`;
-  const VA = { '': 'flex-start', middle: 'center', bottom: 'flex-end' };
-  const HA = { '': 'left', center: 'center', right: 'right', justify: 'justify' };
+  const VA = { '': 'flex-start', top: 'flex-start', middle: 'center', bottom: 'flex-end' };
+  const HA = { '': 'left', left: 'left', center: 'center', right: 'right', justify: 'justify' };
   const inner = spans.map(sp => {
     const sa = sp.alt ? (altAdv || a) : a;
     const txt = esc(_fitCaseText(sp.text, sa.capitalization || '')).replace(/\n/g, '<br>');
@@ -9155,7 +9202,7 @@ function _tpEl(pv, cw, ch, o) {
   return `<div class="tp-el${sel ? ' sel' : ''}" data-row="${row}"${a.scaleBehavior === 'none' ? '' : ' data-fit="1"'}${anchor ? ' data-anchor="1"' : ''}${autoGap != null ? ` data-autogap="${Number(autoGap) || 0}"` : ''}
     style="left:${pct(x, cw)};top:${pct(y, ch)};width:${pct(w, cw)};height:${pct(h, ch)};justify-content:${VA[a.verticalAlignment || va || ''] || 'flex-start'};
       padding:${u(a.marginTop)} ${u(a.marginRight)} ${u(a.marginBottom)} ${u(a.marginLeft)};${fill ? `background:${_tpHex(fill, 'transparent')};` : ''}">
-    <div class="tp-text" style="${_tpTextCss(font, size, a, cw)};text-align:${HA[a.alignment || ha || ''] || 'left'};
+    <div class="tp-text" style="${_tpTextCss(font, size, a, cw)};text-align:${HA[a.alignment] || 'left'};
       margin:${u(a.paragraphSpacingBefore)} 0 ${u(a.paragraphSpacingAfter)}">${inner}</div></div>`;
 }
 
@@ -9181,7 +9228,7 @@ function renderTextPreview(pv, scene, selRow, hint, showStrip = true, showScenes
       ? ({ row: 'body1', alsoSel: ['bold1'], anchor: true, va: 'bottom', box: box('body'), font: pv.bodyFont, size: pv.bodySize, adv: pv.bodyFontAdv,
             spans: bodySpans, altFont: pv.boldFont, altAdv: pv.boldFontAdv }) : '',
     scene === 'scripture' || scene === 'notes'
-      ? ({ row: 'title1', va: 'middle', ha: 'center', box: box('title'), font: pv.titleFont, size: pv.titleSize, adv: pv.titleFontAdv,
+      ? ({ row: 'title1', va: 'middle', box: box('title'), font: pv.titleFont, size: pv.titleSize, adv: pv.titleFontAdv,
             spans: [{ text: smp.reference }], fill: pv.fillEnabled ? pv.titleFill : null, autoGap: pv.autoTitleY ? (pv.titleAutoGap ?? 16) : null })
       : '',
     scene === 'point' || scene === 'stacked'
@@ -9209,7 +9256,7 @@ function renderTextPreview(pv, scene, selRow, hint, showStrip = true, showScenes
   if (scene === 'scripture' || scene === 'notes') {
     led = L({ row: 'body2', alsoSel: ['bold2'], anchor: true, va: 'bottom', box: box('propBody'), font: pv.propBodyFont, size: pv.propBodySize, adv: pv.propBodyFontAdv,
               spans: propBodySpans, altFont: pv.propBoldFont, altAdv: pv.propBoldFontAdv })
-        + L({ row: 'title2', va: 'middle', ha: 'center', box: box('propTitle'), font: pv.propTitleFont, size: pv.propTitleSize, adv: pv.propTitleFontAdv,
+        + L({ row: 'title2', va: 'middle', box: box('propTitle'), font: pv.propTitleFont, size: pv.propTitleSize, adv: pv.propTitleFontAdv,
               spans: [{ text: smp.reference }], fill: pv.fillEnabled ? pv.titleFill : null, autoGap: pv.propAutoTitleY ? (pv.propTitleAutoGap ?? 16) : null });
   } else if (scene === 'point') {
     led = L({ row: 'point2', va: 'bottom', box: box('propPoint', 'propBody'), font: pv.propPointFont, size: pv.propPointSize, adv: pv.propPointFontAdv, spans: [{ text: smp.propPoint ?? smp.point }] });
@@ -9310,7 +9357,7 @@ function renderSchemeGrid(sv, rs, dis, pv) {
   const advOv = (field) => {
     if (!advRaw) return false;
     const v = advRaw[field];
-    if (v === undefined || v === null) return false;
+    if (v === undefined || v === null || _advBlank(field, v)) return false;
     const def = _globalAdv[field];
     if (def === null || def === undefined) return false;
     if (typeof def === 'number') return Math.abs(Number(v) - def) > 0.01;
@@ -9330,26 +9377,24 @@ function renderSchemeGrid(sv, rs, dis, pv) {
     `<div class="tp-num">${label}${cell(field, `<input type="number" class="fav-num sg-num tp-input" data-scheme="${advK}" data-field="${field}" value="${adv[field] ?? dflt}" step="${step}" ${dis}>${unit ? `<span class="tp-unit">${unit}</span>` : ''}`)}</div>`;
   const color = (field, fb, title) =>
     cell(field, `<input type="color" class="sg-adv-color tp-color" data-scheme="${advK}" data-field="${field}" value="${_tpHex(adv[field], fb)}" title="${title}" ${dis}>`);
-  // Titles export centred unless set otherwise (rtfTitle), so for them the
-  // unset value is the Centre button and Left is an explicit 'left'.
-  const isTitleAdv = advK === 'titleFontAdv' || advK === 'propTitleFontAdv';
-  const HA = isTitleAdv
-    ? [['left', 'Left'], ['', 'Center'], ['right', 'Right'], ['justify', 'Justify']]
-    : [['', 'Left'], ['center', 'Center'], ['right', 'Right'], ['justify', 'Justify']];
-  const VA = [['', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']];
+  const HA = [['left', 'Left'], ['center', 'Center'], ['right', 'Right'], ['justify', 'Justify']];
+  const VA = [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']];
   const HA_ICONS = {
-    '':      '<path d="M1 2h12M1 5.5h7M1 9h9" stroke-width="1.4"/>',
+    left:    '<path d="M1 2h12M1 5.5h7M1 9h9" stroke-width="1.4"/>',
     center:  '<path d="M1 2h12M3.5 5.5h7M2.5 9h9" stroke-width="1.4"/>',
     right:   '<path d="M1 2h12M6 5.5h7M4 9h9" stroke-width="1.4"/>',
     justify: '<path d="M1 2h12M1 5.5h12M1 9h9" stroke-width="1.4"/>',
   };
-  if (isTitleAdv) { HA_ICONS.left = HA_ICONS['']; HA_ICONS[''] = HA_ICONS.center; }
   const VA_ICONS = {
-    '':     '<path d="M1 1.5h12" stroke-width="2"/><path d="M4 5h6M4 8h6" stroke-width="1.4"/>',
+    top:    '<path d="M1 1.5h12" stroke-width="2"/><path d="M4 5h6M4 8h6" stroke-width="1.4"/>',
     middle: '<path d="M4 3h6M4 9h6" stroke-width="1.4"/><path d="M1 6h12" stroke-width="1" stroke-dasharray="1.5 1.5"/>',
     bottom: '<path d="M4 3h6M4 6.5h6" stroke-width="1.4"/><path d="M1 10.5h12" stroke-width="2"/>',
   };
-  const _alignIs = (cur, v) => (cur ?? '') === v || (isTitleAdv && v === '' && cur === 'center');
+  const _alignIs = (cur, v) => cur === v;
+  // What this row can set: span rows style words inside another row's box,
+  // and slide notes have no box at all (see styleControls.test.js).
+  const kind = TEXT_ROW_KIND[cur.id] || 'box';
+  const isBox = kind === 'box', isSpan = kind === 'span';
   const alignBtns = (cls, field, opts, icons) => cell(field, opts.map(([v, title]) =>
     `<button type="button" class="${cls} sg-align-cell tp-align${_alignIs(adv[field], v) ? ' on' : ''}${_alignIs(_globalAdv[field], v) ? ' sg-align-global' : ''}" data-scheme="${advK}" data-val="${v}" title="${title}" ${dis}><svg viewBox="0 0 14 12" fill="none" stroke="currentColor" stroke-linecap="round" width="14" height="12">${icons[v]}</svg></button>`
   ).join(''), ' tp-seg');
@@ -9385,34 +9430,34 @@ function renderSchemeGrid(sv, rs, dis, pv) {
       <div class="tp-row">
         <div class="tp-seg-wrap">${tog('bold', '<b>B</b>', 'Bold')}${tog('italic', '<i>I</i>', 'Italic')}${tog('underline', '<u>U</u>', 'Underline')}${tog('strikethrough', '<s>S</s>', 'Strikethrough')}</div>
         <div class="tp-num">Caps ${cell('capitalization', `<select class="fav-select sg-caps tp-select" data-scheme="${advK}" data-field="capitalization" ${dis}>
-          ${[['', 'As typed'], ['allCaps', 'ALL CAPS'], ['titleCase', 'Title Case'], ['startCase', 'Start Case'], ['allLower', 'lowercase']].map(([v, l]) =>
+          ${[['', 'As typed'], ['allCaps', 'ALL CAPS'], ['titleCase', 'Title Case'], ['startCase', 'Start Case']].map(([v, l]) =>
             `<option value="${v}" ${(adv.capitalization || '') === v ? 'selected' : ''}>${l}</option>`).join('')}
         </select>`)}</div>
-        <div class="tp-num" title="What ProPresenter does when text doesn't fit the box">Overflow ${cell('scaleBehavior', `<select class="fav-select sg-scale tp-select" data-scheme="${advK}" data-field="scaleBehavior" ${dis}>
-          ${[['', 'Shrink to fit (default)'], ['SCALE_BEHAVIOR_SCALE_FONT_DOWN', 'Shrink to fit'], ['none', 'Never resize']].map(([v, l]) =>
-            `<option value="${v}" ${(adv.scaleBehavior === 'SCALE_BEHAVIOR_SCALE_FONT_UP_DOWN' ? 'SCALE_BEHAVIOR_SCALE_FONT_DOWN' : adv.scaleBehavior || '') === v ? 'selected' : ''}>${l}</option>`).join('')}
-        </select>`)}</div>
+        ${isBox ? `<div class="tp-num" title="What ProPresenter does when text doesn't fit the box">Overflow ${cell('scaleBehavior', `<select class="fav-select sg-scale tp-select" data-scheme="${advK}" data-field="scaleBehavior" ${dis}>
+          ${[[SHRINK, 'Shrink to fit'], ['none', 'Never resize']].map(([v, l]) =>
+            `<option value="${v}" ${adv.scaleBehavior === v ? 'selected' : ''}>${l}</option>`).join('')}
+        </select>`)}</div>` : ''}
       </div>
     </div>
 
-    <div class="tp-group">
+    ${isSpan ? '' : `<div class="tp-group">
       <div class="tp-group-lbl">Alignment</div>
       <div class="tp-row">
         <div class="tp-num">Horizontal ${alignBtns('sg-halign-btn', 'alignment', HA, HA_ICONS)}</div>
-        <div class="tp-num">Vertical ${alignBtns('sg-valign-btn', 'verticalAlignment', VA, VA_ICONS)}</div>
+        ${isBox ? `<div class="tp-num">Vertical ${alignBtns('sg-valign-btn', 'verticalAlignment', VA, VA_ICONS)}</div>` : ''}
       </div>
-    </div>
+    </div>`}
 
-    <div class="tp-group">
+    ${isSpan ? '' : `<div class="tp-group">
       <div class="tp-group-lbl">Outline</div>
       <div class="tp-row">
         ${tog('strokeEnabled', '<span class="tp-sw-lbl"></span>', 'Text outline on/off')}
         ${num('strokeWidth', 'Width', 1, 0.5, 'px')}
         <div class="tp-num">Color ${color('strokeColor', '#000000', 'Outline color')}</div>
       </div>
-    </div>
+    </div>`}
 
-    <div class="tp-group">
+    ${!isBox ? '' : `<div class="tp-group">
       <div class="tp-group-lbl">Shadow</div>
       <div class="tp-row">
         ${tog('shadowEnabled', '<span class="tp-sw-lbl"></span>', 'Drop shadow on/off')}
@@ -9421,19 +9466,19 @@ function renderSchemeGrid(sv, rs, dis, pv) {
         ${num('shadowOffset', 'Distance', 5, 0.5, 'px')}
         ${num('shadowBlur', 'Blur', 5, 0.5, 'px')}
       </div>
-    </div>
+    </div>`}
 
     <div class="tp-group">
       <div class="tp-group-lbl">Spacing</div>
       <div class="tp-row">
         ${num('charSpacing', 'Letters', 0, 0.5, 'px')}
-        ${num('lineHeight', 'Line height', 1, 0.05, '×')}
+        ${isSpan ? '' : `${num('lineHeight', 'Line height', 1, 0.05, '×')}
         ${num('paragraphSpacingBefore', 'Before ¶', 0, 1, 'px')}
-        ${num('paragraphSpacingAfter', 'After ¶', 0, 1, 'px')}
+        ${num('paragraphSpacingAfter', 'After ¶', 0, 1, 'px')}`}
       </div>
     </div>
 
-    <div class="tp-group">
+    ${!isBox ? '' : `<div class="tp-group">
       <div class="tp-group-lbl">Margins <span class="tp-group-sub">inside the text box</span></div>
       <div class="tp-row">
         ${num('marginTop', 'Top', 0, 1, 'px')}
@@ -9441,7 +9486,7 @@ function renderSchemeGrid(sv, rs, dis, pv) {
         ${num('marginLeft', 'Left', 0, 1, 'px')}
         ${num('marginRight', 'Right', 0, 1, 'px')}
       </div>
-    </div>
+    </div>`}
     <p class="tp-legend"><span class="tp-dot"></span> overrides Global · right-click any control to reset it or push it to Global</p>`;
 
   return `

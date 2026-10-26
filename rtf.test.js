@@ -46,12 +46,12 @@ test('END banner', rtfStartEnd('End of Notes'),
 test('live element', rtfLive(),
 `{\\rtf1\\ansi\\ansicpg1252\\cocoartf2865
 \\cocoatextscaling0\\cocoaplatform0{\\fonttbl\\f0\\fnil\\fcharset0 HelveticaNeue;}
-{\\colortbl;\\red255\\green255\\blue255;\\red255\\green255\\blue255;}
-{\\*\\expandedcolortbl;;\\csgray\\c100000;}
+{\\colortbl;\\red255\\green255\\blue255;\\red255\\green255\\blue255;\\red0\\green0\\blue0;}
+{\\*\\expandedcolortbl;;\\cssrgb\\c100000\\c100000\\c100000;\\cssrgb\\c0\\c0\\c0;}
 \\deftab1680
 \\pard\\pardeftab1680\\pardirnatural\\qc\\partightenfactor0
 
-\\f0\\fs84 \\cf2 \\CocoaLigature0 live}`);
+\\f0\\fs84 \\cf2 \\CocoaLigature0 \\outl0\\strokewidth-20 \\strokec3 live}`);
 
 test('title: John 13:35', rtfTitle('John 13:35'),
 `{\\rtf1\\ansi\\ansicpg1252\\cocoartf2865

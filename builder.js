@@ -444,6 +444,15 @@ function resolveShadow(adv, defaultShadow) {
 // ProPresenter draws the text outline from text.attributes.strokeWidth (negative
 // = outline) + strokeColor, and the text drop-shadow from text.shadow — NOT the
 // element-level stroke/shadow. Width N in the UI is stored as -N here.
+// paragraphStyle.alignment from a row's Horizontal alignment. LEFT is the proto
+// default, so it's left unset (matching the RTF's natural-left); `dflt` is the
+// element's own look when the row leaves alignment unset.
+function paraAlign(adv, dflt = 'left') {
+  const a = adv?.alignment || dflt;
+  const e = { center: 'ALIGNMENT_CENTER', right: 'ALIGNMENT_RIGHT', justify: 'ALIGNMENT_JUSTIFIED' }[a];
+  return e ? { alignment: e } : {};
+}
+
 function resolveTextStroke(adv) {
   if (!adv?.strokeEnabled) return { strokeWidth: -1, strokeColor: C_BLACK_A };
   return {
@@ -484,7 +493,7 @@ function makeBodyElement({ name = 'body', x, y, w, h, rtfData, charCount, spans 
         ...capitalizationAttr(rs.bodyFontAdv),
         textSolidFill: textColorFromAdv(rs.bodyFontAdv),
         underlineStyle: {},
-        paragraphStyle: { lineHeightMultiple: rs.bodyFontAdv?.lineHeight ?? 1, defaultTabInterval: 84, textList: {} },
+        paragraphStyle: { ...paraAlign(rs.bodyFontAdv, 'left'), lineHeightMultiple: rs.bodyFontAdv?.lineHeight ?? 1, defaultTabInterval: 84, textList: {} },
         strikethroughStyle: {},
         ...resolveTextStroke(rs.bodyFontAdv),
         customAttributes: customAttrs,
@@ -530,7 +539,7 @@ function makePointBodyElement({ x, y, w, h, rtfData, text }, rs = {}) {
         underlineStyle: {},
         // Alignment follows Advanced → Alignment (default centered for points).
         // 'left' omits the field (proto default / natural-left), matching the RTF.
-        paragraphStyle: { ...(adv.alignment === 'left' ? {} : { alignment: adv.alignment === 'right' ? 'ALIGNMENT_RIGHT' : 'ALIGNMENT_CENTER' }), lineHeightMultiple: adv.lineHeight ?? 1, defaultTabInterval: 84, textList: {} },
+        paragraphStyle: { ...paraAlign(adv, 'center'), lineHeightMultiple: adv.lineHeight ?? 1, defaultTabInterval: 84, textList: {} },
         strikethroughStyle: {},
         ...resolveTextStroke(rs.pointFontAdv || rs.boldFontAdv),
         customAttributes: capitalizationCustomAttributes(adv, charCount),
@@ -576,7 +585,7 @@ function makeStartEndElement({ text }, rs = {}) {
         ...capitalizationAttr(rs.startEndFontAdv),
         textSolidFill: textColorFromAdv(rs.startEndFontAdv),
         underlineStyle: {},
-        paragraphStyle: { lineHeightMultiple: rs.startEndFontAdv?.lineHeight ?? 1, defaultTabInterval: 84, textList: {} },
+        paragraphStyle: { ...paraAlign(rs.startEndFontAdv, 'left'), lineHeightMultiple: rs.startEndFontAdv?.lineHeight ?? 1, defaultTabInterval: 84, textList: {} },
         strikethroughStyle: {},
         ...resolveTextStroke(rs.startEndFontAdv),
         customAttributes: capitalizationCustomAttributes(rs.startEndFontAdv, charCount),
@@ -614,17 +623,19 @@ function makeStartEndTitleEl({ text }, rs = {}) {
     feather: { radius: 0.05 },
     text: {
       attributes: {
-        font: { name: rs.liveFont || 'HelveticaNeue', size: rs.liveSize || 42, family: rs.liveFont || 'Helvetica Neue' },
+        font: { name: rs.liveFont || 'HelveticaNeue', size: rs.liveSize || 42, bold: !!rs.liveFontAdv?.bold, family: rs.liveFont || 'Helvetica Neue' },
+        ...capitalizationAttr(rs.liveFontAdv),
         textSolidFill: textColorFromAdv(rs.liveFontAdv),
         underlineStyle: {},
-        paragraphStyle: { alignment: 'ALIGNMENT_CENTER', lineHeightMultiple: rs.liveFontAdv?.lineHeight ?? 1, defaultTabInterval: 84, textList: {} },
+        paragraphStyle: { ...paraAlign(rs.liveFontAdv, 'center'), lineHeightMultiple: rs.liveFontAdv?.lineHeight ?? 1, defaultTabInterval: 84, textList: {} },
         strikethroughStyle: {},
-        strokeWidth: 0,
-        customAttributes: [{ range: { end: label.length } }],
+        ...resolveTextStroke(rs.liveFontAdv),
+        customAttributes: capitalizationCustomAttributes(rs.liveFontAdv, label.length),
       },
-      shadow: TXT_SHADOW_STD,
+      shadow: resolveTextShadow(rs.liveFontAdv, TXT_SHADOW_STD),
       rtfData: rtf.rtfLiveLabel(label, rs),
       verticalAlignment: resolveVertAlign(rs.liveFontAdv, 'VERTICAL_ALIGNMENT_MIDDLE'),
+      ...(resolveScaleBehavior(rs.liveFontAdv, undefined) ? { scaleBehavior: resolveScaleBehavior(rs.liveFontAdv, undefined) } : {}),
       margins: resolveMargins(rs.liveFontAdv, {}),
       isSuperscriptStandardized: true,
       transformDelimiter: '  •  ',
@@ -648,17 +659,19 @@ function makeLiveElement(rs = {}) {
     feather: { radius: 0.05 },
     text: {
       attributes: {
-        font: { name: rs.liveFont || 'HelveticaNeue', size: rs.liveSize || 42, family: rs.liveFont || 'Helvetica Neue' },
+        font: { name: rs.liveFont || 'HelveticaNeue', size: rs.liveSize || 42, bold: !!rs.liveFontAdv?.bold, family: rs.liveFont || 'Helvetica Neue' },
+        ...capitalizationAttr(rs.liveFontAdv),
         textSolidFill: textColorFromAdv(rs.liveFontAdv),
         underlineStyle: {},
-        paragraphStyle: { alignment: 'ALIGNMENT_CENTER', lineHeightMultiple: rs.liveFontAdv?.lineHeight ?? 1, defaultTabInterval: 84, textList: {} },
+        paragraphStyle: { ...paraAlign(rs.liveFontAdv, 'center'), lineHeightMultiple: rs.liveFontAdv?.lineHeight ?? 1, defaultTabInterval: 84, textList: {} },
         strikethroughStyle: {},
-        strokeWidth: 0,
-        customAttributes: [{ range: { end: 4 } }],
+        ...resolveTextStroke(rs.liveFontAdv),
+        customAttributes: capitalizationCustomAttributes(rs.liveFontAdv, 4),
       },
-      shadow: TXT_SHADOW_STD,
+      shadow: resolveTextShadow(rs.liveFontAdv, TXT_SHADOW_STD),
       rtfData: rtf.rtfLive(rs),
-      verticalAlignment: 'VERTICAL_ALIGNMENT_MIDDLE',
+      verticalAlignment: resolveVertAlign(rs.liveFontAdv, 'VERTICAL_ALIGNMENT_MIDDLE'),
+      ...(resolveScaleBehavior(rs.liveFontAdv, undefined) ? { scaleBehavior: resolveScaleBehavior(rs.liveFontAdv, undefined) } : {}),
       margins: resolveMargins(rs.liveFontAdv, {}),
       isSuperscriptStandardized: true,
       transformDelimiter: '  •  ',
@@ -826,7 +839,7 @@ function makeTitleElement({ reference, titleY }, rs = {}) {
         ...capitalizationAttr(adv),
         textSolidFill: (rs.titleFontAdv && rs.titleFontAdv.color) ? hexToColor(rs.titleFontAdv.color) : C_WHITE,
         underlineStyle: {},
-        paragraphStyle: { ...(adv.alignment === 'left' ? {} : { alignment: adv.alignment === 'right' ? 'ALIGNMENT_RIGHT' : 'ALIGNMENT_CENTER' }), lineHeightMultiple: adv.lineHeight ?? 1, paragraphSpacing: 20, defaultTabInterval: 84, textList: {} },
+        paragraphStyle: { ...paraAlign(adv, 'center'), lineHeightMultiple: adv.lineHeight ?? 1, paragraphSpacing: 20, defaultTabInterval: 84, textList: {} },
         strikethroughStyle: {},
         ...resolveTextStroke(rs.titleFontAdv),
         customAttributes: capitalizationCustomAttributes(adv, charCount),
@@ -912,17 +925,19 @@ function makeQueueElement(labels, rs = {}) {
     feather: { radius: 0.05 },
     text: {
       attributes: {
-        font: { name: 'HelveticaNeue', size: 16, family: 'Helvetica Neue' },
-        textSolidFill: C_WHITE,
+        font: { name: rs.queueFont || 'HelveticaNeue', size: rs.queueSize || 32, bold: !!rs.queueFontAdv?.bold, family: rs.queueFont || 'Helvetica Neue' },
+        ...capitalizationAttr(rs.queueFontAdv),
+        textSolidFill: textColorFromAdv(rs.queueFontAdv),
         underlineStyle: {},
-        paragraphStyle: { lineHeightMultiple: rs.queueFontAdv?.lineHeight ?? 1, defaultTabInterval: 84, textList: {} },
+        paragraphStyle: { ...paraAlign(rs.queueFontAdv, 'left'), lineHeightMultiple: rs.queueFontAdv?.lineHeight ?? 1, defaultTabInterval: 84, textList: {} },
         strikethroughStyle: {},
-        strokeWidth: 0,
-        customAttributes: [],
+        ...resolveTextStroke(rs.queueFontAdv),
+        customAttributes: capitalizationCustomAttributes(rs.queueFontAdv, labels.join('\n').length),
       },
-      shadow: TXT_SHADOW_STD,
+      shadow: resolveTextShadow(rs.queueFontAdv, TXT_SHADOW_STD),
       rtfData: rtf.rtfQueue(labels, rs),
-      verticalAlignment: 'VERTICAL_ALIGNMENT_TOP',
+      verticalAlignment: resolveVertAlign(rs.queueFontAdv, 'VERTICAL_ALIGNMENT_TOP'),
+      ...(resolveScaleBehavior(rs.queueFontAdv, undefined) ? { scaleBehavior: resolveScaleBehavior(rs.queueFontAdv, undefined) } : {}),
       margins: resolveMargins(rs.queueFontAdv, { left: 10, top: 10 }),
       isSuperscriptStandardized: true,
       transformDelimiter: '  •  ',
