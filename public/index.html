@@ -138,20 +138,38 @@
 
     <main class="main-panel" id="main-panel"></main>
 
-    <button class="btn-outline-float" id="btn-notes-open" title="Toggle Notes panel">
-      <svg width="13" height="13" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="2" y="3" width="16" height="2" rx="1" fill="currentColor"/>
-        <rect x="2" y="8" width="10" height="2" rx="1" fill="currentColor"/>
-        <rect x="2" y="13" width="12" height="2" rx="1" fill="currentColor"/>
-      </svg>
-      Notes
-    </button>
+    <div class="side-float" id="side-float">
+      <button class="btn-outline-float" id="btn-notes-open" title="Speaker Notes">
+        <svg width="13" height="13" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="3" width="16" height="2" rx="1" fill="currentColor"/>
+          <rect x="2" y="8" width="10" height="2" rx="1" fill="currentColor"/>
+          <rect x="2" y="13" width="12" height="2" rx="1" fill="currentColor"/>
+        </svg>
+        Notes
+      </button>
+      <button class="btn-outline-float" id="btn-checklist-open" title="Checklist (⌘K)">
+        <svg width="13" height="13" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M3 5.5l2 2 3.5-3.5M3 13.5l2 2 3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="11" y="5" width="7" height="2" rx="1" fill="currentColor"/>
+          <rect x="11" y="13" width="7" height="2" rx="1" fill="currentColor"/>
+        </svg>
+        Checklist <span class="cl-float-count" id="cl-float-count"></span>
+      </button>
+    </div>
 
 
     <aside class="notes-panel" id="notes-panel">
       <div class="notes-resize-handle" id="notes-resize-handle"></div>
       <div class="notes-panel-hdr">
-        <span class="notes-panel-title">Speaker Notes</span>
+        <div class="side-tabs" role="tablist">
+          <button class="side-tab active" data-side="notes" role="tab" title="Speaker Notes (⌘K)" aria-label="Speaker Notes">
+            <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><rect x="2" y="3" width="16" height="2" rx="1" fill="currentColor"/><rect x="2" y="8" width="10" height="2" rx="1" fill="currentColor"/><rect x="2" y="13" width="12" height="2" rx="1" fill="currentColor"/></svg>
+          </button>
+          <button class="side-tab" data-side="checklist" role="tab" title="Checklist (⌘K)" aria-label="Checklist">
+            <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><path d="M3 5.5l2 2 3.5-3.5M3 13.5l2 2 3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><rect x="11" y="5" width="7" height="2" rx="1" fill="currentColor"/><rect x="11" y="13" width="7" height="2" rx="1" fill="currentColor"/></svg>
+          </button>
+        </div>
+        <span class="notes-panel-title" id="side-panel-title">Speaker Notes</span>
         <button class="notes-panel-close" id="btn-notes-close" title="Hide panel">×</button>
       </div>
       <div class="notes-tab-body" id="notes-tab-speaker">
@@ -221,6 +239,9 @@
             <div class="notes-tray-body" id="notes-tray-body"></div>
           </div>
         </div>
+      </div>
+      <div class="notes-tab-body" id="notes-tab-checklist" style="display:none">
+        <div class="cl-root" id="checklist-root"></div>
       </div>
     </aside>
 

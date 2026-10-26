@@ -217,6 +217,24 @@ function buildMenu() {
           `),
         },
         { type: 'separator' },
+        // The page handles these keys itself (so they also work in a browser);
+        // registerAccelerator:false just shows them in the menu.
+        {
+          label: 'Checklist / Speaker Notes',
+          accelerator: 'CmdOrCtrl+K', registerAccelerator: false,
+          click: () => renderer(`typeof toggleChecklistView === 'function' && toggleChecklistView()`),
+        },
+        {
+          label: 'Check Next Item',
+          accelerator: 'CmdOrCtrl+Shift+K', registerAccelerator: false,
+          click: () => renderer(`typeof checkNextItem === 'function' && checkNextItem()`),
+        },
+        {
+          label: 'Check All Items',
+          accelerator: 'CmdOrCtrl+Alt+K', registerAccelerator: false,
+          click: () => renderer(`typeof checkAllItems === 'function' && checkAllItems()`),
+        },
+        { type: 'separator' },
         {
           label: 'Preferences',
           click: () => renderer(`

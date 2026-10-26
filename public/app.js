@@ -2,9 +2,18 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.11';
+const APP_VERSION = '4.41.12';
 
 const CHANGELOG = [
+  {
+    version: '4.41.12',
+    date: '2026-10-26',
+    changes: [
+      "New Checklist in the right-hand panel, next to Speaker Notes: switch with the two icons at the top of the panel, or with the Notes / Checklist buttons when the panel is closed. Click an item to check it.",
+      "Keyboard: ⌘K opens the Checklist (press again to go back to Speaker Notes), ⌘⇧K checks the next item, ⌘⌥K checks everything. Also in the View menu.",
+      "Edit list lets you rename, reorder and remove items and add your own; \"Add presets back\" restores any presets you removed. The list is the same for every deck and syncs with your DeckPro account; the checkmarks are saved with each deck, so a new deck starts unchecked.",
+    ],
+  },
   {
     version: '4.41.11',
     date: '2026-10-26',
@@ -3425,6 +3434,10 @@ const DEFAULT_STATE = () => ({
     pro7RootFolder:      '',
     pro7LibraryFolder:   '',
     styleSampleLibraryFolder: '',
+    // Checklist sidebar: the item list is app-wide (null = presets); the
+    // checkmarks belong to this deck, so a new deck starts unchecked.
+    checklistItems:      null,
+    checklistDone:       {},
     deckNameBlocks:      null,
     sampleNameBlocks:    null,
     setupComplete:       false,
@@ -12370,17 +12383,11 @@ function attachHeaderHandlers() {
     });
   }
 
-  const toggleNotes = () => {
-    const panel = document.getElementById('notes-panel');
-    const floatBtn = document.getElementById('btn-notes-open');
-    const hidden = panel?.classList.toggle('hidden');
-    if (floatBtn) floatBtn.style.display = hidden ? '' : 'none';
-  };
-  // Hide button initially since panel starts visible
-  const _initFloatBtn = document.getElementById('btn-notes-open');
-  if (_initFloatBtn) _initFloatBtn.style.display = 'none';
-  document.getElementById('btn-notes-close')?.addEventListener('click', toggleNotes);
-  document.getElementById('btn-notes-open')?.addEventListener('click', toggleNotes);
+  document.getElementById('btn-notes-close')?.addEventListener('click', hideSidePanel);
+  document.getElementById('btn-notes-open')?.addEventListener('click', () => showSidePanel('notes'));
+  document.getElementById('btn-checklist-open')?.addEventListener('click', () => showSidePanel('checklist'));
+  document.querySelectorAll('.side-tab').forEach(t => t.addEventListener('click', () => showSidePanel(t.dataset.side)));
+  showSidePanel(_sideView, { quiet: true });
 
   // Sidebar drag-to-resize
   const sidebarEl = document.querySelector('.sidebar');
@@ -12421,6 +12428,16 @@ function attachHeaderHandlers() {
     _keyNavList = Object.keys(KEY_NAV_LISTS).find(k => e.target.closest?.(KEY_NAV_LISTS[k].container)) || null;
   }, true);
   document.addEventListener('keydown', e => {
+    // Checklist: ⌘K checklist ⇄ speaker notes, ⌘⇧K check next, ⌘⌥K check all.
+    // e.code, since ⌥ changes e.key. Works while typing too.
+    if ((e.metaKey || e.ctrlKey) && e.code === 'KeyK') {
+      e.preventDefault();
+      if (e.repeat) return;
+      if (e.altKey) checkAllItems();
+      else if (e.shiftKey) checkNextItem();
+      else toggleChecklistView();
+      return;
+    }
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable) return;
     if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
       if (e.shiftKey) applyRedo(); else applyUndo();
@@ -12468,6 +12485,188 @@ const KEY_NAV_LISTS = {
   decks:   { container: '#decks-list', step: dir => stepDeckHighlight(dir), onEnter: () => openHighlightedDeck() },
 };
 let _keyNavList = null;
+
+// ─── Checklist sidebar ────────────────────────────────────────────────────────
+// Shares the right-hand panel with Speaker Notes. Items are app-wide and
+// editable (presets + custom); checkmarks are saved with each deck.
+const CHECKLIST_PRESETS = [
+  { id: 'p-info',      text: 'Series, title & date are right' },
+  { id: 'p-scripture', text: 'Scripture references & wording proofed' },
+  { id: 'p-bold',      text: 'Bold phrases match the notes' },
+  { id: 'p-rc',        text: "Response Card filled in for this week" },
+  { id: 'p-qr',        text: 'QR on/off right for this service' },
+  { id: 'p-export',    text: 'Exported to ProPresenter' },
+  { id: 'p-pro7',      text: 'Spot-checked slides & LED props in Pro7' },
+];
+let _sideView = (() => { try { return localStorage.getItem('deckpro.sideView') === 'checklist' ? 'checklist' : 'notes'; } catch (_) { return 'notes'; } })();
+let _checklistEditing = false;
+
+function checklistItems() {
+  const items = state.config.checklistItems;
+  return Array.isArray(items) ? items : CHECKLIST_PRESETS;
+}
+function checklistDone() {
+  const c = state.config;
+  if (!c.checklistDone || typeof c.checklistDone !== 'object') c.checklistDone = {};
+  return c.checklistDone;
+}
+// Editing always works on a real copy, so the presets constant is never mutated.
+function editableChecklist() {
+  if (!Array.isArray(state.config.checklistItems)) state.config.checklistItems = CHECKLIST_PRESETS.map(p => ({ ...p }));
+  return state.config.checklistItems;
+}
+
+function sidePanelHidden() {
+  return document.getElementById('notes-panel')?.classList.contains('hidden');
+}
+function showSidePanel(view, { quiet = false } = {}) {
+  const panel = document.getElementById('notes-panel');
+  if (!panel) return;
+  _sideView = view === 'checklist' ? 'checklist' : 'notes';
+  try { localStorage.setItem('deckpro.sideView', _sideView); } catch (_) {}
+  if (!quiet) panel.classList.remove('hidden');
+  const float = document.getElementById('side-float');
+  if (float) float.style.display = panel.classList.contains('hidden') ? '' : 'none';
+  document.getElementById('notes-tab-speaker').style.display   = _sideView === 'notes' ? '' : 'none';
+  document.getElementById('notes-tab-checklist').style.display = _sideView === 'checklist' ? '' : 'none';
+  document.querySelectorAll('.side-tab').forEach(t => {
+    const on = t.dataset.side === _sideView;
+    t.classList.toggle('active', on);
+    t.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  const title = document.getElementById('side-panel-title');
+  if (title) title.textContent = _sideView === 'checklist' ? 'Checklist' : 'Speaker Notes';
+  renderChecklist();
+}
+function hideSidePanel() {
+  document.getElementById('notes-panel')?.classList.add('hidden');
+  const float = document.getElementById('side-float');
+  if (float) float.style.display = '';
+}
+// ⌘K: open the checklist; pressed again, back to speaker notes.
+function toggleChecklistView() {
+  showSidePanel(!sidePanelHidden() && _sideView === 'checklist' ? 'notes' : 'checklist');
+}
+
+function checkNextItem() {
+  const done = checklistDone();
+  const next = checklistItems().find(i => !done[i.id]);
+  if (!next) { toast('success', 'Checklist complete', 'Everything is already checked.'); return; }
+  done[next.id] = true;
+  saveState();
+  renderChecklist(next.id);
+  const left = checklistItems().filter(i => !done[i.id]).length;
+  if (sidePanelHidden() || _sideView !== 'checklist') {
+    toast('success', `✓ ${next.text}`, left ? `${left} left` : 'Checklist complete');
+  } else if (!left) {
+    toast('success', 'Checklist complete', '');
+  }
+}
+function checkAllItems() {
+  const done = checklistDone();
+  for (const i of checklistItems()) done[i.id] = true;
+  saveState();
+  renderChecklist();
+  toast('success', 'Checklist complete', 'Every item is checked.');
+}
+
+function renderChecklist(flashId) {
+  const items = checklistItems();
+  const done = checklistDone();
+  const count = items.filter(i => done[i.id]).length;
+  const badge = document.getElementById('cl-float-count');
+  if (badge) badge.textContent = items.length ? `${count}/${items.length}` : '';
+  const root = document.getElementById('checklist-root');
+  if (!root || _sideView !== 'checklist') return;
+
+  if (_checklistEditing) {
+    const missing = CHECKLIST_PRESETS.filter(p => !items.some(i => i.id === p.id));
+    root.innerHTML = `
+      <div class="cl-edit-list">
+        ${items.map((it, i) => `
+          <div class="cl-edit-row" data-i="${i}">
+            <input type="text" class="cl-edit-text" value="${esc(it.text)}">
+            <button class="cl-icon" data-act="up" ${i === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
+            <button class="cl-icon" data-act="down" ${i === items.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
+            <button class="cl-icon" data-act="del" aria-label="Remove">×</button>
+          </div>`).join('')}
+      </div>
+      <div class="cl-add">
+        <input type="text" id="cl-add-text" placeholder="New item…">
+        <button class="btn-browse" id="cl-add-btn">Add</button>
+      </div>
+      <div class="cl-actions">
+        ${missing.length ? `<button class="btn-browse" id="cl-restore">Add presets back (${missing.length})</button>` : ''}
+        <button class="btn-browse cl-primary" id="cl-edit-done">Done</button>
+      </div>`;
+    const list = editableChecklist();
+    const commit = () => { saveState(); renderChecklist(); };
+    root.querySelectorAll('.cl-edit-row').forEach(row => {
+      const i = +row.dataset.i;
+      row.querySelector('.cl-edit-text').addEventListener('change', e => {
+        const t = e.target.value.trim();
+        if (t) { list[i].text = t; saveState(); } else e.target.value = list[i].text;
+      });
+      row.querySelectorAll('.cl-icon').forEach(b => b.addEventListener('click', () => {
+        const act = b.dataset.act;
+        if (act === 'del') list.splice(i, 1);
+        else { const j = i + (act === 'up' ? -1 : 1); [list[i], list[j]] = [list[j], list[i]]; }
+        commit();
+      }));
+    });
+    const add = () => {
+      const inp = root.querySelector('#cl-add-text');
+      const t = inp.value.trim();
+      if (!t) return;
+      list.push({ id: `c-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, text: t });
+      commit();
+      root.querySelector('#cl-add-text')?.focus();
+    };
+    root.querySelector('#cl-add-btn').addEventListener('click', add);
+    root.querySelector('#cl-add-text').addEventListener('keydown', e => { if (e.key === 'Enter') add(); });
+    root.querySelector('#cl-restore')?.addEventListener('click', () => { list.push(...missing.map(p => ({ ...p }))); commit(); });
+    root.querySelector('#cl-edit-done').addEventListener('click', () => { _checklistEditing = false; renderChecklist(); });
+    return;
+  }
+
+  const nextId = items.find(i => !done[i.id])?.id;
+  const pct = items.length ? Math.round(count / items.length * 100) : 0;
+  root.innerHTML = `
+    <div class="cl-progress">
+      <span>${count} of ${items.length} done</span>
+      <div class="cl-bar"><i style="width:${pct}%"></i></div>
+    </div>
+    ${items.length ? `<ul class="cl-list">
+      ${items.map(it => `
+        <li class="cl-item${done[it.id] ? ' done' : ''}${it.id === nextId ? ' next' : ''}${it.id === flashId ? ' flash' : ''}" data-id="${esc(it.id)}" role="checkbox" aria-checked="${done[it.id] ? 'true' : 'false'}" tabindex="0">
+          <span class="cl-box">${done[it.id] ? '<svg width="11" height="11" viewBox="0 0 12 12"><path d="M2 6.5l2.5 2.5L10 3.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' : ''}</span>
+          <span class="cl-text">${esc(it.text)}</span>
+        </li>`).join('')}
+    </ul>` : '<div class="cl-empty">No items yet — click Edit list to add some.</div>'}
+    <div class="cl-actions">
+      <button class="btn-browse" id="cl-check-all">Check all</button>
+      <button class="btn-browse" id="cl-reset" ${count ? '' : 'disabled'}>Uncheck all</button>
+      <button class="btn-browse" id="cl-edit">Edit list</button>
+    </div>
+    <div class="cl-keys">
+      <span><span class="help-kbd">⌘⇧K</span> check next</span>
+      <span><span class="help-kbd">⌘⌥K</span> check all</span>
+      <span><span class="help-kbd">⌘K</span> back to notes</span>
+    </div>`;
+  const toggle = li => {
+    const id = li.dataset.id;
+    if (done[id]) delete done[id]; else done[id] = true;
+    saveState();
+    renderChecklist();
+  };
+  root.querySelectorAll('.cl-item').forEach(li => {
+    li.addEventListener('click', () => toggle(li));
+    li.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle(li); } });
+  });
+  root.querySelector('#cl-check-all').addEventListener('click', checkAllItems);
+  root.querySelector('#cl-reset').addEventListener('click', () => { state.config.checklistDone = {}; saveState(); renderChecklist(); });
+  root.querySelector('#cl-edit').addEventListener('click', () => { _checklistEditing = true; renderChecklist(); });
+}
 
 // ─── Spec builder ─────────────────────────────────────────────────────────────
 
@@ -16251,6 +16450,7 @@ function render() {
   saveState();
   renderSidebar();
   renderMain();
+  renderChecklist();
 }
 
 // ─── Pro7 connection helpers ──────────────────────────────────────────────────
@@ -16705,7 +16905,7 @@ const PERSISTENT_CONFIG_FIELDS = [
   // App-wide preferences (mirrors SYNC_SECTIONS()'s portable-vs-deck split)
   'features', 'recentSeries', 'displayNames', 'bookNames', 'queueMode',
   'speakers', 'notesStyleMap', 'capitalizeDivinePronouns',
-  'notesMode', 'notesUseNearbyRefs', 'rcLocks', 'deckNameBlocks', 'sampleNameBlocks',
+  'notesMode', 'notesUseNearbyRefs', 'rcLocks', 'deckNameBlocks', 'sampleNameBlocks', 'checklistItems',
 ];
 const PERSISTENT_STATE_FIELDS = [
   'styleSchemes', 'globalTypography', 'globalLayout', 'globalFontAdv',
@@ -17950,6 +18150,9 @@ function helpSections() {
           <tr><td><span class="help-kbd">⌘5</span></td><td>Add Custom</td></tr>
           <tr class="help-shortcuts-group"><td colspan="2">View</td></tr>
           <tr><td><span class="help-kbd">⌘⇧D</span></td><td>Toggle dark mode</td></tr>
+          <tr><td><span class="help-kbd">⌘K</span></td><td>Open Checklist / back to Speaker Notes</td></tr>
+          <tr><td><span class="help-kbd">⌘⇧K</span></td><td>Check the next checklist item</td></tr>
+          <tr><td><span class="help-kbd">⌘⌥K</span></td><td>Check every checklist item</td></tr>
           <tr class="help-shortcuts-group"><td colspan="2">Text Editing</td></tr>
           <tr><td><span class="help-kbd">⌘B</span></td><td>Bold (in rich-text body fields)</td></tr>
           <tr><td><span class="help-kbd">⌘I</span></td><td>Italic</td></tr>
@@ -18151,6 +18354,7 @@ function SYNC_SECTIONS() {
     speakers:         { get: () => c.speakers,         set: v => { c.speakers = v || []; } },
     responses:        { get: () => c.responses,        set: v => { c.responses = v || {}; } },
     rcLocks:          { get: () => c.rcLocks,          set: v => { c.rcLocks = v || {}; } },
+    checklist:        { get: () => ({ v: c.checklistItems || null }), set: v => { c.checklistItems = Array.isArray(v?.v) ? v.v : null; } },
     fileNames:        { get: () => ({ deck: c.deckNameBlocks || null, sample: c.sampleNameBlocks || null }),
                         set: v => { c.deckNameBlocks = v?.deck || null; c.sampleNameBlocks = v?.sample || null; } },
     notesStyleMap:    { get: () => c.notesStyleMap,    set: v => { c.notesStyleMap = v || {}; } },
