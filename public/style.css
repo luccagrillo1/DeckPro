@@ -5326,3 +5326,30 @@ details.settings-disclosure { border-top: 1px solid var(--border); background: t
 .cloud-main button { flex-shrink: 0; }
 .cloud-push-bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 9000; display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); padding: 10px 12px 10px 16px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 6px 24px rgba(0,0,0,.25); font-size: 13px; color: var(--text); }
 .cloud-push-bar .cloud-push-go { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; }
+
+/* ── Big screens: use the width ───────────────────────────────────────────
+   Everything used to stop at 760px, leaving half of a large display empty.
+   Past ~1180px of main panel, forms widen and the Styles tabs put the live
+   preview beside the controls (preview sticks while the controls scroll). */
+.notes-panel { width: clamp(240px, 15vw, 340px); }
+.notes-panel.pdf-open { width: clamp(380px, 22vw, 520px); }
+@container mainpanel (min-width: 1180px) {
+  .slide-form { max-width: 1040px; }
+  .slide-form:has(.style-tabs) { max-width: 1760px; }
+  .slide-form:has(.style-tabs) > :not(.scheme-fields),
+  .scheme-fields > :not(.style-tab-body),
+  .style-tab-body:not(:has(> .tp-preview + .tp-body)) { max-width: 1040px; }
+  .style-tab-body:has(> .tp-preview + .tp-body) {
+    display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(540px, 1fr);
+    gap: 0 24px; align-items: start;
+  }
+  .style-tab-body:has(> .tp-preview + .tp-body) > :not(.tp-preview):not(.tp-body) { grid-column: 1 / -1; }
+  .style-tab-body > .tp-preview {
+    grid-column: 1; position: sticky; top: 0; margin-bottom: 0;
+    max-height: calc(100vh - 140px); overflow-y: auto;
+  }
+  .style-tab-body > .tp-body { grid-column: 2; }
+  /* the preview column is narrower now — Main Screen above LED Wall reads bigger */
+  .style-tab-body > .tp-preview .tp-wrap { grid-template-columns: minmax(0, 1fr); }
+  .style-tab-body > .tp-preview .tp-notes-block { max-width: none; }
+}

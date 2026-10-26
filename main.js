@@ -36,6 +36,7 @@ function startServer() {
     // Library storage lives under Electron's userData (Application Support/DeckPro)
     process.env.DECKPRO_DATA_DIR = app.getPath('userData');
     const expressApp = require('./server');
+    expressApp.locals.uiZoom = { get: getUiZoom, set: setUiZoom };
 
     function tryListen(port) {
       const server = expressApp.listen(port, '127.0.0.1');
@@ -75,6 +76,33 @@ function waitForServer(url, retries = 20, delay = 150) {
 
 function renderer(js) {
   win?.webContents.executeJavaScript(js).catch(() => {});
+}
+
+// ─── Interface size ───────────────────────────────────────────────────────────
+
+// Per-Mac (a big external display wants a different size than a laptop), so it
+// lives in userData rather than the synced config. View → Zoom and Preferences
+// → Interface Size both go through here so the choice survives a relaunch.
+const UI_ZOOM_STEPS = [0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6];
+function uiZoomFile() { return path.join(app.getPath('userData'), 'ui-zoom.json'); }
+function getUiZoom() {
+  try {
+    const f = Number(JSON.parse(require('fs').readFileSync(uiZoomFile(), 'utf8')).factor);
+    if (f >= UI_ZOOM_STEPS[0] && f <= UI_ZOOM_STEPS[UI_ZOOM_STEPS.length - 1]) return f;
+  } catch {}
+  return 1;
+}
+function setUiZoom(factor) {
+  const f = UI_ZOOM_STEPS.includes(factor) ? factor : 1;
+  try { require('fs').writeFileSync(uiZoomFile(), JSON.stringify({ factor: f })); } catch {}
+  win?.webContents.setZoomFactor(f);
+  renderer(`typeof syncUiZoomControl === 'function' && syncUiZoomControl(${f})`);
+  return f;
+}
+function stepUiZoom(dir) {
+  const cur = getUiZoom();
+  const i = UI_ZOOM_STEPS.findIndex(s => s >= cur - 0.001);
+  setUiZoom(UI_ZOOM_STEPS[Math.max(0, Math.min(UI_ZOOM_STEPS.length - 1, (i < 0 ? 2 : i) + dir))]);
 }
 
 // ─── App menu ─────────────────────────────────────────────────────────────────
@@ -252,9 +280,11 @@ function buildMenu() {
         { type: 'separator' },
         { role: 'toggleDevTools' },
         { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
+        { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: () => setUiZoom(1) },
+        { label: 'Zoom In', accelerator: 'CmdOrCtrl+Plus', click: () => stepUiZoom(1) },
+        // ⌘= is the unshifted key for ⌘+ — accept it too, without a second menu line
+        { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: () => stepUiZoom(1), visible: false, acceleratorWorksWhenHidden: true },
+        { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: () => stepUiZoom(-1) },
         { type: 'separator' },
         { role: 'togglefullscreen' },
       ],
@@ -352,6 +382,8 @@ function createWindow() {
     }),
   });
 
+  // Chromium keys zoom by origin and forgets it between launches — reapply ours
+  win.webContents.on('did-finish-load', () => win?.webContents.setZoomFactor(getUiZoom()));
   win.loadFile(path.join(__dirname, 'public', 'loading.html'));
 
   win.webContents.setWindowOpenHandler(({ url }) => {

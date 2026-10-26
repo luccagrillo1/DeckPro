@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.42.0';
+const APP_VERSION = '4.43.0-beta.1';
 
 const CHANGELOG = [
+  {
+    version: '4.43.0-beta.1',
+    date: '2026-10-26',
+    changes: [
+      "Big screens: DeckPro now uses the width. On a wide window the Styles tabs put the live preview beside the controls (the preview stays put while you scroll the settings), slide and settings pages widen, and the Speaker Notes / Checklist panel starts wider. Small windows look the same as before.",
+      "Interface Size in Preferences → General: 90% to 140%, for making everything bigger on a large display. It's per Mac, and ⌘+ / ⌘− / ⌘0 in the View menu now change the same setting and remember it after a relaunch.",
+    ],
+  },
   {
     version: '4.42.0',
     date: '2026-10-26',
@@ -7386,6 +7394,13 @@ function attachSchemesQRTab(containerId) {
 }
 
 let _prefsTab = 'prefs-general';
+// Matches UI_ZOOM_STEPS in main.js (which also allows 0.8 / 1.6 via ⌘− / ⌘+)
+const UI_ZOOM_CHOICES = [[0.9, '90%'], [1, '100%'], [1.1, '110%'], [1.25, '125%'], [1.4, '140%']];
+function syncUiZoomControl(factor) {
+  document.querySelectorAll('#cfg-ui-zoom button').forEach(b =>
+    b.classList.toggle('active', Math.abs(Number(b.dataset.val) - factor) < 0.001));
+}
+
 function renderConfigPanel(panel) {
   const cfg = state.config;
 
@@ -7420,6 +7435,19 @@ function renderConfigPanel(panel) {
         </div>
         <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
           <strong>Stable</strong> only offers full releases. <strong>Beta</strong> also offers test builds as soon as they're published — newer, but less tried. You're on v${esc(APP_VERSION)}${/-/.test(APP_VERSION) ? ' (a beta)' : ''}. Switching back to Stable keeps this version until a newer stable one comes out.
+        </div>
+      </div>
+
+      <div class="settings-section" id="ui-zoom-section" hidden>
+        <h3>Interface Size</h3>
+        <div class="settings-row" style="align-items:center">
+          <label style="min-width:100px;font-size:13px;color:var(--muted)">Size</label>
+          <div class="segmented-control" id="cfg-ui-zoom">
+            ${UI_ZOOM_CHOICES.map(([f, lbl]) => `<button type="button" data-val="${f}">${lbl}</button>`).join('')}
+          </div>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
+          Makes all of DeckPro bigger or smaller — handy on a large external display. This Mac only. <strong>⌘+</strong> / <strong>⌘−</strong> / <strong>⌘0</strong> (View menu) do the same.
         </div>
       </div>
 
@@ -7775,6 +7803,20 @@ function renderConfigPanel(panel) {
     });
   });
   document.getElementById('btn-check-updates-now')?.addEventListener('click', () => checkForUpdates(true));
+
+  // Interface size (per Mac, kept by the Electron main process — hidden in the plain dev server)
+  fetch('/api/ui-zoom').then(r => r.json()).then(d => {
+    if (!d.available) return;
+    const sec = document.getElementById('ui-zoom-section');
+    if (sec) sec.hidden = false;
+    syncUiZoomControl(d.factor);
+  }).catch(() => {});
+  document.querySelectorAll('#cfg-ui-zoom button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      fetch('/api/ui-zoom', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ factor: Number(btn.dataset.val) }) })
+        .then(r => r.json()).then(d => d.ok && syncUiZoomControl(d.factor)).catch(() => {});
+    });
+  });
 
   const syncToggle = document.getElementById('sync-toggle');
   if (syncToggle) {
@@ -12384,7 +12426,7 @@ function attachHeaderHandlers() {
       shield.style.cssText = 'position:fixed;inset:0;z-index:99998;cursor:col-resize';
       document.body.appendChild(shield);
       const onMove = mv => {
-        const newW = Math.max(200, Math.min(700, startW - (mv.clientX - startX)));
+        const newW = Math.max(200, Math.min(Math.max(700, window.innerWidth * 0.4), startW - (mv.clientX - startX)));
         notesPanel.style.width = `${newW}px`;
       };
       const onUp = () => {
