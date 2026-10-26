@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.7';
+const APP_VERSION = '4.41.8';
 
 const CHANGELOG = [
+  {
+    version: '4.41.8',
+    date: '2026-10-26',
+    changes: [
+      "Fixed: the buttons in confirm dialogs (like Sign out of DeckPro?) drew as plain unstyled system buttons. They now match the rest of the app.",
+    ],
+  },
   {
     version: '4.41.7',
     date: '2026-10-26',

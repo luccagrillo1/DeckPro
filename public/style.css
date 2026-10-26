@@ -4279,8 +4279,16 @@ details[open] .font-adv-summary::before { transform: rotate(90deg); }
 .g-confirm-title { font-size: 15px; font-weight: 700; margin: 0 0 8px; }
 .g-confirm-body  { font-size: 13px; color: var(--muted); margin: 0 0 20px; line-height: 1.5; }
 .g-confirm-btns  { display: flex; gap: 8px; justify-content: flex-end; }
-.g-confirm-cancel { background: var(--bg); color: var(--text); }
-.g-confirm-ok    { background: var(--blue); color: white; }
+/* Same look as the warning dialog's buttons (.warn-btn-cancel / -ok) — these
+   had no button styling at all, so they drew as raw system buttons. */
+.g-confirm-cancel, .g-confirm-ok {
+  padding: 7px 14px; border-radius: 7px; font: inherit;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.g-confirm-cancel { background: none; border: 1px solid var(--border); color: var(--muted); }
+.g-confirm-cancel:hover { color: var(--text); }
+.g-confirm-ok { background: var(--blue); border: none; color: white; font-weight: 700; padding: 7px 16px; }
+.g-confirm-ok:hover { opacity: .88; }
 
 /* ─── Overrides section ────────────────────────────────────────────────── */
 .slide-overrides { margin-top: 8px; }
