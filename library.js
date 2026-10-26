@@ -512,9 +512,11 @@ function cloudClearTombstone(id) {
 // Apply a deck that came from the server. Returns 'applied', 'deleted' or
 // 'skipped'. A row with unpushed local edits is left alone unless force (the
 // server already decided it lost a conflict and kept it as a copy).
-function cloudApplyRemote(remote, { force = false, keepConfigKeys = [] } = {}) {
+// overridePending: a newer remote version replaces unpushed local edits (a
+// follower Mac, where the main Mac's changes win).
+function cloudApplyRemote(remote, { force = false, overridePending = false, keepConfigKeys = [] } = {}) {
   const local = db.prepare('SELECT cloud_rev, cloud_pending, state_json FROM decks WHERE id = ?').get(remote.id);
-  if (local && !force && (local.cloud_pending || (local.cloud_rev || 0) >= remote.rev)) return 'skipped';
+  if (local && !force && ((local.cloud_pending && !overridePending) || (local.cloud_rev || 0) >= remote.rev)) return 'skipped';
   if (remote.deleted) {
     if (!local) return 'skipped';
     db.prepare('DELETE FROM decks WHERE id = ?').run(remote.id);

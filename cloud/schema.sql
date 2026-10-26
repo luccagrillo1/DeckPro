@@ -17,7 +17,12 @@ CREATE TABLE IF NOT EXISTS spaces (
   id          TEXT PRIMARY KEY,
   name        TEXT DEFAULT '',
   seq         INTEGER NOT NULL DEFAULT 0,   -- bumps on every deck write; pull cursor
-  created_at  TEXT NOT NULL
+  created_at  TEXT NOT NULL,
+  -- Main Mac (optional): while it's online other Macs only receive; when it's
+  -- offline they push only after the user says so. See migrate-main-mac.sql.
+  main_device_id   TEXT,
+  main_device_name TEXT DEFAULT '',
+  main_seen_at     TEXT
 );
 
 -- One row per signed-in device. Only a hash of the token is stored.

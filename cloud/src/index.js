@@ -15,10 +15,18 @@
 //   settings — GET/POST /settings. The same document the app's iCloud sync uses
 //              (sections + palettes, each with its own updatedAt); the server
 //              merges per section so two Macs pushing at once can't clobber.
+//   main Mac — GET/POST /main. Optional. Each app sends a stable
+//              X-DeckPro-Device id. While the main Mac is online (seen in the
+//              last MAIN_ONLINE_MS) other Macs' pushes are held; while it's
+//              offline they're accepted only with approved:true (the user said
+//              so). In a deck conflict the main's version wins and the other is
+//              discarded. With no main set, every Mac is equal (as before).
 
 const LOGIN_TTL_MS = 15 * 60 * 1000;
 const PULL_LIMIT = 50;
 const MAX_ID = 100;
+const MAIN_ONLINE_MS = 60 * 1000;
+const MAIN_SEEN_EVERY_MS = 15 * 1000;
 
 export default {
   async fetch(req, env) {
@@ -42,6 +50,9 @@ export default {
         case 'POST /settings':     return pushSettings(req, who, env);
         case 'POST /decks/push':   return pushDecks(req, who, env);
         case 'GET /decks/pull':    return pullDecks(url, who, env);
+        case 'GET /main':          return json({ ok: true, main: who.main });
+        case 'POST /main':         return setMain(req, who, env);
+        case 'POST /main/bye':     return mainBye(who, env);
       }
       return json({ ok: false, error: 'Not found' }, 404);
     } catch (err) {
@@ -239,7 +250,59 @@ async function authenticate(req, env) {
   if (Date.now() - Date.parse(who.lastSeen) > 5 * 60 * 1000) {
     await env.DB.prepare('UPDATE sessions SET last_seen = ? WHERE token_hash = ?').bind(nowIso(), who.hash).run();
   }
+  const dev = req.headers.get('X-DeckPro-Device') || '';
+  who.deviceId = validId(dev) ? dev : '';
+  await loadMain(env, who);
   return who;
+}
+
+// ─── Main Mac ───────────────────────────────────────────────────────────────
+
+// who.main = { set, name, online, isMe } and who.role = 'main' | 'follower' | 'equal'.
+// Every request from the main Mac doubles as its heartbeat.
+async function loadMain(env, who) {
+  const sp = await env.DB.prepare('SELECT main_device_id, main_device_name, main_seen_at FROM spaces WHERE id = ?')
+    .bind(who.user.space_id).first();
+  const id = sp?.main_device_id || '';
+  const isMe = !!id && id === who.deviceId;
+  let seen = sp?.main_seen_at ? Date.parse(sp.main_seen_at) : 0;
+  if (isMe && Date.now() - seen > MAIN_SEEN_EVERY_MS) {
+    seen = Date.now();
+    await env.DB.prepare('UPDATE spaces SET main_seen_at = ? WHERE id = ?').bind(new Date(seen).toISOString(), who.user.space_id).run();
+  }
+  who.main = { set: !!id, name: sp?.main_device_name || '', online: !!id && Date.now() - seen < MAIN_ONLINE_MS, isMe };
+  who.role = !id ? 'equal' : isMe ? 'main' : 'follower';
+}
+
+// Make this Mac the main ({ main: true }) or clear the main ({ main: false }).
+async function setMain(req, who, env) {
+  const body = await readJson(req);
+  if (body?.main) {
+    if (!who.deviceId) return json({ ok: false, error: 'This version of DeckPro can’t be the main Mac — update it first.' }, 400);
+    await env.DB.prepare('UPDATE spaces SET main_device_id = ?, main_device_name = ?, main_seen_at = ? WHERE id = ?')
+      .bind(who.deviceId, who.device || 'Main Mac', nowIso(), who.user.space_id).run();
+  } else {
+    await env.DB.prepare('UPDATE spaces SET main_device_id = NULL, main_device_name = \'\', main_seen_at = NULL WHERE id = ?')
+      .bind(who.user.space_id).run();
+  }
+  await loadMain(env, who);
+  return json({ ok: true, main: who.main });
+}
+
+// The main Mac is quitting: count it offline right away instead of in a minute.
+async function mainBye(who, env) {
+  if (who.role === 'main') {
+    await env.DB.prepare('UPDATE spaces SET main_seen_at = NULL WHERE id = ?').bind(who.user.space_id).run();
+  }
+  return json({ ok: true });
+}
+
+// A follower's push goes through only while the main is offline and the user approved it.
+function heldPush(who, body) {
+  if (who.role !== 'follower') return null;
+  if (who.main.online) return json({ ok: false, held: true, main: who.main, error: `${who.main.name || 'Your main Mac'} is open — this Mac only receives changes.` }, 409);
+  if (!body?.approved) return json({ ok: false, held: true, main: who.main, error: 'Waiting for you to push this Mac’s changes.' }, 409);
+  return null;
 }
 
 const publicUser = u => ({ id: u.id, email: u.email, name: u.name, picture: u.picture });
@@ -293,6 +356,8 @@ function mergeSettings(stored, incoming) {
 async function pushSettings(req, who, env) {
   const body = await readJson(req);
   if (!body?.doc || typeof body.doc !== 'object') return json({ ok: false, error: 'Missing doc' }, 400);
+  const held = heldPush(who, body);
+  if (held) return held;
   const row = await env.DB.prepare('SELECT doc FROM settings WHERE space_id = ?').bind(who.user.space_id).first();
   const merged = mergeSettings(row ? JSON.parse(row.doc) : null, body.doc);
   await env.DB.prepare('INSERT INTO settings (space_id, doc, updated_at) VALUES (?, ?, ?) ON CONFLICT(space_id) DO UPDATE SET doc = excluded.doc, updated_at = excluded.updated_at')
@@ -360,6 +425,15 @@ async function pushOne(env, who, d) {
     }
     // Someone else wrote since this client last synced.
     const server = rowToDeck(cur);
+    // Main Mac priority: the main's version wins outright (edits and deletes)
+    // and the other version is discarded — no conflicted copy.
+    if (who.role === 'main') {
+      if (await writeDeck(env, spaceId, d.id, { ...incoming, rev: cur.rev + 1 }, cur.rev)) return { id: d.id, rev: cur.rev + 1, winner: 'client' };
+      continue;
+    }
+    if (who.role === 'follower' && server.savedBy && server.savedBy === who.main.name) {
+      return { id: d.id, rev: cur.rev, winner: 'server', server };
+    }
     if (incoming.deleted) {
       // A delete never wipes out edits it didn't see; the edited deck survives.
       return { id: d.id, rev: cur.rev, winner: 'server', server };
@@ -395,6 +469,8 @@ async function pushDecks(req, who, env) {
   const body = await readJson(req);
   const decks = Array.isArray(body?.decks) ? body.decks : null;
   if (!decks) return json({ ok: false, error: 'Missing decks' }, 400);
+  const held = heldPush(who, body);
+  if (held) return held;
   const results = [];
   for (const d of decks.slice(0, 25)) {
     if (!validId(d?.id)) { results.push({ id: d?.id, error: 'Bad id' }); continue; }
@@ -409,5 +485,5 @@ async function pullDecks(url, who, env) {
     .bind(who.user.space_id, since, PULL_LIMIT + 1).all();
   const more = results.length > PULL_LIMIT;
   const rows = results.slice(0, PULL_LIMIT).map(rowToDeck);
-  return json({ ok: true, decks: rows, cursor: rows.length ? rows[rows.length - 1].seq : since, more });
+  return json({ ok: true, decks: rows, cursor: rows.length ? rows[rows.length - 1].seq : since, more, main: who.main });
 }

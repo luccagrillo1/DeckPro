@@ -5319,3 +5319,10 @@ details.settings-disclosure { border-top: 1px solid var(--border); background: t
 .cl-icon:hover:not(:disabled) { color: var(--text); background: rgba(127,127,127,.15); }
 .cl-icon:disabled { opacity: .25; cursor: default; }
 .cl-add { display: flex; gap: 6px; }
+
+/* DeckPro Account → main Mac */
+.cloud-main { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; }
+.cloud-main .cloud-blurb { flex: 1; }
+.cloud-main button { flex-shrink: 0; }
+.cloud-push-bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 9000; display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); padding: 10px 12px 10px 16px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 6px 24px rgba(0,0,0,.25); font-size: 13px; color: var(--text); }
+.cloud-push-bar .cloud-push-go { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; }

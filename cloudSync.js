@@ -10,6 +10,12 @@
 // changes it. Settings (styles, preferences) are synced by the app itself
 // through settingsPull/settingsPush, which just proxy to the server.
 //
+// Main Mac (optional): one Mac can be the account's main. While it's open the
+// other Macs only receive — their own edits stay local, and anything the main
+// changes replaces them. While it's closed, a follower pushes only after the
+// user clicks "Push changes" (approvePush), which lasts until the main is back.
+// The server enforces the same rules; see cloud/src/index.js.
+//
 // The session token lives in <data dir>/cloud.json (mode 600). Nothing that
 // belongs to this computer alone — Pro7 password, API keys, folders — is ever
 // uploaded: MACHINE_CONFIG_KEYS are stripped from each deck before pushing.
@@ -23,6 +29,8 @@ const library = require('./library');
 const ROOT_DIR = process.env.DECKPRO_DATA_DIR ||
   path.join(os.homedir(), 'Library', 'Application Support', 'DeckPro');
 const ACCOUNT_FILE = path.join(ROOT_DIR, 'cloud.json');
+// Stable id for this Mac (survives sign-out), so it can be the main Mac.
+const DEVICE_ID_FILE = path.join(ROOT_DIR, 'device-id');
 const CLOUD_URL = (process.env.DECKPRO_CLOUD_URL || 'https://deckpro-sync.luccagrillo1.workers.dev').replace(/\/$/, '');
 // e2e runs never reach the real server unless a test server is named.
 const ENABLED = !(process.env.DECKPRO_E2E === '1' && !process.env.DECKPRO_CLOUD_URL);
@@ -40,6 +48,31 @@ const NUDGE_DELAY_MS = 3 * 1000;
 const PULL_OVERLAP = 20;
 
 const deviceName = () => os.hostname().replace(/\.local$/, '');
+
+let _deviceId = null;
+function deviceId() {
+  if (_deviceId) return _deviceId;
+  try { _deviceId = fs.readFileSync(DEVICE_ID_FILE, 'utf8').trim(); } catch (_) {}
+  if (!_deviceId) {
+    _deviceId = crypto.randomUUID();
+    try { fs.mkdirSync(ROOT_DIR, { recursive: true }); fs.writeFileSync(DEVICE_ID_FILE, _deviceId); } catch (_) {}
+  }
+  return _deviceId;
+}
+
+// Main Mac state, refreshed by every pull: { set, name, online, isMe }.
+let main = { set: false, name: '', online: false, isMe: false };
+let pushApproved = false;   // follower: user said "push" while the main is offline
+let decksHeld = false;      // follower: decks waiting to push
+let settingsHeld = false;   // follower: styles/preferences waiting to push
+const role = () => !main.set ? 'equal' : main.isMe ? 'main' : 'follower';
+function setMainInfo(m) {
+  if (!m) return;
+  main = { set: !!m.set, name: m.name || '', online: !!m.online, isMe: !!m.isMe };
+  if (role() !== 'follower' || main.online) pushApproved = false;
+}
+// A follower may push only while the main is offline and the user approved it.
+const mayPush = () => role() !== 'follower' || (!main.online && pushApproved);
 
 let account = null;         // { token, user, cursorOwner }
 let status  = { state: 'off', lastSync: null, error: null };
@@ -64,7 +97,7 @@ function saveAccount() {
 async function api(method, route, body, token = account?.token) {
   const res = await fetch(CLOUD_URL + route, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', 'X-DeckPro-Device': deviceId(), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(30000),
   });
@@ -157,14 +190,20 @@ function noteChange(id, kind) {
 }
 
 function applyRemote(deck, force = false) {
-  const r = library.cloudApplyRemote(deck, { force, keepConfigKeys: MACHINE_CONFIG_KEYS });
+  // A follower takes every newer version, even over its own unpushed edits:
+  // the main's changes win and this Mac's are discarded.
+  const overridePending = role() === 'follower';
+  const r = library.cloudApplyRemote(deck, { force, overridePending, keepConfigKeys: MACHINE_CONFIG_KEYS });
   if (r !== 'skipped') noteChange(deck.id, r);
   return r;
 }
 
 async function pushAll() {
+  decksHeld = role() === 'follower' && (library.cloudTombstones().length > 0 || library.cloudPendingCount() > 0);
+  if (!mayPush()) return;
   for (const t of library.cloudTombstones()) {
-    const r = await api('POST', '/decks/push', { decks: [{ id: t.id, baseRev: t.rev, deleted: true, updatedAt: t.deleted_at }] });
+    const r = await api('POST', '/decks/push', { approved: pushApproved, decks: [{ id: t.id, baseRev: t.rev, deleted: true, updatedAt: t.deleted_at }] });
+    if (r.held) { setMainInfo(r.main); return; }
     const res = r.results?.[0];
     if (!res || res.error) throw new Error(res?.error || r.error || 'Push failed');
     library.cloudClearTombstone(t.id);
@@ -175,8 +214,10 @@ async function pushAll() {
     const batch = library.cloudPendingDecks(10);
     if (!batch.length) return;
     const r = await api('POST', '/decks/push', {
+      approved: pushApproved,
       decks: batch.map(d => ({ ...d, state: stripForUpload(d.state) })),
     });
+    if (r.held) { setMainInfo(r.main); return; }
     if (!r.ok) throw new Error(r.error || 'Push failed');
     for (const res of r.results || []) {
       const sent = batch.find(d => d.id === res.id);
@@ -191,6 +232,7 @@ async function pushAll() {
     }
     if (r.results?.some(x => x.error)) throw new Error('Some decks didn’t sync — will retry');
   }
+  decksHeld = false;
 }
 
 async function pullAll() {
@@ -198,6 +240,7 @@ async function pullAll() {
   for (let round = 0; round < 200; round++) {
     const r = await api('GET', `/decks/pull?since=${Math.max(0, cursor - PULL_OVERLAP)}`);
     if (!r.ok) throw new Error(r.error || 'Pull failed');
+    setMainInfo(r.main);
     for (const d of r.decks) applyRemote(d);
     if (r.cursor > cursor) { cursor = r.cursor; library.cloudSetMeta('cloud_cursor', String(cursor)); }
     if (!r.more) return;
@@ -212,8 +255,10 @@ async function syncNow() {
   try {
     do {
       syncAgain = false;
-      await pushAll();
-      await pullAll();
+      // A follower pulls first, so the main's changes replace its own before
+      // anything goes up; everyone else pushes first, as before.
+      if (role() === 'follower') { await pullAll(); await pushAll(); }
+      else { await pushAll(); await pullAll(); }
     } while (syncAgain);
     status = { state: 'synced', lastSync: new Date().toISOString(), error: null };
   } catch (err) {
@@ -257,6 +302,10 @@ function getStatus(since = 0) {
     lastSync: status.lastSync,
     error: status.error,
     pending: account ? library.cloudPendingCount() : 0,
+    main: account ? { ...main } : null,
+    role: account ? role() : null,
+    held: account ? (decksHeld || settingsHeld) && !mayPush() : false,
+    pushApproved,
     signingIn: !!login && !login.error,
     signInError: login?.error || null,
     changeSeq,
@@ -280,13 +329,44 @@ async function settingsPull() {
 
 async function settingsPush(doc) {
   if (!account) return { ok: false, available: false };
+  if (!mayPush()) { settingsHeld = true; return { ok: false, held: true, main }; }
   try {
-    const r = await api('POST', '/settings', { doc });
+    const r = await api('POST', '/settings', { doc, approved: pushApproved });
+    if (r.held) { setMainInfo(r.main); settingsHeld = true; return { ok: false, held: true, main }; }
+    if (r.ok) settingsHeld = false;
     return r.ok ? { ok: true, available: true, doc: r.doc } : { ok: false, error: r.error };
   } catch (err) { return { ok: false, error: err.message }; }
 }
 
+// ─── Main Mac ─────────────────────────────────────────────────────────────────
+
+async function setMain(on) {
+  if (!account) return { ok: false, error: 'Not signed in' };
+  try {
+    const r = await api('POST', '/main', { main: !!on });
+    if (r.ok) { setMainInfo(r.main); syncNow(); }
+    return r;
+  } catch (err) { return { ok: false, error: err.message }; }
+}
+
+// Follower, main offline: the user clicked "Push changes". Lasts until the main is back.
+async function approvePush() {
+  if (role() !== 'follower') return { ok: true };
+  pushApproved = true;
+  await syncNow();
+  return { ok: true, ...getStatus() };
+}
+
+// The main Mac is quitting: tell the server so the other Macs can push right away.
+async function goodbye() {
+  if (!account || role() !== 'main') return;
+  try { await Promise.race([api('POST', '/main/bye', {}), new Promise(r => setTimeout(r, 1500))]); } catch (_) {}
+}
+
+const isMain = () => !!account && role() === 'main';
+
 module.exports = {
+  setMain, approvePush, goodbye, isMain,
   init, startSignIn, cancelSignIn, signOut, syncNow, nudge,
   getStatus, getAccount, settingsPull, settingsPush, MACHINE_CONFIG_KEYS,
 };

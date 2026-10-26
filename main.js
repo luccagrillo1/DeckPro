@@ -430,6 +430,17 @@ app.whenReady().then(async () => {
   }
 });
 
+// Main Mac quitting: tell DeckPro Cloud so other Macs can push straight away.
+let _cloudByeSent = false;
+app.on('before-quit', e => {
+  if (_cloudByeSent) return;
+  _cloudByeSent = true;
+  const cloud = require('./cloudSync');
+  if (!cloud.isMain()) return;   // only the main Mac says goodbye (≤1.5 s)
+  e.preventDefault();
+  cloud.goodbye().finally(() => app.quit());
+});
+
 app.on('window-all-closed', () => {
   if (serverInstance) {
     try { serverInstance.close(); } catch (_) {}

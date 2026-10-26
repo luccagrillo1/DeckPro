@@ -7,9 +7,9 @@ const assert = require('assert');
 let passed = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ ' + msg); };
 
-async function call(method, path, { token, body } = {}) {
+async function call(method, path, { token, body, device } = {}) {
   const res = await fetch(BASE + path, {
-    method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+    method, headers: { 'Content-Type': 'application/json', ...(device ? { 'X-DeckPro-Device': device } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   return { status: res.status, ...(await res.json()) };
@@ -96,6 +96,36 @@ async function signIn(email, device) {
   await call('POST', '/auth/signout', { token: b.token });
   ok((await call('GET', '/me', { token: b.token })).status === 401, 'signed-out device token stops working');
   ok((await call('GET', '/me', { token: a.token })).ok, 'the other device stays signed in');
+
+  // ── Main Mac ──────────────────────────────────────────────────────────────
+  const em = `m${Date.now()}@example.com`;
+  const M = await signIn(em, 'MainMac'), F = await signIn(em, 'OtherMac');
+  const mc = (method, path, body) => call(method, path, { token: M.token, device: 'dev-main', body });
+  const fc = (method, path, body) => call(method, path, { token: F.token, device: 'dev-follow', body });
+  const mdeck = (id, v, baseRev) => ({ id, baseRev, updatedAt: new Date().toISOString(), meta: { title: id }, state: { v } });
+  ok((await fc('GET', '/main')).main.set === false, 'no main Mac by default');
+  ok((await fc('POST', '/decks/push', { decks: [mdeck('free', 1, 0)] })).results[0].winner === 'client', 'with no main, any Mac pushes');
+  const setM = await mc('POST', '/main', { main: true });
+  ok(setM.main.set && setM.main.isMe && setM.main.online && setM.main.name === 'MainMac', 'a Mac becomes the main');
+  const fm = (await fc('GET', '/decks/pull?since=0')).main;
+  ok(fm.set && !fm.isMe && fm.online && fm.name === 'MainMac', 'the other Mac sees the main online in its pull');
+  const heldOn = await fc('POST', '/decks/push', { approved: true, decks: [mdeck('x', 'F', 0)] });
+  ok(heldOn.status === 409 && heldOn.held, 'follower push is held while the main is online (even approved)');
+  ok((await fc('POST', '/settings', { approved: true, doc: { sections: {} } })).held, 'follower settings push is held too');
+  await mc('POST', '/main/bye', {});
+  ok((await fc('GET', '/main')).main.online === false, 'main says goodbye on quit → offline');
+  ok((await fc('POST', '/decks/push', { decks: [mdeck('x', 'F', 0)] })).held, 'main offline, not approved → still held');
+  const appr = await fc('POST', '/decks/push', { approved: true, decks: [mdeck('x', 'F1', 0)] });
+  ok(appr.results[0].winner === 'client' && appr.results[0].rev === 1, 'main offline + approved → follower push goes through');
+  // Main comes back with its own offline edit of the same deck (stale base): main wins, nothing kept.
+  const mp = await mc('POST', '/decks/push', { decks: [mdeck('x', 'M', 0)] });
+  ok(mp.results[0].winner === 'client' && !mp.results[0].conflictCopyId, 'main’s stale edit wins with no conflicted copy');
+  const after = (await mc('GET', '/decks/pull?since=0')).decks;
+  ok(after.filter(d => d.id === 'x').length === 1 && after.find(d => d.id === 'x').state.v === 'M' && !after.some(d => /conflicted/.test(d.meta.title || '')), 'only the main’s version exists');
+  await mc('POST', '/main/bye', {});
+  const fs1 = await fc('POST', '/decks/push', { approved: true, decks: [mdeck('x', 'F2', 1)] });
+  ok(fs1.results[0].winner === 'server' && fs1.results[0].server.state.v === 'M' && !fs1.results[0].conflictCopyId, 'follower’s stale edit loses to the main’s, discarded');
+  ok((await mc('POST', '/main', { main: false })).main.set === false, 'the main can be cleared');
 
   console.log(`\n${passed} passed`);
 })().catch(e => { console.error('✗', e.message); process.exit(1); });

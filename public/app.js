@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.13';
+const APP_VERSION = '4.42.0';
 
 const CHANGELOG = [
+  {
+    version: '4.42.0',
+    date: '2026-10-26',
+    changes: [
+      "Main Mac: in Settings → DeckPro Account, \"Make this Mac the main\". While the main Mac is open, your other Macs only receive — edits made on them stay on that Mac, and anything the main changes replaces them. If both changed the same deck, the main's version wins and the other is discarded (no conflicted copy).",
+      "When the main Mac is closed, the other Mac asks before uploading: a \"Push changes\" bar appears, and once you click it that Mac syncs normally until the main opens again. Quitting the main tells the other Macs right away. Covers decks, styles and preferences. With no main set, every Mac syncs equally, as before.",
+    ],
+  },
   {
     version: '4.41.13',
     date: '2026-10-26',
@@ -18711,7 +18719,8 @@ function cloudStatusLine() {
   if (_cloud.signingIn) return 'Finish signing in in your browser…';
   if (_cloud.signInError) return _cloud.signInError;
   if (!_cloud.signedIn) return '';
-  const pending = _cloud.pending ? ` · ${_cloud.pending} waiting to upload` : '';
+  const following = _cloud.role === 'follower' && (_cloud.main?.online || !_cloud.pushApproved);
+  const pending = _cloud.pending ? ` · ${_cloud.pending} ${following ? 'kept on this Mac' : 'waiting to upload'}` : '';
   switch (_cloud.state) {
     case 'syncing': return 'Syncing…';
     case 'offline': return `Offline — changes are saved here and will sync when you’re back online${pending}`;
@@ -18755,7 +18764,63 @@ function cloudAccountHTML() {
       <button type="button" class="btn-browse" id="btn-cloud-signout">Sign out</button>
     </div>
     <div class="cloud-status ${cls}">${esc(cloudStatusLine())}</div>
+    ${cloudMainHTML()}
     <p class="cloud-blurb">Decks, styles and preferences sync to your account. Pro7 connection, folders, the Bible API key and the theme stay on each Mac.</p>`;
+}
+
+// Main Mac: while it's open the other Macs only receive; while it's closed
+// they push only when you say so. The main's version always wins.
+function cloudMainHTML() {
+  const m = _cloud.main || {};
+  let line, btn;
+  if (!m.set) {
+    line = 'No main Mac — every Mac syncs equally and the newest edit wins.';
+    btn = '<button type="button" class="btn-browse" id="btn-cloud-main-set">Make this Mac the main</button>';
+  } else if (m.isMe) {
+    line = '<b>This Mac is the main.</b> While it’s open, your other Macs only receive changes. If they changed the same thing, this Mac’s version wins.';
+    btn = '<button type="button" class="btn-browse" id="btn-cloud-main-clear">Stop being the main</button>';
+  } else {
+    line = `Main Mac: <b>${esc(m.name || 'another Mac')}</b> — ${m.online
+      ? 'open now, so this Mac only receives. Edits you make here stay on this Mac, and anything the main changes replaces them.'
+      : 'closed. Edits here wait until you choose to push them.'}`;
+    btn = '<button type="button" class="btn-browse" id="btn-cloud-main-set">Make this Mac the main</button>';
+  }
+  return `<div class="cloud-main"><p class="cloud-blurb" style="margin:0">${line}</p>${btn}</div>`;
+}
+
+async function cloudSetMain(on) {
+  const r = await libApi('/api/cloud/main', { method: 'POST', body: { main: on } });
+  if (!r.ok) { toast('error', 'Couldn’t change the main Mac', r.error || ''); return; }
+  toast('success', on ? 'This Mac is now the main' : 'No main Mac', on ? 'Your other Macs will follow it while it’s open.' : 'Every Mac syncs equally again.');
+  await pollCloud();
+}
+
+// Follower with the main closed and changes waiting: ask before pushing.
+let _cloudPushDismissed = '';
+function renderCloudPushBar() {
+  let bar = document.getElementById('cloud-push-bar');
+  const m = _cloud.main || {};
+  const key = `${m.name}|${_cloud.pending}`;
+  const show = _cloud.signedIn && _cloud.role === 'follower' && !m.online && _cloud.held && _cloudPushDismissed !== key;
+  if (!show) { bar?.remove(); return; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'cloud-push-bar';
+    bar.className = 'cloud-push-bar';
+    document.body.appendChild(bar);
+  }
+  bar.innerHTML = `
+    <span><b>${esc(m.name || 'Your main Mac')}</b> is closed. Push this Mac’s changes to your account?</span>
+    <button type="button" class="btn-browse" id="btn-cloud-push-later">Not now</button>
+    <button type="button" class="btn-browse cloud-push-go" id="btn-cloud-push-go">Push changes</button>`;
+  bar.querySelector('#btn-cloud-push-later').addEventListener('click', () => { _cloudPushDismissed = key; bar.remove(); });
+  bar.querySelector('#btn-cloud-push-go').addEventListener('click', async () => {
+    bar.remove();
+    await libApi('/api/cloud/approve-push', { method: 'POST' });
+    syncCycle('approved');
+    await pollCloud();
+    toast('success', 'Pushing this Mac’s changes', `Until ${m.name || 'the main Mac'} opens again, changes here sync normally.`);
+  });
 }
 
 function renderCloudAccount() {
@@ -18763,6 +18828,13 @@ function renderCloudAccount() {
   if (!el) return;
   el.innerHTML = cloudAccountHTML();
   document.getElementById('btn-cloud-signin')?.addEventListener('click', cloudSignIn);
+  document.getElementById('btn-cloud-main-set')?.addEventListener('click', () => {
+    const m = _cloud.main || {};
+    if (m.set && !m.isMe) {
+      showConfirmModal('Make this Mac the main?', `${m.name || 'The current main Mac'} will start following this one. Anything it hasn’t synced yet will be replaced by this Mac’s version.`, 'Make main', () => cloudSetMain(true));
+    } else cloudSetMain(true);
+  });
+  document.getElementById('btn-cloud-main-clear')?.addEventListener('click', () => cloudSetMain(false));
   document.getElementById('btn-cloud-cancel')?.addEventListener('click', async () => {
     await libApi('/api/cloud/signin/cancel', { method: 'POST' });
     await pollCloud();
@@ -18818,6 +18890,7 @@ async function pollCloud() {
     await handleCloudChanges(changed);
   }
   renderCloudAccount();
+  renderCloudPushBar();
   scheduleCloudPoll(st.signingIn ? 1500 : (st.signedIn ? 8000 : 0));
 }
 
