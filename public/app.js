@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.5';
+const APP_VERSION = '4.41.6';
 
 const CHANGELOG = [
+  {
+    version: '4.41.6',
+    date: '2026-10-26',
+    changes: [
+      "Fixed: the preview ignored the \"Grow or shrink\" Overflow setting. ProPresenter makes that text as big as fits the whole box (so on the LED wall the body and title blew up and overlapped), but DeckPro kept showing it at the style's size. The preview now grows it the same way, and the Styles editor explains what Grow or shrink does — use Shrink to fit to keep the size you set.",
+    ],
+  },
   {
     version: '4.41.5',
     date: '2026-10-26',
@@ -9131,7 +9138,7 @@ function _tpEl(pv, cw, ch, o) {
     const txt = esc(_fitCaseText(sp.text, sa.capitalization || '')).replace(/\n/g, '<br>');
     return sp.alt ? `<span style="${_tpTextCss(altFont || font, size, altAdv || a, cw)}">${txt}</span>` : txt;
   }).join('');
-  return `<div class="tp-el${sel ? ' sel' : ''}" data-row="${row}"${a.scaleBehavior === 'none' ? '' : ' data-fit="1"'}${anchor ? ' data-anchor="1"' : ''}${autoGap != null ? ` data-autogap="${Number(autoGap) || 0}"` : ''}
+  return `<div class="tp-el${sel ? ' sel' : ''}" data-row="${row}"${a.scaleBehavior === 'none' ? '' : a.scaleBehavior === 'SCALE_BEHAVIOR_SCALE_FONT_UP_DOWN' ? ' data-fit="grow"' : ' data-fit="1"'}${anchor ? ' data-anchor="1"' : ''}${autoGap != null ? ` data-autogap="${Number(autoGap) || 0}"` : ''}
     style="left:${pct(x, cw)};top:${pct(y, ch)};width:${pct(w, cw)};height:${pct(h, ch)};justify-content:${VA[a.verticalAlignment || va || ''] || 'flex-start'};
       padding:${u(a.marginTop)} ${u(a.marginRight)} ${u(a.marginBottom)} ${u(a.marginLeft)};${fill ? `background:${_tpHex(fill, 'transparent')};` : ''}">
     <div class="tp-text" style="${_tpTextCss(font, size, a, cw)};text-align:${HA[a.alignment ?? ''] || 'left'};
@@ -9365,6 +9372,7 @@ function renderSchemeGrid(sv, rs, dis, pv) {
             `<option value="${v}" ${(adv.scaleBehavior || '') === v ? 'selected' : ''}>${l}</option>`).join('')}
         </select>`)}</div>
       </div>
+      ${adv.scaleBehavior === 'SCALE_BEHAVIOR_SCALE_FONT_UP_DOWN' ? `<div class="ss-note">Grow or shrink: ProPresenter makes the text as big as fits the whole box, ignoring the size above (and Fit Width). Short text gets huge — pick Shrink to fit to keep this size.</div>` : ''}
     </div>
 
     <div class="tp-group">
@@ -9426,8 +9434,24 @@ function renderSchemeGrid(sv, rs, dis, pv) {
 
 // Export defaults every text box to ProPresenter's "shrink to fit" (only
 // "Never resize" turns it off), so overflowing preview text shrinks the same way.
+// "Grow or shrink" boxes are sized like Pro7 does them: the largest text that
+// still fits the whole box — however small the style's own size is.
 function _tpShrinkToFit(root) {
-  root.querySelectorAll('.tp-el[data-fit]').forEach(el => {
+  root.querySelectorAll('.tp-el[data-fit="grow"]').forEach(el => {
+    const txt = el.querySelector('.tp-text');
+    const sized = [txt, ...txt.querySelectorAll('span')];
+    const base = sized.map(n => parseFloat(getComputedStyle(n).fontSize));
+    const cs = getComputedStyle(el);
+    const availH = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    const availW = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    if (availH <= 0 || availW <= 0) return;
+    const apply = k => sized.forEach((n, i) => { n.style.fontSize = `${base[i] * k}px`; });
+    const fits = k => { apply(k); return txt.scrollHeight <= availH + 0.5 && txt.scrollWidth <= availW + 0.5; };
+    let lo = 0.1, hi = 8;
+    for (let i = 0; i < 14; i++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; }
+    apply(lo);
+  });
+  root.querySelectorAll('.tp-el[data-fit="1"]').forEach(el => {
     const txt = el.querySelector('.tp-text');
     const sized = [txt, ...txt.querySelectorAll('span')];
     for (let i = 0; i < 8; i++) {
