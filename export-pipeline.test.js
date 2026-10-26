@@ -25,6 +25,8 @@ const spec = {
       bodies: [[{ text: 'For God so loved the world' }]], ...D2, ...D2_METRICS },
     { type: 'point', mode: 'single', label: 'Go', bodyText: 'Go First', propName: 'Go First', ...D2 },
     { type: 'point', mode: 'split', label: 'Split', bodyText: 'Main words', propBodyText: 'LED_WALL_ONLY_TEXT', propName: 'Split' },
+    { type: 'scripture', label: 'Flow', reference: 'Flow 1:1', propName: 'Flow',
+      bodies: [[{ text: 'FLOW_PART_ONE.' }], [{ text: 'FLOW_PART_TWO' }]], propJoins: [' '], ...D2_METRICS },
     { type: 'point', mode: 'revealing', label: 'Rev', title: 'T', bullets: [[{ text: 'a' }], [{ text: 'b' }]], propBaseName: 'Rev', ...D2 },
   ],
 };
@@ -65,6 +67,10 @@ function findElements(node, out = []) {
     const splitRtf = Buffer.from(findElements(cue('Split')).find(e => e.name === 'body')?.text?.rtfData || '', 'base64').toString();
     ok('Split point sends its own LED-wall text to the prop, not the main-screen text',
       splitRtf.includes('LED_WALL_ONLY_TEXT') && !splitRtf.includes('Main words'));
+
+    const flowRtf = Buffer.from(findElements(cue('Flow')).find(e => e.name === 'body')?.text?.rtfData || '', 'base64').toString();
+    ok('"Split for Main Screen" parts flow back together on the LED wall (propJoins reaches the prop)',
+      /FLOW_PART_ONE\. FLOW_PART_TWO/.test(flowRtf), flowRtf.slice(-120));
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

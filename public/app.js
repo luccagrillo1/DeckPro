@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.0-beta.15';
+const APP_VERSION = '4.41.0-beta.16';
 
 const CHANGELOG = [
+  {
+    version: '4.41.0-beta.16',
+    date: '2026-10-25',
+    changes: [
+      "Fixed: after \"Split for Main Screen\", the LED wall still showed a line break where the passage was split. It now reads as one passage, as intended (the split point's setting never reached the LED-wall prop on export).",
+    ],
+  },
   {
     version: '4.41.0-beta.15',
     date: '2026-10-25',

@@ -782,6 +782,7 @@ function collectPropSpecs(slides, responses = {}, includeResponseCard = false, b
         propTitleAscent:      slide.propTitleAscent ?? null,
         propTitleDescent:     slide.propTitleDescent ?? null,
         propBodyDisplaySpans: slide.propBodyDisplaySpans ?? null,
+        propJoins:            slide.propJoins ?? null,
       });
     } else if (slide.type === 'point') {
       if (slide.mode === 'revealing') {
