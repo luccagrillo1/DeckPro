@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.4';
+const APP_VERSION = '4.41.5';
 
 const CHANGELOG = [
+  {
+    version: '4.41.5',
+    date: '2026-10-26',
+    changes: [
+      "Fixed: Fit Width ignored emphasis (ALT) words. Marking words as emphasis after a fit — drawn in the Bold row's font and capitalisation, e.g. ALL CAPS — kept the old, too-narrow box, so Pro7 wrapped an extra line (like a lone \"of all.\"). Changing emphasis now re-measures, and every slide re-measures on its next export.",
+      "Fixed: the slide preview showed scripture emphasis words in the plain body style; it now draws them in the Bold row style (font and ALL CAPS) like Pro7 does.",
+    ],
+  },
   {
     version: '4.41.4',
     date: '2026-10-26',
@@ -4751,7 +4759,10 @@ function _fitTitleMetrics(rs, display) {
 // cryptographic hash — a plain, fast, collision-safe-enough string key is
 // all a same-session staleness check needs.
 function _fitHash(spans, ctx) {
-  const spanKey = (spans || []).map(s => `${s.text || ''}|${!!s.bold}|${!!s.italic}|${!!s.underline}`).join('');
+  // Every span flag that changes how wide the text draws — alt (emphasis
+  // font + its capitalization) included: leaving it out meant marking words
+  // ALT after a fit kept the old, too-narrow box (and Pro7 wrapped an extra line).
+  const spanKey = (spans || []).map(s => `${s.text || ''}|${!!s.bold}|${!!s.alt}|${!!s.italic}|${!!s.underline}|${!!s.super}`).join('');
   const descKey = d => `${d.fontFamily}|${d.fontWeight}|${d.fontStyle}|${d.letterSpacing}|${d.fontVariant}|${d.cap}`;
   return [spanKey, descKey(ctx.baseDesc), descKey(ctx.boldDesc), ctx.size, ctx.maxW,
           ctx.marginL, ctx.marginR, ctx.palX, ctx.boxW, ctx.align, FIT_REV].join('');
@@ -5917,13 +5928,15 @@ function slidePreviewData(slide) {
   const orDash = t => (t && String(t).trim()) ? t : '—';
   if (slide.type === 'scripture') {
     const body = (slide.bodies || [slide.body || []])[0] || [];
-    const pick = sp => (sp && sp.length ? sp : body).map(x => ({ text: x.text || '', bold: !!x.bold }));
+    // renderTextPreview draws `bold` spans in the emphasis (Bold row) style —
+    // for scripture that's the ALT words (plain B is just \b on the body font).
+    const pick = sp => (sp && sp.length ? sp : body).map(x => ({ text: x.text || '', bold: !!x.alt }));
     if (fit && slide.bodyW) { pv.bodyW = slide.bodyW; if (slide.bodyX != null) pv.bodyX = slide.bodyX; }
     if (propFit && slide.propBodyW) { pv.propBodyW = slide.propBodyW; if (slide.propBodyX != null) pv.propBodyX = slide.propBodyX; }
     const spans = pick(fit ? slide._fitBrokenSpans : null);
     return { pv, scene: 'scripture', content: {
       spans: spans.some(x => x.text.trim()) ? spans : [{ text: '—' }],
-      propSpans: ((propFit && slide._fitPropBrokenSpans) || scriptureLedSpans(slide)).map(x => ({ text: x.text || '', bold: !!x.bold })),
+      propSpans: ((propFit && slide._fitPropBrokenSpans) || scriptureLedSpans(slide)).map(x => ({ text: x.text || '', bold: !!x.alt })),
       reference: orDash(slide.reference || slide.label) } };
   }
   if (slide.type === 'point') {
