@@ -5353,3 +5353,13 @@ details.settings-disclosure { border-top: 1px solid var(--border); background: t
   .style-tab-body > .tp-preview .tp-wrap { grid-template-columns: minmax(0, 1fr); }
   .style-tab-body > .tp-preview .tp-notes-block { max-width: none; }
 }
+
+/* Sidebar selection: neutral, not orange. Like macOS source lists, Linear and
+   VS Code, the selected row is a lifted grey with brighter text — orange stays
+   for actions (Export, toggles) so it keeps meaning "do something". */
+:root     { --nav-select-bg: rgba(15, 23, 42, .085); }
+body.dark { --nav-select-bg: rgba(255, 255, 255, .10); }
+.slide-item.active, body.dark .slide-item.active,
+.deck-item--current, .deck-item--current:hover { background: var(--nav-select-bg); box-shadow: none; }
+.slide-item.active .slide-label, .slide-item.active.fixed .slide-label { color: var(--chrome-text); font-weight: 600; }
+.slide-item.active .slide-icon { background: var(--nav-select-bg) !important; }

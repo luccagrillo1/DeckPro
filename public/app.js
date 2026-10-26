@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.43.0-beta.1';
+const APP_VERSION = '4.43.0-beta.2';
 
 const CHANGELOG = [
+  {
+    version: '4.43.0-beta.2',
+    date: '2026-10-26',
+    changes: [
+      "The selected slide in the sidebar (and the current deck in Decks) is now a neutral grey with brighter text instead of an orange tint and stripe. Orange is kept for things you click to act, like Export.",
+    ],
+  },
   {
     version: '4.43.0-beta.1',
     date: '2026-10-26',
