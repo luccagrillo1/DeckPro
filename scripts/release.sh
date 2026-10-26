@@ -35,11 +35,18 @@ fi
 # Release notes = this version's CHANGELOG entry from public/app.js
 NOTES=$(node scripts/release-notes.js)
 
+# Upload under names that say which Mac each file is for. The .zip files are
+# what DeckPro's built-in updater downloads: it picks the one whose name has
+# "-arm64" / "-x64" and ends in .zip (see assetOf in server.js), so those
+# markers must stay in the zip names or installed copies stop finding updates.
+STAGE="dist/release-$VERSION"
+rm -rf "$STAGE" && mkdir -p "$STAGE"
 ASSETS=()
-for f in "dist/DeckPro-$VERSION-arm64.dmg" "dist/DeckPro-$VERSION-x64.dmg" \
-         "dist/DeckPro-$VERSION-arm64.zip" "dist/DeckPro-$VERSION-x64.zip"; do
-  [ -f "$f" ] && ASSETS+=("$f")
-done
+stage() { [ -f "$1" ] && cp "$1" "$STAGE/$2" && ASSETS+=("$STAGE/$2"); return 0; }
+stage "dist/DeckPro-$VERSION-arm64.dmg" "DeckPro-$VERSION-Apple-Silicon.dmg"
+stage "dist/DeckPro-$VERSION-x64.dmg"   "DeckPro-$VERSION-Intel.dmg"
+stage "dist/DeckPro-$VERSION-arm64.zip" "DeckPro-$VERSION-auto-update-arm64.zip"
+stage "dist/DeckPro-$VERSION-x64.zip"   "DeckPro-$VERSION-auto-update-x64.zip"
 
 if [ ${#ASSETS[@]} -eq 0 ]; then
   echo "No build artifacts found for $VERSION in dist/ — run npm run build first."

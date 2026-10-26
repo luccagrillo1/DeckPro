@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.1';
+const APP_VERSION = '4.41.2';
 
 const CHANGELOG = [
+  {
+    version: '4.41.2',
+    date: '2026-10-26',
+    changes: [
+      "Downloads on the release page now say which Mac they're for: DeckPro-…-Apple-Silicon.dmg (M1, M2, M3, M4…) or DeckPro-…-Intel.dmg, with a short \"Which file do I download?\" guide at the top. The .zip files are marked as auto-update files. Automatic updates keep working as before.",
+    ],
+  },
   {
     version: '4.41.1',
     date: '2026-10-26',
