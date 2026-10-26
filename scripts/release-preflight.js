@@ -48,6 +48,28 @@ try {
   fail('Could not check git status: ' + e.message);
 }
 
+// ── 3b. Every local module the app requires is packaged ───────────────────────
+// A new server-side file missing from package.json build.files ships an app
+// whose server dies on launch (stuck on the splash) — 4.41.0 did exactly this.
+{
+  const files = new Set((pkg.build?.files || []).filter(f => !/[*!]/.test(f)));
+  const seen = new Set(), queue = ['main.js'];
+  const unpackaged = [];
+  while (queue.length) {
+    const f = queue.shift();
+    if (seen.has(f)) continue;
+    seen.add(f);
+    if (!files.has(f)) unpackaged.push(f);
+    const src = fs.existsSync(path.join(root, f)) ? fs.readFileSync(path.join(root, f), 'utf8') : '';
+    for (const m of src.matchAll(/require\(\s*['"]\.\/([^'"]+)['"]\s*\)/g)) {
+      const dep = path.normalize(path.join(path.dirname(f), m[1])).replace(/\.js$/, '') + '.js';
+      if (fs.existsSync(path.join(root, dep))) queue.push(dep);
+    }
+  }
+  if (unpackaged.length) fail(`Required by the app but missing from package.json build.files: ${unpackaged.join(', ')}`);
+  else ok(`All ${seen.size} local modules the app requires are packaged`);
+}
+
 // ── 4. Build artifacts exist for this version ─────────────────────────────────
 const V = pkg.version;
 const artifacts = [

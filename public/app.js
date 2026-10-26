@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.0';
+const APP_VERSION = '4.41.1';
 
 const CHANGELOG = [
+  {
+    version: '4.41.1',
+    date: '2026-10-26',
+    changes: [
+      "Fixed: 4.41.0 (and 4.41.0-beta.17) got stuck on the orange DeckPro screen at launch — a file the new style sample needs was left out of the app.",
+    ],
+  },
   {
     version: '4.41.0',
     date: '2026-10-26',
