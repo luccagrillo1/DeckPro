@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.9';
+const APP_VERSION = '4.41.10';
 
 const CHANGELOG = [
+  {
+    version: '4.41.10',
+    date: '2026-10-26',
+    changes: [
+      "Style samples get a real name, shaped like a deck's with the 24-hour time after the date and the style's name: StyleSample_26.10.26_1432_HotSeat. Each export is its own file in ProPresenter instead of every one being called \"DeckPro Style Sample\". (The LED wall props still go in the \"DeckPro Style Sample\" prop collection.)",
+    ],
+  },
   {
     version: '4.41.9',
     date: '2026-10-26',
@@ -12345,6 +12352,17 @@ function buildFileName() {
     : `Message_${yy}.${mm}.${dd}_${series}`;
 }
 
+// Style sample file name, shaped like a deck's (Message_26.10.26_Series) with
+// the 24-hour time after the date, so each export is its own findable file:
+// StyleSample_26.10.26_1432_HotSeat.
+function styleSampleFileName(scheme, now = new Date()) {
+  const p = n => String(n).padStart(2, '0');
+  const date = `${p(now.getFullYear() % 100)}.${p(now.getMonth() + 1)}.${p(now.getDate())}`;
+  const time = `${p(now.getHours())}${p(now.getMinutes())}`;
+  const style = fileNameToken(scheme?.name || '');
+  return style ? `StyleSample_${date}_${time}_${style}` : `StyleSample_${date}_${time}`;
+}
+
 function fileNameToken(value) {
   const cleaned = normalizeDeckQuotes(value || '')
     .replace(/['"]/g, '')
@@ -13797,7 +13815,8 @@ async function exportStyleSample(scheme) {
 
   const slides = buildStyleSampleSlides();
   try { for (const s of slides) measureSlideForExport(s, scheme); } catch (_) {}
-  const spec = buildSpec({ slides, scheme, name: 'DeckPro Style Sample' });
+  const sampleName = styleSampleFileName(scheme);
+  const spec = buildSpec({ slides, scheme, name: sampleName });
   spec.includeResponseCard = true;
   spec.autoManagePro7 = autoManage;
 
@@ -13815,7 +13834,7 @@ async function exportStyleSample(scheme) {
     for (let i = 0; i < steps.length; i++) { updateDeliveryStep(i, true); await new Promise(r => setTimeout(r, 200)); }
     hideDeliveryOverlay();
     toast('success', 'Style sample is in ProPresenter',
-      `Open “DeckPro Style Sample”, restyle it (LED wall: the “DeckPro Style Sample” props), then click Import style sample.`);
+      `Open “${sampleName}”, restyle it (LED wall: the “DeckPro Style Sample” props), then click Import style sample.`);
     if (data.propsInstalled === false) toast('warn', 'LED wall props not installed', data.propsError || 'Configuration/Props not found');
   } catch (err) {
     hideDeliveryOverlay();

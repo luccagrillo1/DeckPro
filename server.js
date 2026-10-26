@@ -1503,7 +1503,7 @@ app.post('/api/style-sample/export', async (req, res) => {
     const bank = propBank(3);
     // A look-only deck: own prop collection, no deck history/merge, no macros.
     Object.assign(spec, {
-      name: 'DeckPro Style Sample', deckId: null, deliverMode: true, propCollection: 3, styleSample: true,
+      name: spec.name || 'DeckPro Style Sample', deckId: null, deliverMode: true, propCollection: 3, styleSample: true,
       qrCode: false, qrMacro: null, gradientMacro: null, gradientMacroQr: null, externalContent: false,
       customMacros: [], stageDisplays: [],
     });
