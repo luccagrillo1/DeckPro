@@ -9,7 +9,7 @@ const CHANGELOG = [
     version: '4.41.10',
     date: '2026-10-26',
     changes: [
-      "Style samples get a real name, shaped like a deck's with the 24-hour time after the date and the style's name: StyleSample_26.10.26_1432_HotSeat. Each export is its own file in ProPresenter instead of every one being called \"DeckPro Style Sample\". (The LED wall props still go in the \"DeckPro Style Sample\" prop collection.)",
+      "Style samples get a real name: date, 24-hour time, then StyleSample and the style's name — 26.10.26_1432_StyleSample_HotSeat — so they sort by when you made them. Each export is its own file in ProPresenter instead of every one being called \"DeckPro Style Sample\". (The LED wall props still go in the \"DeckPro Style Sample\" prop collection.)",
     ],
   },
   {
@@ -12352,15 +12352,15 @@ function buildFileName() {
     : `Message_${yy}.${mm}.${dd}_${series}`;
 }
 
-// Style sample file name, shaped like a deck's (Message_26.10.26_Series) with
-// the 24-hour time after the date, so each export is its own findable file:
-// StyleSample_26.10.26_1432_HotSeat.
+// Style sample file name. Naming order: year.month.day, 24-hour time, category,
+// name, then any modifiers — so files sort by when they were made:
+// 26.10.26_1432_StyleSample_HotSeat.
 function styleSampleFileName(scheme, now = new Date()) {
   const p = n => String(n).padStart(2, '0');
   const date = `${p(now.getFullYear() % 100)}.${p(now.getMonth() + 1)}.${p(now.getDate())}`;
   const time = `${p(now.getHours())}${p(now.getMinutes())}`;
   const style = fileNameToken(scheme?.name || '');
-  return style ? `StyleSample_${date}_${time}_${style}` : `StyleSample_${date}_${time}`;
+  return style ? `${date}_${time}_StyleSample_${style}` : `${date}_${time}_StyleSample`;
 }
 
 function fileNameToken(value) {
