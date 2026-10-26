@@ -36,7 +36,6 @@ function startServer() {
     // Library storage lives under Electron's userData (Application Support/DeckPro)
     process.env.DECKPRO_DATA_DIR = app.getPath('userData');
     const expressApp = require('./server');
-    expressApp.locals.uiZoom = { get: getUiZoom, set: setUiZoom };
 
     function tryListen(port) {
       const server = expressApp.listen(port, '127.0.0.1');
@@ -80,9 +79,9 @@ function renderer(js) {
 
 // ─── Interface size ───────────────────────────────────────────────────────────
 
-// Per-Mac (a big external display wants a different size than a laptop), so it
-// lives in userData rather than the synced config. View → Zoom and Preferences
-// → Interface Size both go through here so the choice survives a relaunch.
+// Per-Mac (a big external display wants a different size than a laptop): kept in
+// userData rather than the synced config, and reapplied so View menu zoom
+// survives a relaunch.
 const UI_ZOOM_STEPS = [0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6];
 function uiZoomFile() { return path.join(app.getPath('userData'), 'ui-zoom.json'); }
 function getUiZoom() {
@@ -96,7 +95,6 @@ function setUiZoom(factor) {
   const f = UI_ZOOM_STEPS.includes(factor) ? factor : 1;
   try { require('fs').writeFileSync(uiZoomFile(), JSON.stringify({ factor: f })); } catch {}
   win?.webContents.setZoomFactor(f);
-  renderer(`typeof syncUiZoomControl === 'function' && syncUiZoomControl(${f})`);
   return f;
 }
 function stepUiZoom(dir) {

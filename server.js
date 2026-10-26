@@ -145,19 +145,6 @@ function pro7WorkspaceCandidates() {
   return out;
 }
 
-// ── Interface size (per Mac) ─────────────────────────────────────────────
-// main.js sets app.locals.uiZoom when running in Electron; the plain dev
-// server has no window to zoom, so the control hides itself there.
-app.get('/api/ui-zoom', (req, res) => {
-  const z = app.locals.uiZoom;
-  res.json(z ? { ok: true, available: true, factor: z.get() } : { ok: true, available: false, factor: 1 });
-});
-app.post('/api/ui-zoom', (req, res) => {
-  const z = app.locals.uiZoom;
-  if (!z) return res.json({ ok: false, available: false });
-  res.json({ ok: true, available: true, factor: z.set(Number(req.body?.factor)) });
-});
-
 // ── Durable app state ─────────────────────────────────────────────────────
 
 app.get('/api/state', (req, res) => {
