@@ -1498,7 +1498,7 @@ const STYLE_SAMPLE_FILE = path.join(DATA_DIR, 'style-sample.json');
 
 app.post('/api/style-sample/export', async (req, res) => {
   try {
-    const { spec, styleId, styleName } = req.body || {};
+    const { spec, styleId, styleName, rcNames } = req.body || {};
     if (!spec || !Array.isArray(spec.slides)) return res.status(400).json({ ok: false, error: 'Missing spec' });
     const bank = propBank(3);
     // A look-only deck: own prop collection, no deck history/merge, no macros.
@@ -1519,8 +1519,9 @@ app.post('/api/style-sample/export', async (req, res) => {
     try { result = await encode(spec); }
     finally { if (pro7WasRunning) pro7Relaunched = launchPro7(); }
 
-    // Scripture takes the bank's first slot, the single point the second
-    // (collectPropSpecs hands slots out in slide order).
+    // Scripture takes the bank's first slot, the single point the second and
+    // the Response Card the third (collectPropSpecs hands slots out in slide
+    // order, Response Card last).
     const cueFor = u => (result.propCuesSnapshot || []).find(c => c.uuid?.string === u) || null;
     const record = {
       styleId: styleId || null, styleName: styleName || '',
@@ -1528,8 +1529,10 @@ app.post('/api/style-sample/export', async (req, res) => {
       path: result.presentationPath,
       pro7RootFolder: spec.pro7RootFolder || '',
       presentation: result.presentationSnapshot,
-      propUuids: { scripture: bank.slots[0].uuid, point: bank.slots[1].uuid },
-      props: { scripture: cueFor(bank.slots[0].uuid), point: cueFor(bank.slots[1].uuid) },
+      propUuids: { scripture: bank.slots[0].uuid, point: bank.slots[1].uuid, rc: bank.slots[2].uuid },
+      props: { scripture: cueFor(bank.slots[0].uuid), point: cueFor(bank.slots[1].uuid), rc: cueFor(bank.slots[2].uuid) },
+      // Element names of the Response Card title and Response 1 (users can rename them).
+      rcNames: rcNames || null,
     };
     fs.writeFileSync(STYLE_SAMPLE_FILE, JSON.stringify(record));
     res.json({ ok: true, path: result.presentationPath, propsInstalled: result.propsInstalled !== false, propsError: result.propsError || null, pro7Relaunched });
@@ -1574,11 +1577,15 @@ app.post('/api/style-sample/read', async (req, res) => {
       const pres = await decodePresentationBuffer(fs.readFileSync(record.path));
       const uuids = Object.values(record.propUuids || {});
       const propCues = await readConfigPropCues(uuids, req.body?.pro7RootFolder ?? record.pro7RootFolder ?? '') || {};
-      cur = { pres, props: { scripture: propCues[record.propUuids?.scripture] || null, point: propCues[record.propUuids?.point] || null } };
+      cur = { pres, props: {
+        scripture: propCues[record.propUuids?.scripture] || null,
+        point: propCues[record.propUuids?.point] || null,
+        rc: record.propUuids?.rc ? propCues[record.propUuids.rc] || null : null,
+      } };
     } finally {
       if (pro7WasRunning) pro7Relaunched = launchPro7();
     }
-    const { observations, missing } = observeStyleChanges({ pres: record.presentation, props: record.props || {} }, cur);
+    const { observations, missing } = observeStyleChanges({ pres: record.presentation, props: record.props || {}, rcNames: record.rcNames }, cur);
     res.json({ ok: true, styleId: record.styleId, styleName: record.styleName, exportedAt: record.exportedAt, observations, missing, propsMayBeStale, pro7Relaunched });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });

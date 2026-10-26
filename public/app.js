@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.12';
+const APP_VERSION = '4.41.13';
 
 const CHANGELOG = [
+  {
+    version: '4.41.13',
+    date: '2026-10-26',
+    changes: [
+      "Style samples are trimmed to what you style: Start of Notes, Scripture, Point and Response Card — no End of Notes, no blank slides and no Response Card Blank.",
+      "The style sample now has three LED wall props to restyle: scripture, point and Response Card. On the Response Card prop, only the title and Response 1 are read on import; Responses 2–4 are labelled \"locked: follows Response 1\" and copy whatever you do to Response 1 (font, size, colour, alignment, position, width/height).",
+    ],
+  },
   {
     version: '4.41.12',
     date: '2026-10-26',
@@ -14172,10 +14180,18 @@ function buildStyleSampleSlides() {
       ]],
       fitWidth: false },
     { id: 'ss-point', type: 'point', mode: 'single', label: STYLE_SAMPLE_LABELS.point, bodyText: 'Love goes first', propName: 'Sample Point', fitWidth: false },
-    { id: 'ss-blank', type: 'blank', label: 'Sample Blank', spans: [{ text: 'Blank slide' }] },
-    { id: 'ss-end', type: 'end', label: 'End of Notes', text: 'End of Notes' },
   ];
 }
+
+// Response Card text on the sample's LED wall prop. Only Response 1 (and the
+// title) are read back; 2–4 say so, and follow Response 1 on import.
+const STYLE_SAMPLE_RESPONSES = {
+  r1: 'Response 1 — restyle this one',
+  r2: 'Response 2 — locked: follows Response 1',
+  r3: 'Response 3 — locked: follows Response 1',
+  r4: 'Response 4 — locked: follows Response 1',
+  notesTemplate: 'Style Response 1 and the title on the LED wall prop. Responses 2–4 are locked — they copy Response 1 when you import.',
+};
 
 async function exportStyleSample(scheme) {
   if (!scheme) return;
@@ -14191,6 +14207,9 @@ async function exportStyleSample(scheme) {
   const spec = buildSpec({ slides, scheme, name: sampleName });
   spec.pro7LibraryFolder = state.config.styleSampleLibraryFolder || state.config.pro7LibraryFolder || '';
   spec.includeResponseCard = true;
+  spec.responses = { ...STYLE_SAMPLE_RESPONSES };
+  const rcEls = styleForExport(scheme).rcElements || [];
+  const rcNames = { rcTitle: rcEls.find(e => e.role === 'title')?.name || 'Response Card', rcResponse: rcEls.find(e => e.role === 'r1')?.name || 'Response 1' };
   spec.autoManagePro7 = autoManage;
 
   const steps = ['Building style sample', 'Writing to ProPresenter library', 'Writing props'];
@@ -14200,7 +14219,7 @@ async function exportStyleSample(scheme) {
   try {
     const data = await fetch('/api/style-sample/export', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ spec, styleId: scheme.id, styleName: scheme.name }),
+      body: JSON.stringify({ spec, styleId: scheme.id, styleName: scheme.name, rcNames }),
     }).then(r => r.json());
     if (data.cancelled) { hideDeliveryOverlay(); toast('info', 'Style sample cancelled', 'Nothing was written.'); return; }
     if (!data.ok) { hideDeliveryOverlay(); toast('error', 'Style sample failed', data.error || 'Unknown error'); return; }
@@ -14229,6 +14248,9 @@ const STYLE_SAMPLE_ROLES = {
   propBold:  { label: 'LED wall emphasis words',   font: 'propBoldFont',                         adv: 'propBoldFontAdv' },
   propTitle: { label: 'LED wall reference',        font: 'propTitleFont', size: 'propTitleSize', adv: 'propTitleFontAdv', box: 'propTitle' },
   propPoint: { label: 'LED wall point text',       font: 'propPointFont', size: 'propPointSize', adv: 'propPointFontAdv', box: 'propPoint' },
+  // Response Card elements (rcElements) — handled by rcSampleEdit.
+  rcTitle:    { label: 'Response Card title', rc: ['title'] },
+  rcResponse: { label: 'Responses (all four, from Response 1)', rc: ['r1', 'r2', 'r3', 'r4'] },
 };
 const STYLE_SAMPLE_AUTO_TITLE = { title: ['autoTitleY', 'titleAutoGap', 'body'], propTitle: ['propAutoTitleY', 'propTitleAutoGap', 'propBody'] };
 
@@ -14250,6 +14272,7 @@ function styleSampleEdits(observations, scheme) {
     const def = STYLE_SAMPLE_ROLES[role];
     if (!def) continue;
     const add = (text, apply) => edits.push({ role, label: def.label, text, apply });
+    if (def.rc) { rcSampleEdits(def.rc, props, add); continue; }
     const dy = (props.y?.newValue ?? 0) - (props.y?.oldValue ?? 0);
     for (const [prop, o] of Object.entries(props)) {
       const d = (typeof o.newValue === 'number' && typeof o.oldValue === 'number') ? o.newValue - o.oldValue : 0;
@@ -14321,9 +14344,38 @@ function styleSampleEdits(observations, scheme) {
 }
 const TRANSITION_TYPES_FOR_SAMPLE = ['fade', 'dissolve', 'cut'];
 
+// Response Card elements only carry font, size, colour, alignment and a box.
+// Each change is applied to every element of the given roles — so restyling
+// Response 1 restyles all four, and moving it moves the whole stack.
+function rcSampleEdits(roles, props, add) {
+  const r1 = n => Math.round(n * 10) / 10;
+  const each = fn => sch => {
+    if (sch.rcElements == null) sch.rcElements = deepClone(ensureGlobalRcElements());
+    sch.rcElements.filter(e => roles.includes(e.role)).forEach(fn);
+  };
+  const box = { x: ['moved', 'left', 'right'], y: ['moved', 'up', 'down'], w: ['width'], h: ['height'] };
+  for (const [prop, o] of Object.entries(props)) {
+    const d = (typeof o.newValue === 'number' && typeof o.oldValue === 'number') ? r1(o.newValue - o.oldValue) : 0;
+    if (box[prop]) {
+      if (!d) continue;
+      const [verb, neg, pos] = box[prop];
+      add(pos ? `${verb} ${d < 0 ? neg : pos} ${r1(Math.abs(d))} px` : `${verb} ${d < 0 ? '−' : '+'}${r1(Math.abs(d))} px`,
+        each(e => { e[prop] = r1((e[prop] ?? 0) + d); }));
+    } else if (prop === 'font') {
+      add(`font → ${o.newValue}`, each(e => { e.font = o.newValue; }));
+    } else if (prop === 'size') {
+      add(`size ${o.oldValue} → ${o.newValue} pt`, each(e => { e.size = o.newValue; }));
+    } else if (prop === 'color') {
+      add(`colour → ${o.newValue}`, each(e => { e.color = normalizeHexColor(o.newValue); }));
+    } else if (prop === 'align' && ['left', 'center', 'right'].includes(o.newValue)) {
+      add(`aligned ${o.newValue}`, each(e => { e.align = o.newValue; }));
+    }
+  }
+}
+
 const STYLE_SAMPLE_MISSING_LABELS = {
   scripture: 'the scripture slide', point: 'the point slide', start: 'the Start slide',
-  'prop:scripture': 'the LED wall scripture prop', 'prop:point': 'the LED wall point prop',
+  'prop:scripture': 'the LED wall scripture prop', 'prop:point': 'the LED wall point prop', 'prop:rc': 'the LED wall Response Card prop',
 };
 
 function showStyleSampleModal(edits, info) {
@@ -14340,7 +14392,7 @@ function showStyleSampleModal(edits, info) {
     const notes = [
       missing.length ? `Couldn’t find ${missing.map(esc).join(', ')} — deleted or renamed in Pro7, so nothing was read from ${missing.length > 1 ? 'them' : 'it'}.` : '',
       info.propsMayBeStale ? 'ProPresenter is still open, so LED wall changes may not be saved yet — quit ProPresenter and import again to be sure.' : '',
-      'Not read yet: Response Card styling and the confidence-monitor text.',
+      'Response Card: only the title and Response 1 are read — Responses 2–4 follow Response 1. Not read yet: the confidence-monitor text.',
     ].filter(Boolean).map(t => `<p class="ss-note">${t}</p>`).join('');
     const canUpdate = !!info.original && !info.original.isLocked;
     overlay.innerHTML = `

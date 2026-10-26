@@ -28,7 +28,6 @@ const spec = {
     { type: 'scripture', label: SAMPLE_LABELS.scripture, reference: 'John 3:16', propName: 'Sample Scripture', bodies: [bodySpans] },
     { type: 'point', mode: 'single', label: SAMPLE_LABELS.point, bodyText: 'Love goes first', propName: 'Sample Point' },
     { type: 'blank', label: 'Sample Blank', spans: [] },
-    { type: 'end', label: 'End of Notes', text: 'End of Notes' },
   ],
 };
 
@@ -49,10 +48,12 @@ const find = (obs, role, prop) => obs.find(o => o.role === role && o.prop === pr
   const propSpecs = [
     { type: 'scripture', propName: 'Sample Scripture', slotName: bank.slots[0].slot, slotUuid: bank.slots[0].uuid, reference: 'John 3:16', bodies: [bodySpans] },
     { type: 'point-single', propName: 'Sample Point', slotName: bank.slots[1].slot, slotUuid: bank.slots[1].uuid, bodyText: 'Love goes first' },
+    { type: 'response-card', propName: 'Response Card', slotName: bank.slots[2].slot, slotUuid: bank.slots[2].uuid,
+      responses: { r1: 'Response 1 — restyle this one', r2: 'Response 2 — locked', r3: 'Response 3 — locked', r4: 'Response 4 — locked' } },
   ];
   const propDoc = await decodePropDocument(await encodePropDocument(buildAllPropCues(propSpecs, spec.style, bank.name)));
   const byUuid = Object.fromEntries(propDoc.cues.map(c => [c.uuid.string, c]));
-  const base = { pres, props: { scripture: byUuid[bank.slots[0].uuid], point: byUuid[bank.slots[1].uuid] } };
+  const base = { pres, props: { scripture: byUuid[bank.slots[0].uuid], point: byUuid[bank.slots[1].uuid], rc: byUuid[bank.slots[2].uuid] } };
 
   // ── RTF reader ───────────────────────────────────────────────────────────
   const body = elOf(cueBy(pres, SAMPLE_LABELS.scripture), 'body');
@@ -120,6 +121,27 @@ const find = (obs, role, prop) => obs.find(o => o.role === role && o.prop === pr
   const normal = (await encodeToBufferWithMerge(clone(withMacro), {})).snapshot;
   const sample = (await encodeToBufferWithMerge({ ...clone(withMacro), styleSample: true }, {})).snapshot;
   ok('style sample has no macro or stage-layout triggers', macros(normal) > 0 && macros(sample) === 0, [macros(normal), macros(sample)]);
+  const rcLabels = d => d.cues.map(c => c.actions.find(a => a.slide)?.label?.text).filter(l => /Response Card/.test(l || ''));
+  ok('style sample has no Response Card Blank', rcLabels(sample).join() === 'Response Card' && rcLabels(normal).includes('Response Card Blank'), [rcLabels(normal), rcLabels(sample)]);
+
+  // ── Response Card prop: Response 1 + title read, Responses 2–4 ignored ──
+  const rcCur = { pres: clone(pres), props: clone(base.props) };
+  const r1el = elOf(rcCur.props.rc, 'Response 1');
+  setRtf(r1el, rtfOf(r1el).replace(/Montserrat-SemiBold/g, 'Impact'));
+  r1el.bounds.origin.y += 30;
+  const r2el = elOf(rcCur.props.rc, 'Response 2');
+  setRtf(r2el, rtfOf(r2el).replace(/Montserrat-SemiBold/g, 'Georgia'));
+  const rcObs = observeStyleChanges(base, rcCur);
+  ok('Response 1 font read', find(rcObs.observations, 'rcResponse', 'font')?.newValue === 'Impact', rcObs.observations);
+  ok('Response 1 move read', find(rcObs.observations, 'rcResponse', 'y')?.newValue - find(rcObs.observations, 'rcResponse', 'y')?.oldValue === 30);
+  ok('Responses 2–4 changes are ignored', !rcObs.observations.some(o => o.newValue === 'Georgia'), rcObs.observations);
+  ok('renamed Response 1 found by its recorded name', (() => {
+    const b2 = { ...base, props: clone(base.props), rcNames: { rcResponse: 'Answer A' } };
+    elOf(b2.props.rc, 'Response 1').name = 'Answer A';
+    const c2 = { pres: clone(pres), props: clone(b2.props) };
+    setRtf(elOf(c2.props.rc, 'Answer A'), rtfOf(elOf(c2.props.rc, 'Answer A')).replace(/Montserrat-SemiBold/g, 'Impact'));
+    return find(observeStyleChanges(b2, c2).observations, 'rcResponse', 'font')?.newValue === 'Impact';
+  })());
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

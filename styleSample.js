@@ -3,9 +3,10 @@
 /**
  * styleSample.js — the style sample round trip.
  *
- * "Export style sample" writes a small deck (Start, Scripture, Point, Blank,
- * Response Card, End) styled with one DeckPro style into ProPresenter, plus
- * its LED-wall props in their own "DeckPro Style Sample" prop collection, and
+ * "Export style sample" writes a small deck (Start, Scripture, Point,
+ * Response Card) styled with one DeckPro style into ProPresenter, plus its
+ * three LED-wall props (scripture, point, Response Card) in their own
+ * "DeckPro Style Sample" prop collection, and
  * keeps a snapshot of exactly what it wrote. After the user restyles that
  * deck in Pro7, "Import style sample" reads it back and compares it with the
  * snapshot: every difference is something the user changed on purpose, so it
@@ -244,6 +245,9 @@ const MAIN_ROLES = {
 const PROP_ROLES = {
   scripture: [['propBody', 'body', 'propBold'], ['propTitle', 'reference']],
   point:     [['propPoint', 'body']],
+  // Response Card: only the title and Response 1 are read — Responses 2–4 are
+  // marked locked on the sample and follow Response 1 on import.
+  rc:        [['rcTitle', 'Response Card'], ['rcResponse', 'Response 1']],
 };
 
 const cueLabelOf = c => (c?.actions || []).find(a => a.slide)?.label?.text || c?.name || '';
@@ -276,8 +280,10 @@ function observeStyleChanges(base, cur) {
     const a = base.props?.[key], b = cur.props?.[key];
     if (!a) continue;
     if (!b) { missing.push(`prop:${key}`); continue; }
-    for (const [role, name, emphRole] of roles) {
+    for (const [role, dflt, emphRole] of roles) {
+      const name = (key === 'rc' && base.rcNames?.[role]) || dflt;
       const ea = elementsOfCue(a).find(e => e.name === name), eb = elementsOfCue(b).find(e => e.name === name);
+      if (ea && !eb) { missing.push(role); continue; }
       compareFacts(role, elementFacts(ea, emphRole ? SAMPLE_EMPHASIS_WORD : null), elementFacts(eb, emphRole ? SAMPLE_EMPHASIS_WORD : null), out, emphRole);
     }
   }

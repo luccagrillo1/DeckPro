@@ -1669,7 +1669,8 @@ function buildPresentation(spec, propUuidMap = {}) {
   // ── Step 2: Append Response Card cues before END (if enabled) ──
   if (includeResponseCard) {
     const endIdx = rawCues.findIndex(c => c._type === 'end');
-    const rcCues = buildResponseCardCues(responses, rs);
+    // A style sample has no blanks — just the Response Card cue itself.
+    const rcCues = buildResponseCardCues(responses, rs).filter(c => !(spec.styleSample && c._isRcBlank));
     if (endIdx !== -1) {
       rawCues.splice(endIdx, 0, ...rcCues);
     } else {
