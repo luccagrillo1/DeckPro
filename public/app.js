@@ -2,9 +2,23 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.41.0-beta.17';
+const APP_VERSION = '4.41.0';
 
 const CHANGELOG = [
+  {
+    version: '4.41.0',
+    date: '2026-10-26',
+    changes: [
+      "Everything from the 4.41.0 betas, now in the stable release. The highlights:",
+      "New: DeckPro Account. Sign in with Google (Preferences → General → Account) and your decks, styles and preferences follow you between Macs. Per-computer things (Pro7 password and folders, Bible API key, theme, Stage Screen) stay on each Mac.",
+      "Fit Width overhaul, checked line for line against the macOS text engine ProPresenter uses: fitted boxes now wrap in Pro7 exactly as planned, keep emphasis and verse numbers, respect margins, and Auto Title Y places the reference bar correctly.",
+      "New: too-much-text warning. DeckPro tells you when a slide has more text than its box holds (Pro7 would quietly shrink it), with a \"Split for Main Screen\" button that splits the passage into slides that fit while the LED wall keeps the whole passage up.",
+      "Merge/Override rebuilt: a plain-language list of what you actually changed in Pro7, slide by slide, without the wall of bogus changes Pro7's re-saves used to cause.",
+      "New: style sample round trip. In Styles, Export Style Sample sends a sample deck to ProPresenter; restyle it there, then Import Style Sample saves your changes to the style or a new one. (Response Card styling isn't read from the sample yet.)",
+      "New: Stage Screen picker (Styles → Stage), so stage layouts fire on each computer's real stage screen.",
+      "Response Card lock is back for any of the 4 responses; Preferences is organized into tabs; calmer, more native-looking interface; Undo works in one press and ⌘Z undoes typing inside a text field; plus many smaller fixes (see the beta notes below).",
+    ],
+  },
   {
     version: '4.41.0-beta.17',
     date: '2026-10-25',
