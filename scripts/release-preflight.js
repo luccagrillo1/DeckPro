@@ -53,13 +53,16 @@ try {
 // whose server dies on launch (stuck on the splash) — 4.41.0 did exactly this.
 {
   const files = new Set((pkg.build?.files || []).filter(f => !/[*!]/.test(f)));
+  // "dir/**/*" globs package everything under dir/.
+  const globDirs = (pkg.build?.files || []).filter(f => /^[^!*]+\/\*\*\/\*$/.test(f)).map(f => f.slice(0, -4));
+  const packaged = f => files.has(f) || globDirs.some(d => f.startsWith(d));
   const seen = new Set(), queue = ['main.js'];
   const unpackaged = [];
   while (queue.length) {
     const f = queue.shift();
     if (seen.has(f)) continue;
     seen.add(f);
-    if (!files.has(f)) unpackaged.push(f);
+    if (!packaged(f)) unpackaged.push(f);
     const src = fs.existsSync(path.join(root, f)) ? fs.readFileSync(path.join(root, f), 'utf8') : '';
     for (const m of src.matchAll(/require\(\s*['"]\.\/([^'"]+)['"]\s*\)/g)) {
       const dep = path.normalize(path.join(path.dirname(f), m[1])).replace(/\.js$/, '') + '.js';
