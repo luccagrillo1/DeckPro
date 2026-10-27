@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.43.1';
+const APP_VERSION = '4.43.2';
 
 const CHANGELOG = [
+  {
+    version: '4.43.2',
+    date: '2026-10-27',
+    changes: [
+      "Fixed: Import Style Sample could say \"Style updated\" without changing anything. With DeckPro Account or iCloud sync on, a background sync while the import dialog was open swapped in a fresh copy of your styles, and the changes went onto the old copy. The import now saves to the live style, and sync no longer swaps out styles that haven't changed.",
+      "Import Style Sample now reads Response Card marks: restyle Mark 1 on the LED wall prop and Marks 2–4 follow it, the same way Responses 2–4 follow Response 1. Other custom Response Card elements are read on their own. Export a new style sample to pick this up.",
+    ],
+  },
   {
     version: '4.43.1',
     date: '2026-10-27',
@@ -14215,7 +14223,7 @@ const STYLE_SAMPLE_RESPONSES = {
   r2: 'Response 2 — locked: follows Response 1',
   r3: 'Response 3 — locked: follows Response 1',
   r4: 'Response 4 — locked: follows Response 1',
-  notesTemplate: 'Style Response 1 and the title on the LED wall prop. Responses 2–4 are locked — they copy Response 1 when you import.',
+  notesTemplate: 'Style Response 1 and the title on the LED wall prop. Responses 2–4 are locked — they copy Response 1 when you import. Numbered marks work the same way: style Mark 1 and Marks 2–4 follow it.',
 };
 
 async function exportStyleSample(scheme) {
@@ -14234,7 +14242,8 @@ async function exportStyleSample(scheme) {
   spec.includeResponseCard = true;
   spec.responses = { ...STYLE_SAMPLE_RESPONSES };
   const rcEls = styleForExport(scheme).rcElements || [];
-  const rcNames = { rcTitle: rcEls.find(e => e.role === 'title')?.name || 'Response Card', rcResponse: rcEls.find(e => e.role === 'r1')?.name || 'Response 1' };
+  const rcNames = { rcTitle: rcEls.find(e => e.role === 'title')?.name || 'Response Card', rcResponse: rcEls.find(e => e.role === 'r1')?.name || 'Response 1',
+    extra: rcSampleGroups(rcEls).map(g => ({ role: g.role, name: g.name })) };
   spec.autoManagePro7 = autoManage;
 
   const steps = ['Building style sample', 'Writing to ProPresenter library', 'Writing props'];
@@ -14294,10 +14303,11 @@ function styleSampleEdits(observations, scheme) {
 
   for (const [role, props] of Object.entries(byRole)) {
     if (role === 'transition') continue;
-    const def = STYLE_SAMPLE_ROLES[role];
+    const def = STYLE_SAMPLE_ROLES[role] || (role.startsWith('rcx:') ? rcSampleGroups(resolved.rcElements).find(g => g.role === role) : null);
     if (!def) continue;
     const add = (text, apply) => edits.push({ role, label: def.label, text, apply });
-    if (def.rc) { rcSampleEdits(def.rc, props, add); continue; }
+    if (def.rc) { rcSampleEdits(e => def.rc.includes(e.role), props, add); continue; }
+    if (def.members) { rcSampleEdits(e => e.role === 'custom' && def.members.includes(e.name), props, add); continue; }
     const dy = (props.y?.newValue ?? 0) - (props.y?.oldValue ?? 0);
     for (const [prop, o] of Object.entries(props)) {
       const d = (typeof o.newValue === 'number' && typeof o.oldValue === 'number') ? o.newValue - o.oldValue : 0;
@@ -14369,14 +14379,33 @@ function styleSampleEdits(observations, scheme) {
 }
 const TRANSITION_TYPES_FOR_SAMPLE = ['fade', 'dissolve', 'cut'];
 
+// Custom Response Card elements numbered like "Mark 1"…"Mark 4" are a set:
+// only the lowest-numbered one is read back and its changes apply to the
+// whole set, the same way Responses 2–4 follow Response 1. Any other custom
+// element is read on its own.
+function rcSampleGroups(rcEls) {
+  const groups = new Map();
+  for (const e of (rcEls || []).filter(x => x.role === 'custom' && (x.name || '').trim())) {
+    const m = /^(.*?)\s*(\d+)$/.exec(e.name.trim());
+    const key = (m && m[1]) || e.name.trim();
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ name: e.name, n: m && m[1] ? Number(m[2]) : 0 });
+  }
+  return [...groups].map(([key, list]) => {
+    list.sort((a, b) => a.n - b.n);
+    return { role: 'rcx:' + key, name: list[0].name, members: list.map(x => x.name),
+      label: list.length > 1 ? `Response Card ${key}s (all ${list.length}, from ${list[0].name})` : `Response Card “${key}”` };
+  });
+}
+
 // Response Card elements only carry font, size, colour, alignment and a box.
-// Each change is applied to every element of the given roles — so restyling
+// Each change is applied to every element `match` picks — so restyling
 // Response 1 restyles all four, and moving it moves the whole stack.
-function rcSampleEdits(roles, props, add) {
+function rcSampleEdits(match, props, add) {
   const r1 = n => Math.round(n * 10) / 10;
   const each = fn => sch => {
     if (sch.rcElements == null) sch.rcElements = deepClone(ensureGlobalRcElements());
-    sch.rcElements.filter(e => roles.includes(e.role)).forEach(fn);
+    sch.rcElements.filter(match).forEach(fn);
   };
   const box = { x: ['moved', 'left', 'right'], y: ['moved', 'up', 'down'], w: ['width'], h: ['height'] };
   for (const [prop, o] of Object.entries(props)) {
@@ -14413,11 +14442,12 @@ function showStyleSampleModal(edits, info) {
       if (g) g.items.push(e.text); else groups.push({ label: e.label, items: [e.text] });
     }
     const rows = groups.map(g => `<li class="warn-item"><span class="warn-msg"><strong>${esc(g.label)}</strong> — ${g.items.map(esc).join(', ')}</span></li>`).join('');
-    const missing = (info.missing || []).map(m => STYLE_SAMPLE_MISSING_LABELS[m] || STYLE_SAMPLE_ROLES[m]?.label || m);
+    const missing = (info.missing || []).map(m => STYLE_SAMPLE_MISSING_LABELS[m] || STYLE_SAMPLE_ROLES[m]?.label
+      || (m.startsWith('rcx:') ? `the Response Card “${m.slice(4)}”` : m));
     const notes = [
       missing.length ? `Couldn’t find ${missing.map(esc).join(', ')} — deleted or renamed in Pro7, so nothing was read from ${missing.length > 1 ? 'them' : 'it'}.` : '',
       info.propsMayBeStale ? 'ProPresenter is still open, so LED wall changes may not be saved yet — quit ProPresenter and import again to be sure.' : '',
-      'Response Card: only the title and Response 1 are read — Responses 2–4 follow Response 1. Not read yet: the confidence-monitor text.',
+      'Response Card: only the title and Response 1 are read — Responses 2–4 follow Response 1. Numbered extras like Mark 1–4 work the same way: Mark 1 is read, the rest follow it. Not read yet: the confidence-monitor text.',
     ].filter(Boolean).map(t => `<p class="ss-note">${t}</p>`).join('');
     const orig = info.original;
     const canUpdate = !!orig && !orig.isLocked;
@@ -14522,14 +14552,20 @@ async function importStyleSample(onDone, quitPro7 = false) {
   }
   const choice = await showStyleSampleModal(edits, { ...data, original });
   if (!choice) return;
+  // Look the styles up again by id: a background sync while the dialog was
+  // open can replace state.styleSchemes with fresh objects, and editing the
+  // ones captured above would change a copy that's no longer in the app.
+  const live = id => state.styleSchemes.find(s => s.id === id) || null;
   let target;
   if (choice.mode === 'update') {
-    target = original;
+    target = live(original.id);
+    if (!target) { toast('error', 'Could not import style sample', 'That style is gone.'); return; }
   } else if (choice.mode === 'other') {
     target = state.styleSchemes.find(s => s.id === choice.targetId && !s.isLocked);
     if (!target) { toast('error', 'Could not import style sample', 'That style is gone or locked.'); return; }
   } else {
-    target = { ...deepClone(base), id: 'scheme_' + Date.now(), name: `${base.name || 'Style'} (from Pro7)`, isDefault: false, isLocked: false };
+    const src = live(base.id) || base;
+    target = { ...deepClone(src), id: 'scheme_' + Date.now(), name: `${src.name || 'Style'} (from Pro7)`, isDefault: false, isLocked: false };
     state.styleSchemes.push(target);
   }
   for (const e of edits) e.apply(target);
@@ -18658,7 +18694,10 @@ function mergeSyncDoc(remote) {
       nextTombstones[id] = win.ts;
       if (localById.has(id) || !_syncMeta.tombstones[id]) changed = true;
     } else if (win.data) {
-      nextSchemes.push(win.data);
+      // Same content either side → keep the local object, so code holding a
+      // reference to it (an open dialog, the Styles panel) keeps working.
+      const keepLocal = side === 'remote' && local.data && stableHash(local.data) === stableHash(win.data);
+      nextSchemes.push(keepLocal ? local.data : win.data);
       nextPaletteMeta[id] = { hash: stableHash(win.data), updatedAt: win.ts };
       if (!localById.has(id) || stableHash(localById.get(id)) !== stableHash(win.data)) changed = true;
     }

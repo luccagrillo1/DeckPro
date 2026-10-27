@@ -276,8 +276,11 @@ function observeStyleChanges(base, cur) {
       compareFacts(role, elementFacts(ea, emphRole ? SAMPLE_EMPHASIS_WORD : null), elementFacts(eb, emphRole ? SAMPLE_EMPHASIS_WORD : null), out, emphRole);
     }
   }
-  for (const [key, roles] of Object.entries(PROP_ROLES)) {
+  for (const [key, staticRoles] of Object.entries(PROP_ROLES)) {
     const a = base.props?.[key], b = cur.props?.[key];
+    // Response Card custom elements (e.g. the first of "Mark 1"…"Mark 4"),
+    // as recorded at export — see rcSampleGroups in public/app.js.
+    const roles = key === 'rc' ? [...staticRoles, ...(base.rcNames?.extra || []).map(x => [x.role, x.name])] : staticRoles;
     if (!a) continue;
     if (!b) { missing.push(`prop:${key}`); continue; }
     for (const [role, dflt, emphRole] of roles) {

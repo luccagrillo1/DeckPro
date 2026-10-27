@@ -143,6 +143,31 @@ const find = (obs, role, prop) => obs.find(o => o.role === role && o.prop === pr
     return find(observeStyleChanges(b2, c2).observations, 'rcResponse', 'font')?.newValue === 'Impact';
   })());
 
+  // ── Response Card marks: Mark 1 read for the whole set, Marks 2–4 ignored ──
+  {
+    const els = [
+      { id: 'rc-title', role: 'title', name: 'Response Card', text: 'Response Card', x: 325, y: 856, w: 2550, h: 400, font: '', size: 0, color: '', align: 'center' },
+      ...[1, 2, 3, 4].map(n => ({ id: `rc-r${n}`, role: `r${n}`, name: `Response ${n}`, text: '', x: 400, y: 150 + 180 * (n - 1), w: 2600, h: 150, font: '', size: 0, color: '', align: 'center' })),
+      ...[1, 2, 3, 4].map(n => ({ id: `m${n}`, role: 'custom', name: `Mark ${n}`, text: String(n), x: 200, y: 150 + 180 * (n - 1), w: 150, h: 150, font: 'Montserrat-Black', size: 90, color: '#ffffff', align: 'center' })),
+    ];
+    const style = { ...spec.style, rcElements: els };
+    const rcSpec = [{ type: 'response-card', propName: 'Response Card', slotName: bank.slots[2].slot, slotUuid: bank.slots[2].uuid,
+      responses: { r1: 'Response 1', r2: 'Response 2', r3: 'Response 3', r4: 'Response 4' } }];
+    const doc = await decodePropDocument(await encodePropDocument(buildAllPropCues(rcSpec, style, bank.name)));
+    const mBase = { pres, props: { rc: doc.cues[0] }, rcNames: { extra: [{ role: 'rcx:Mark', name: 'Mark 1' }] } };
+    ok('sample Response Card prop carries the marks', !!elOf(mBase.props.rc, 'Mark 1') && !!elOf(mBase.props.rc, 'Mark 4'));
+    const mCur = { pres: clone(pres), props: clone(mBase.props) };
+    const m1 = elOf(mCur.props.rc, 'Mark 1');
+    setRtf(m1, rtfOf(m1).replace(/Montserrat-Black/g, 'Impact'));
+    m1.bounds.origin.x -= 40;
+    const m2 = elOf(mCur.props.rc, 'Mark 2');
+    setRtf(m2, rtfOf(m2).replace(/Montserrat-Black/g, 'Georgia'));
+    const mObs = observeStyleChanges(mBase, mCur).observations;
+    ok('Mark 1 font read', find(mObs, 'rcx:Mark', 'font')?.newValue === 'Impact', mObs);
+    ok('Mark 1 move read', find(mObs, 'rcx:Mark', 'x')?.newValue - find(mObs, 'rcx:Mark', 'x')?.oldValue === -40, mObs);
+    ok('Marks 2–4 changes are ignored', !mObs.some(o => o.newValue === 'Georgia'), mObs);
+  }
+
   // ── LED wall reference + point: box, size, font ──
   const ledCur = { pres: clone(pres), props: clone(base.props) };
   const ref = elOf(ledCur.props.scripture, 'reference');
