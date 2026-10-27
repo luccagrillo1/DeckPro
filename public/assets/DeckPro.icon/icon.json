@@ -1,35 +1,31 @@
 {
-  "fill" : "automatic",
+  "fill" : {
+    "automatic-gradient" : "srgb:0.93725,0.42353,0.10196,1.00000"
+  },
   "groups" : [
     {
-      "hidden" : true,
       "layers" : [
-        {
-          "image-name" : "deckpro_wordmark_orange.png",
-          "name" : "deckpro_wordmark_orange",
-          "position" : {
-            "scale" : 1.5999999999999996,
-            "translation-in-points" : [
-              0,
-              0
-            ]
-          }
-        }
+        { "image-name" : "front.svg", "name" : "front" }
       ],
-      "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.5
-      },
-      "translucency" : {
-        "enabled" : true,
-        "value" : 0.5
-      }
+      "shadow" : { "kind" : "neutral", "opacity" : 0.5 },
+      "translucency" : { "enabled" : false, "value" : 0.5 }
+    },
+    {
+      "layers" : [
+        { "image-name" : "middle.svg", "name" : "middle" }
+      ],
+      "shadow" : { "kind" : "neutral", "opacity" : 0.35 },
+      "translucency" : { "enabled" : true, "value" : 0.4 }
+    },
+    {
+      "layers" : [
+        { "image-name" : "back.svg", "name" : "back" }
+      ],
+      "shadow" : { "kind" : "neutral", "opacity" : 0.3 },
+      "translucency" : { "enabled" : true, "value" : 0.4 }
     }
   ],
   "supported-platforms" : {
-    "circles" : [
-      "watchOS"
-    ],
     "squares" : "shared"
   }
 }

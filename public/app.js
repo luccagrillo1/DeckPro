@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.43.2';
+const APP_VERSION = '4.43.3';
 
 const CHANGELOG = [
+  {
+    version: '4.43.3',
+    date: '2026-10-27',
+    changes: [
+      "New app icon: a stack of slides with an orange-and-dark lower third, instead of the doubled-up \"DeckPro\" wordmark. It's a real macOS Tahoe icon now, so it fills the Dock tile properly (no more box inside a box), picks up the glass look, and switches to a dark version with your system's icon style.",
+    ],
+  },
   {
     version: '4.43.2',
     date: '2026-10-27',

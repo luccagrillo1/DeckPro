@@ -13,6 +13,13 @@ module.exports = async function afterSign(context) {
   if (context.electronPlatformName !== 'darwin') return;
   const appName = context.packager.appInfo.productFilename;
   const appPath = path.join(context.appOutDir, `${appName}.app`);
+  // mac.icon is the Icon Composer DeckPro.icon (Assets.car, used on macOS 26+).
+  // The icon.icns electron-builder derives from it for older macOS stops at
+  // 256px, so swap in the full 16–1024px set before signing.
+  const fs = require('fs');
+  const fullIcns = path.join(context.packager.projectDir, 'public', 'assets', 'DeckPro.icns');
+  const bundled = path.join(appPath, 'Contents', 'Resources', 'icon.icns');
+  if (fs.existsSync(fullIcns) && fs.existsSync(bundled)) fs.copyFileSync(fullIcns, bundled);
   console.log(`[afterSign] ad-hoc signing ${appPath}`);
   execFileSync('codesign', ['--force', '--deep', '--sign', '-', appPath], { stdio: 'inherit' });
 };

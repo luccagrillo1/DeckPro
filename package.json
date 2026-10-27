@@ -1,7 +1,7 @@
 {
   "name": "deckpro",
   "productName": "DeckPro",
-  "version": "4.43.2",
+  "version": "4.43.3",
   "description": "ProPresenter 7 slide deck builder for Canvas Church",
   "main": "main.js",
   "scripts": {
@@ -24,7 +24,7 @@
     "afterSign": "scripts/afterSign.js",
     "mac": {
       "category": "public.app-category.productivity",
-      "icon": "public/assets/DeckPro.icns",
+      "icon": "public/assets/DeckPro.icon",
       "target": [
         {
           "target": "dmg",
