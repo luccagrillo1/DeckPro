@@ -143,6 +143,20 @@ const find = (obs, role, prop) => obs.find(o => o.role === role && o.prop === pr
     return find(observeStyleChanges(b2, c2).observations, 'rcResponse', 'font')?.newValue === 'Impact';
   })());
 
+  // ── LED wall reference + point: box, size, font ──
+  const ledCur = { pres: clone(pres), props: clone(base.props) };
+  const ref = elOf(ledCur.props.scripture, 'reference');
+  ref.bounds.origin.y -= 30;
+  setRtf(ref, rtfOf(ref).replace(/\\fs(\d+)/g, (m, n) => `\\fs${Number(n) + 10}`));
+  const lp = elOf(ledCur.props.point, 'body');
+  lp.bounds.origin.x += 50;
+  setRtf(lp, rtfOf(lp).replace(/Montserrat-ExtraBold/g, 'Impact'));
+  const ledObs = observeStyleChanges(base, ledCur).observations;
+  ok('LED reference move read', find(ledObs, 'propTitle', 'y')?.newValue - find(ledObs, 'propTitle', 'y')?.oldValue === -30, ledObs);
+  ok('LED reference size read', find(ledObs, 'propTitle', 'size')?.newValue - find(ledObs, 'propTitle', 'size')?.oldValue === 5, ledObs);
+  ok('LED point move read', find(ledObs, 'propPoint', 'x')?.newValue - find(ledObs, 'propPoint', 'x')?.oldValue === 50, ledObs);
+  ok('LED point font read', find(ledObs, 'propPoint', 'font')?.newValue === 'Impact', ledObs);
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

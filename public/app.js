@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.43.0';
+const APP_VERSION = '4.43.1';
 
 const CHANGELOG = [
+  {
+    version: '4.43.1',
+    date: '2026-10-27',
+    changes: [
+      "Import Style Sample now says plainly which style the sample came from (and when it was exported), and has a \"Save to\" picker: update that style, save as a new style, or apply the changes to any other unlocked style instead.",
+      "Import Style Sample: if ProPresenter is open, DeckPro now offers to close it first. ProPresenter only saves LED wall prop changes when it quits, so importing with it open silently missed LED wall edits like the reference and point text.",
+    ],
+  },
   {
     version: '4.43.0',
     date: '2026-10-26',
@@ -14411,35 +14419,86 @@ function showStyleSampleModal(edits, info) {
       info.propsMayBeStale ? 'ProPresenter is still open, so LED wall changes may not be saved yet — quit ProPresenter and import again to be sure.' : '',
       'Response Card: only the title and Response 1 are read — Responses 2–4 follow Response 1. Not read yet: the confidence-monitor text.',
     ].filter(Boolean).map(t => `<p class="ss-note">${t}</p>`).join('');
-    const canUpdate = !!info.original && !info.original.isLocked;
+    const orig = info.original;
+    const canUpdate = !!orig && !orig.isLocked;
+    const others = state.styleSchemes.filter(sc => sc !== orig && !sc.isLocked);
+    const when = info.exportedAt ? new Date(info.exportedAt) : null;
+    const whenTxt = when && !isNaN(when) ? when.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+    const origNote = canUpdate ? ''
+      : orig ? 'This style is locked, so it can’t be changed — save to another style or a new one.'
+      : 'This style no longer exists — save to another style or a new one.';
+    const opt = (v, label, sel) => `<option value="${esc(v)}"${sel ? ' selected' : ''}>${esc(label)}</option>`;
+    const targetOpts = [
+      canUpdate ? opt('update', `Update “${orig.name || 'Style'}” (the style this sample came from)`, true) : '',
+      opt('new', `New style — “${(orig?.name || info.styleName || 'Style')} (from Pro7)”`, !canUpdate),
+      others.length ? `<optgroup label="Or apply these changes to another style">${others.map(sc => opt('other:' + sc.id, sc.name || 'Untitled style', false)).join('')}</optgroup>` : '',
+    ].join('');
     overlay.innerHTML = `
       <div class="warn-modal">
-        <div class="warn-hdr"><span>Changes from the style sample</span></div>
-        <p style="font-size:12.5px;color:var(--muted);margin:0 0 8px;line-height:1.4">
-          Restyled in ProPresenter from <b>${esc(info.styleName || 'a style')}</b>.
-          ${canUpdate ? '<b>Update original</b> changes that style; <b>New style</b> keeps it and saves these changes as a copy.'
-            : info.original ? 'That style is locked, so these changes can only be saved as a new style.'
-            : 'That style no longer exists, so these changes will be saved as a new style.'}
-        </p>
+        <div class="warn-hdr"><span>Import style sample</span></div>
+        <div class="ss-source">
+          <div class="ss-source-lbl">Style sample of</div>
+          <div class="ss-source-name">${esc(orig?.name || info.styleName || 'a style')}</div>
+          ${whenTxt ? `<div class="ss-source-when">Exported ${esc(whenTxt)}</div>` : ''}
+          ${origNote ? `<p class="ss-note">${origNote}</p>` : ''}
+        </div>
+        <div class="ss-sub">What you changed in ProPresenter</div>
         <ul class="warn-list">${rows}</ul>
         ${notes}
+        <label class="ss-target">
+          <span class="ss-sub">Save to</span>
+          <select id="ss-target">${targetOpts}</select>
+        </label>
+        <p class="ss-note" id="ss-target-note"></p>
         <div class="warn-actions">
           <button class="warn-btn-cancel">Cancel</button>
-          ${canUpdate ? '<button class="warn-btn-fixall" id="ss-update">Update original</button>' : ''}
-          <button class="warn-btn-ok" id="ss-new">New style</button>
+          <button class="warn-btn-ok" id="ss-save"></button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
     const done = v => { overlay.remove(); resolve(v); };
+    const sel = overlay.querySelector('#ss-target');
+    const btn = overlay.querySelector('#ss-save');
+    const note = overlay.querySelector('#ss-target-note');
+    const sync = () => {
+      const v = sel.value;
+      if (v === 'update') {
+        btn.textContent = `Update “${orig.name || 'Style'}”`;
+        note.textContent = '';
+      } else if (v === 'new') {
+        btn.textContent = 'Create new style';
+        note.textContent = `${orig?.name || info.styleName || 'The original'} stays as it is.`;
+      } else {
+        const t = state.styleSchemes.find(sc => sc.id === v.slice(6));
+        btn.textContent = `Update “${t?.name || 'Style'}”`;
+        note.textContent = `Only the changes listed above are copied onto ${t?.name || 'that style'}; everything else in it stays the same.`;
+      }
+    };
+    sel.addEventListener('change', sync);
+    sync();
     overlay.querySelector('.warn-btn-cancel').addEventListener('click', () => done(null));
-    overlay.querySelector('#ss-update')?.addEventListener('click', () => done('update'));
-    overlay.querySelector('#ss-new').addEventListener('click', () => done('new'));
+    btn.addEventListener('click', () => {
+      const v = sel.value;
+      done(v.startsWith('other:') ? { mode: 'other', targetId: v.slice(6) } : { mode: v });
+    });
     overlay.addEventListener('click', e => { if (e.target === overlay) done(null); });
   });
 }
 
-async function importStyleSample(onDone) {
-  const autoManage = state.config.autoManagePro7 === true;
+async function importStyleSample(onDone, quitPro7 = false) {
+  const autoManage = quitPro7 || state.config.autoManagePro7 === true;
+  // Pro7 only saves LED wall prop edits when it quits — reading while it's
+  // open silently misses them, so offer to close it for this import.
+  if (!autoManage) {
+    let running = false;
+    try { running = (await (await fetch('/api/pro7/process')).json()).running; } catch (_) {}
+    if (running) {
+      showConfirmModal('Close ProPresenter to read the LED wall',
+        'ProPresenter only saves LED wall prop changes when it quits, so while it’s open DeckPro can’t see them. DeckPro will close ProPresenter, read the sample, then reopen it.',
+        'Close ProPresenter & import', () => importStyleSample(onDone, true));
+      return;
+    }
+  }
   showDeliveryOverlay(autoManage ? ['Closing ProPresenter (if open)', 'Reading style sample', 'Relaunching ProPresenter'] : ['Reading style sample'],
     { title: 'Importing style sample', subtitle: 'Reading your ProPresenter changes' });
   let data;
@@ -14464,8 +14523,11 @@ async function importStyleSample(onDone) {
   const choice = await showStyleSampleModal(edits, { ...data, original });
   if (!choice) return;
   let target;
-  if (choice === 'update') {
+  if (choice.mode === 'update') {
     target = original;
+  } else if (choice.mode === 'other') {
+    target = state.styleSchemes.find(s => s.id === choice.targetId && !s.isLocked);
+    if (!target) { toast('error', 'Could not import style sample', 'That style is gone or locked.'); return; }
   } else {
     target = { ...deepClone(base), id: 'scheme_' + Date.now(), name: `${base.name || 'Style'} (from Pro7)`, isDefault: false, isLocked: false };
     state.styleSchemes.push(target);
@@ -14474,7 +14536,7 @@ async function importStyleSample(onDone) {
   state.activeSchemeId = target.id;
   saveState();
   onDone?.();
-  toast('success', choice === 'update' ? 'Style updated' : 'New style created', `${target.name}: ${edits.length} change${edits.length === 1 ? '' : 's'} from ProPresenter`);
+  toast('success', choice.mode === 'new' ? 'New style created' : 'Style updated', `${target.name}: ${edits.length} change${edits.length === 1 ? '' : 's'} from ProPresenter`);
 }
 
 // Macro / stage-layout pickers: Up/Down in the search box move a highlight

@@ -5363,3 +5363,14 @@ body.dark { --nav-select-bg: rgba(255, 255, 255, .10); }
 .deck-item--current, .deck-item--current:hover { background: var(--nav-select-bg); box-shadow: none; }
 .slide-item.active .slide-label, .slide-item.active.fixed .slide-label { color: var(--chrome-text); font-weight: 600; }
 .slide-item.active .slide-icon { background: var(--nav-select-bg) !important; }
+
+/* Import style sample: say plainly which style the sample came from, and where it goes */
+.ss-source { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 0 0 12px; background: var(--bg); }
+.ss-source-lbl, .ss-sub { font-size: 11px; font-weight: 600; color: var(--muted); }
+.ss-source-name { font-size: 16px; font-weight: 700; color: var(--text); margin-top: 2px; }
+.ss-source-when { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.ss-sub { display: block; margin: 0 0 6px; }
+.ss-target { display: block; margin-top: 14px; }
+.ss-target select { width: 100%; padding: 7px 10px; border-radius: 6px; font-size: 13px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+#ss-target-note:empty { display: none; }
+#ss-target-note + .warn-actions { margin-top: 16px; }
