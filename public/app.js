@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.43.3';
+const APP_VERSION = '4.43.4';
 
 const CHANGELOG = [
+  {
+    version: '4.43.4',
+    date: '2026-10-27',
+    changes: [
+      "Fixed: the scripture reference didn't line up with the verse. It sat centred on the whole screen while the verse was left-aligned (and narrowed by Fit Width) somewhere else. The reference now starts where the verse text starts, slide by slide, on the main screen and the LED wall. A right-aligned verse gets a reference that ends where it ends, and a centred verse gets a reference centred over it. The title bar keeps its own size. Turn it off with \"Line up with the verse\" in Styles → Layout → Title, for each display.",
+    ],
+  },
   {
     version: '4.43.3',
     date: '2026-10-27',
@@ -3203,7 +3210,7 @@ const LAYOUT_FIELDS = [
   'canvasW','canvasH',
   'bodyX','bodyY','bodyW','bodyH',
   'pointX','pointY','pointW','pointH',
-  'titleX','titleY','titleW','titleH','autoTitleY','titleAutoGap',
+  'titleX','titleY','titleW','titleH','autoTitleY','titleAutoGap','titleFollowsBody',
   'rcBodyX','rcBodyY','rcBodyW','rcBodyH',
   'rcTitleX','rcTitleY','rcTitleW','rcTitleH','rcAutoTitleY','rcTitleAutoGap',
   'startEndX','startEndY','startEndW','startEndH',
@@ -3212,7 +3219,7 @@ const LAYOUT_FIELDS = [
   'propCanvasW','propCanvasH',
   'propBodyX','propBodyY','propBodyW','propBodyH',
   'propPointX','propPointY','propPointW','propPointH',
-  'propTitleX','propTitleY','propTitleW','propTitleH','propAutoTitleY','propTitleAutoGap',
+  'propTitleX','propTitleY','propTitleW','propTitleH','propAutoTitleY','propTitleAutoGap','propTitleFollowsBody',
 ];
 const DEFAULT_GLOBAL_LAYOUT = () => {
   const d = DEFAULT_STYLE_SCHEME();
@@ -3393,7 +3400,7 @@ const DEFAULT_STYLE_SCHEME = () => ({
   bodyMarginLeft: 0, bodyMarginTop: 0, bodyMarginRight: 0, bodyMarginBottom: 60,
   pointX: 0, pointY: 729.98, pointW: 1920, pointH: 350.02,
   titleX: -0.18, titleY: 880, titleW: 1920.18, titleH: 50.51,
-  autoTitleY: true, titleAutoGap: 16,
+  autoTitleY: true, titleAutoGap: 16, titleFollowsBody: true,
   rcBodyX: 0, rcBodyY: 729.98, rcBodyW: 1920, rcBodyH: 350.02,
   rcTitleX: -0.18, rcTitleY: 880, rcTitleW: 1920.18, rcTitleH: 50.51,
   rcAutoTitleY: true, rcTitleAutoGap: 16,
@@ -3404,7 +3411,7 @@ const DEFAULT_STYLE_SCHEME = () => ({
   propBodyX: 0, propBodyY: 853, propBodyW: 3200, propBodyH: 427,
   propPointX: 0, propPointY: 853, propPointW: 3200, propPointH: 427,
   propTitleX: -0.30, propTitleY: 1040, propTitleW: 3200.30, propTitleH: 60,
-  propAutoTitleY: true, propTitleAutoGap: 16,
+  propAutoTitleY: true, propTitleAutoGap: 16, propTitleFollowsBody: true,
   // Font advanced styling. Display 2 (LED-wall prop) advanced styling defaults
   // to null = "inherit Display 1" — resolved live from the matching Display 1
   // row in applyTypographyToStyle. A concrete object here means "overridden".
@@ -8992,14 +8999,14 @@ const LAYOUT_ELS = () => [
   { id: 'canvas',     disp: 'main', lbl: 'Canvas',      canvas: ['canvasW', 'canvasH'] },
   { id: 'body',       disp: 'main', lbl: 'Body',        p: 'body',     row: 'body1', scene: 'scripture', fit: true },
   { id: 'point',      disp: 'main', lbl: 'Point',       p: 'point',    row: 'point1', scene: 'point', fit: true },
-  { id: 'title',      disp: 'main', lbl: 'Title',       p: 'title',    row: 'title1', scene: 'scripture', auto: ['autoTitleY', 'titleAutoGap'] },
+  { id: 'title',      disp: 'main', lbl: 'Title',       p: 'title',    row: 'title1', scene: 'scripture', auto: ['autoTitleY', 'titleAutoGap'], follow: 'titleFollowsBody' },
   { id: 'startEnd',   disp: 'main', lbl: 'Start / End', p: 'startEnd', row: 'se', scene: 'utility' },
   { id: 'live',       disp: 'main', lbl: 'Live Badge',  p: 'live',     row: 'live', scene: 'scripture' },
   { id: 'queue',      disp: 'main', lbl: 'Queue',       p: 'queue',    row: 'queue', scene: 'scripture' },
   { id: 'propCanvas', disp: 'led',  lbl: 'Canvas',      canvas: ['propCanvasW', 'propCanvasH'] },
   { id: 'propBody',   disp: 'led',  lbl: 'Body',        p: 'propBody',  row: 'body2', scene: 'scripture', fit: true },
   { id: 'propPoint',  disp: 'led',  lbl: 'Point',       p: 'propPoint', row: 'point2', scene: 'point', fit: true, note: 'Stacked points use this box too.' },
-  { id: 'propTitle',  disp: 'led',  lbl: 'Title',       p: 'propTitle', row: 'title2', scene: 'scripture', auto: ['propAutoTitleY', 'propTitleAutoGap'] },
+  { id: 'propTitle',  disp: 'led',  lbl: 'Title',       p: 'propTitle', row: 'title2', scene: 'scripture', auto: ['propAutoTitleY', 'propTitleAutoGap'], follow: 'propTitleFollowsBody' },
 ];
 // Preview text → the layout box it sits in.
 const LAYOUT_ROW_TO_EL = {
@@ -9091,6 +9098,14 @@ function renderLayoutTab(rs, dis, pv) {
         ${autoOn ? num(cur.auto[1], 'Gap above body') : ''}
       </div>
       <p class="lt-note">${autoOn ? 'Each slide moves the title to the top of its own verse, so the Y above is ignored.' : 'Off: the title always sits at the Y above.'}</p>
+    </div>` : ''}
+    ${cur.follow ? `
+    <div class="tp-group">
+      <div class="tp-group-lbl">Line up with the verse</div>
+      <div class="tp-row">
+        <label class="lt-switch"><input type="checkbox" class="lt-auto" data-f="${cur.follow}" ${pv[cur.follow] !== false ? 'checked' : ''} ${dis}> Reference follows the verse text</label>
+      </div>
+      <p class="lt-note">${pv[cur.follow] !== false ? 'The reference starts where the verse starts (or ends where it ends, or centres over it), slide by slide. The bar itself keeps the box above.' : 'Off: the reference uses its own font alignment and margins.'}</p>
     </div>` : ''}
     <p class="tp-legend"><span class="tp-dot"></span> set by this style · right-click a box to reset it or push it to Global · empty a box to follow Global</p>`;
 
@@ -9422,6 +9437,11 @@ function renderTextPreview(pv, scene, selRow, hint, showStrip = true, showScenes
   const propBodySpans = (smp.propSpans || smp.spans).map(sp => ({ text: sp.text, alt: !!sp.bold }));
   const box = (p, fb) => [pv[p + 'X'] ?? pv[fb + 'X'] ?? 0, pv[p + 'Y'] ?? pv[fb + 'Y'] ?? 0, pv[p + 'W'] ?? pv[fb + 'W'] ?? 0, pv[p + 'H'] ?? pv[fb + 'H'] ?? 0];
   const queueSpans = [{ text: [smp.reference, 'Point 1', 'Blank', 'Point 2', 'Response Card'].join('\n') }];
+  // The reference lines up with the verse text, same as the export
+  // (titleAdvFollowingBody in titleAlign.js — builder.js / buildProp.js).
+  const followAdv = (on, tBox, bBox, tAdv, bAdv, spans, mL, mR) => on === false ? tAdv : titleAdvFollowingBody({
+    titleX: tBox[0], titleW: tBox[2], titleAdv: tAdv, bodyX: bBox[0], bodyW: bBox[2],
+    bodyAlign: bodyTextAlign(bAdv, spans), bodyMarginLeft: bAdv?.marginLeft ?? mL ?? 0, bodyMarginRight: bAdv?.marginRight ?? mR ?? 0 });
 
   const showContent = scene !== 'utility';
   const mainEls = [
@@ -9430,7 +9450,8 @@ function renderTextPreview(pv, scene, selRow, hint, showStrip = true, showScenes
       ? ({ row: 'body1', alsoSel: ['bold1'], anchor: true, va: 'bottom', box: box('body'), font: pv.bodyFont, size: pv.bodySize, adv: pv.bodyFontAdv,
             spans: bodySpans, altFont: pv.boldFont, altAdv: pv.boldFontAdv }) : '',
     scene === 'scripture' || scene === 'notes'
-      ? ({ row: 'title1', va: 'middle', box: box('title'), font: pv.titleFont, size: pv.titleSize, adv: pv.titleFontAdv,
+      ? ({ row: 'title1', va: 'middle', box: box('title'), font: pv.titleFont, size: pv.titleSize,
+            adv: followAdv(pv.titleFollowsBody, box('title'), box('body'), pv.titleFontAdv, pv.bodyFontAdv, bodySpans, pv.bodyMarginLeft, pv.bodyMarginRight),
             spans: [{ text: smp.reference }], fill: pv.fillEnabled ? pv.titleFill : null, autoGap: pv.autoTitleY ? (pv.titleAutoGap ?? 16) : null })
       : '',
     scene === 'point' || scene === 'stacked'
@@ -9458,7 +9479,8 @@ function renderTextPreview(pv, scene, selRow, hint, showStrip = true, showScenes
   if (scene === 'scripture' || scene === 'notes') {
     led = L({ row: 'body2', alsoSel: ['bold2'], anchor: true, va: 'bottom', box: box('propBody'), font: pv.propBodyFont, size: pv.propBodySize, adv: pv.propBodyFontAdv,
               spans: propBodySpans, altFont: pv.propBoldFont, altAdv: pv.propBoldFontAdv })
-        + L({ row: 'title2', va: 'middle', box: box('propTitle'), font: pv.propTitleFont, size: pv.propTitleSize, adv: pv.propTitleFontAdv,
+        + L({ row: 'title2', va: 'middle', box: box('propTitle'), font: pv.propTitleFont, size: pv.propTitleSize,
+              adv: followAdv(pv.propTitleFollowsBody, box('propTitle'), box('propBody'), pv.propTitleFontAdv, pv.propBodyFontAdv, propBodySpans),
               spans: [{ text: smp.reference }], fill: pv.fillEnabled ? pv.titleFill : null, autoGap: pv.propAutoTitleY ? (pv.propTitleAutoGap ?? 16) : null });
   } else if (scene === 'point') {
     led = L({ row: 'point2', va: 'bottom', box: box('propPoint', 'propBody'), font: pv.propPointFont, size: pv.propPointSize, adv: pv.propPointFontAdv, spans: [{ text: smp.propPoint ?? smp.point }] });
@@ -9597,6 +9619,11 @@ function renderSchemeGrid(sv, rs, dis, pv) {
   // and slide notes have no box at all (see styleControls.test.js).
   const kind = TEXT_ROW_KIND[cur.id] || 'box';
   const isBox = kind === 'box', isSpan = kind === 'span';
+  // Reference rows: "Line up with the verse" (Layout tab) sets the alignment
+  // and left/right margins per slide, so these are only used with it off.
+  const followF = { titleFontAdv: 'titleFollowsBody', propTitleFontAdv: 'propTitleFollowsBody' }[advK];
+  const followNote = followF && (rs[followF] ?? ensureGlobalLayout()[followF]) !== false
+    ? `<p class="lt-note">Horizontal alignment and left/right margins are set slide by slide to line up with the verse. Turn off “Line up with the verse” in Layout → Title to set them here.</p>` : '';
   const alignBtns = (cls, field, opts, icons) => cell(field, opts.map(([v, title]) =>
     `<button type="button" class="${cls} sg-align-cell tp-align${_alignIs(adv[field], v) ? ' on' : ''}${_alignIs(_globalAdv[field], v) ? ' sg-align-global' : ''}" data-scheme="${advK}" data-val="${v}" title="${title}" ${dis}><svg viewBox="0 0 14 12" fill="none" stroke="currentColor" stroke-linecap="round" width="14" height="12">${icons[v]}</svg></button>`
   ).join(''), ' tp-seg');
@@ -9648,6 +9675,7 @@ function renderSchemeGrid(sv, rs, dis, pv) {
         <div class="tp-num">Horizontal ${alignBtns('sg-halign-btn', 'alignment', HA, HA_ICONS)}</div>
         ${isBox ? `<div class="tp-num">Vertical ${alignBtns('sg-valign-btn', 'verticalAlignment', VA, VA_ICONS)}</div>` : ''}
       </div>
+      ${followNote}
     </div>`}
 
     ${isSpan ? '' : `<div class="tp-group">

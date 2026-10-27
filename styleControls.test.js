@@ -140,7 +140,9 @@ for (const row of ROWS) {
       ok(name, rtfOf(row.get(out)).includes('\\fs274'));
       continue;
     }
-    const out = build({ [row.adv]: patch });
+    // The reference's own alignment/margins only apply with "Line up with
+    // the verse" off — on, titleAlign.js sets them per slide (titleAlign.test.js).
+    const out = build({ titleFollowsBody: false, propTitleFollowsBody: false, [row.adv]: patch });
     const el = row.get(out);
     const rtf = rtfOf(el);
     // Span rows: the change must land, and must not be the base run's own

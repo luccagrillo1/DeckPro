@@ -37,6 +37,7 @@
 
 const { randomUUID } = require('crypto');
 const rtf = require('./rtf');
+const { titleAdvFollowingBody, bodyTextAlign } = require('./public/titleAlign');
 
 // ─── Style system ─────────────────────────────────────────────────────────────
 
@@ -1225,7 +1226,14 @@ function buildScriptureCues(spec, rs) {
     const computedTitleY = rs.autoTitleY
       ? estimateTitleY(displayBody, bw, rs, partLines, { ascent: spec.ascent, descent: spec.descent, capAscent: spec.capAscent, titleAscent: spec.titleAscent, titleDescent: spec.titleDescent }, hasBodyText)
       : (rs.titleY ?? 0);
-    const titleEl = makeTitleElement({ reference: spec.reference, titleY: computedTitleY }, rs);
+    // Line the reference text up with this slide's verse box (on by default).
+    const titleRs = rs.titleFollowsBody === false ? rs : { ...rs, titleFontAdv: titleAdvFollowingBody({
+      titleX: rs.titleX ?? 0, titleW: rs.titleW ?? (rs.canvasW ?? 1920) + 0.18, titleAdv: rs.titleFontAdv,
+      bodyX: bx, bodyW: bw, bodyAlign: bodyTextAlign(rs.bodyFontAdv, displayBody),
+      bodyMarginLeft: rs.bodyFontAdv?.marginLeft ?? rs.bodyMarginLeft ?? 0,
+      bodyMarginRight: rs.bodyFontAdv?.marginRight ?? rs.bodyMarginRight ?? 0,
+    }) };
+    const titleEl = makeTitleElement({ reference: spec.reference, titleY: computedTitleY }, titleRs);
     const bodyEl  = makeBodyElement({ x: bx, y: by + bodyYOff, w: bw, h: bh, rtfData: bodyRtf, charCount: plainBody.length, spans: displayBody }, rs);
     const gradEl  = makeGradientElement(rs);
 

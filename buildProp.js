@@ -24,6 +24,7 @@ const { randomUUID } = require('crypto');
 const protobuf = require('protobufjs');
 const path = require('path');
 const rtf = require('./rtf');
+const { titleAdvFollowingBody, bodyTextAlign } = require('./public/titleAlign');
 
 const PROTO_PATH = path.join(__dirname, 'ProPresenter7-Proto/proto/propDocument.proto');
 
@@ -483,7 +484,6 @@ function buildScripturePropCue(spec, rs = {}) {
   }, []);
 
   const bodyRtf   = rtf.rtfBody(allSpans, prs);
-  const titleRtf  = rtf.rtfTitle(reference, prs);
   const plainBody = allSpans.map(s => s.text).join('');
 
   // Fit Width override (per-slide, computed against Display 2's OWN metrics —
@@ -516,6 +516,16 @@ function buildScripturePropCue(spec, rs = {}) {
   const th = prs.propTitleH ?? 50.51;
   const tx = prs.propTitleX ?? -0.18;
   const tw = prs.propTitleW ?? (prs.propCanvasW ?? 1920) + 0.18;
+  // Line the reference text up with the verse box (on by default).
+  if (prs.propTitleFollowsBody !== false) {
+    prs.titleFontAdv = titleAdvFollowingBody({
+      titleX: tx, titleW: tw, titleAdv: prs.titleFontAdv,
+      bodyX: bx, bodyW: bw, bodyAlign: bodyTextAlign(prs.propBodyFontAdv, allSpans),
+      bodyMarginLeft: prs.propBodyFontAdv?.marginLeft ?? 0,
+      bodyMarginRight: prs.propBodyFontAdv?.marginRight ?? 0,
+    });
+  }
+  const titleRtf = rtf.rtfTitle(reference, prs);
   const titleYOff = prs.titleFontAdv?.yOffset ?? 0;
   // A genuinely empty body (no text at all — an unfinished placeholder slide,
   // not a Fit Width bug) has nothing for Fit Width to have measured, so

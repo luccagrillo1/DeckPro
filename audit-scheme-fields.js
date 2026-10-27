@@ -102,12 +102,15 @@ function haystacks(style, { prop = false } = {}) {
 const RC_D1_DEAD = 'RC Display 1 slides (Response 1–4) removed in v4.32.0 — setting hidden from Styles';
 
 // Each row: { name, set(scheme), prop?, checks:[{layer,needle,note?}], dead? }
+// The reference's own alignment/margins only apply with "Line up with the
+// verse" off (titleAlign.js sets them per slide when it's on).
+const noFollow = s => { s.titleFollowsBody = false; s.propTitleFollowsBody = false; };
 const advFull = (advKey, { prop = false } = {}) => ([
   { name: `${advKey}.charSpacing`,            prop, set: s => deep(s, advKey, 'charSpacing', 7),        checks: [r(`\\expndtw140`)] },
   { name: `${advKey}.lineHeight`,             prop, set: s => deep(s, advKey, 'lineHeight', 1.5),       checks: [r(`\\sl360`)] },
   { name: `${advKey}.paragraphSpacingBefore`, prop, set: s => deep(s, advKey, 'paragraphSpacingBefore', 9), checks: [r(`\\sb180`)] },
   { name: `${advKey}.paragraphSpacingAfter`,  prop, set: s => deep(s, advKey, 'paragraphSpacingAfter', 11),  checks: [r(`\\sa220`)] },
-  { name: `${advKey}.alignment(right)`,       prop, set: s => deep(s, advKey, 'alignment', 'right'),    checks: [r(`\\qr`)] },
+  { name: `${advKey}.alignment(right)`,       prop, set: s => { noFollow(s); deep(s, advKey, 'alignment', 'right'); },    checks: [r(`\\qr`)] },
   { name: `${advKey}.italic`,                 prop, set: s => deep(s, advKey, 'italic', true),          checks: [r(`\\i `)] },
   { name: `${advKey}.underline`,              prop, set: s => deep(s, advKey, 'underline', true),       checks: [r(`\\ul `)] },
   // capitalization and bold must reach BOTH layers too — ProPresenter reads the meta
@@ -119,9 +122,9 @@ const advFull = (advKey, { prop = false } = {}) => ([
   { name: `${advKey}.bold`,                   prop, set: s => deep(s, advKey, 'bold', true),            checks: [r(`\\b `), m(`"bold":true`)] },
   { name: `${advKey}.strikethrough`,          prop, set: s => deep(s, advKey, 'strikethrough', true),   checks: [r(`\\strike`)] },
   { name: `${advKey}.verticalAlignment(top)`, prop, set: s => deep(s, advKey, 'verticalAlignment', 'top'), checks: [m(`VERTICAL_ALIGNMENT_TOP`)] },
-  { name: `${advKey}.marginLeft`,             prop, set: s => deep(s, advKey, 'marginLeft', S.margin),  checks: [m(`"left":${S.margin}`)] },
+  { name: `${advKey}.marginLeft`,             prop, set: s => { noFollow(s); deep(s, advKey, 'marginLeft', S.margin); },  checks: [m(`"left":${S.margin}`)] },
   { name: `${advKey}.marginTop`,              prop, set: s => deep(s, advKey, 'marginTop', S.margin),   checks: [m(`"top":${S.margin}`)] },
-  { name: `${advKey}.marginRight`,            prop, set: s => deep(s, advKey, 'marginRight', S.margin), checks: [m(`"right":${S.margin}`)] },
+  { name: `${advKey}.marginRight`,            prop, set: s => { noFollow(s); deep(s, advKey, 'marginRight', S.margin); }, checks: [m(`"right":${S.margin}`)] },
   { name: `${advKey}.marginBottom`,           prop, set: s => deep(s, advKey, 'marginBottom', S.margin),checks: [m(`"bottom":${S.margin}`)] },
   { name: `${advKey}.stroke`,                 prop, set: s => { deep(s, advKey, 'strokeEnabled', true); deep(s, advKey, 'strokeWidth', 7); deep(s, advKey, 'strokeColor', S.hex); }, checks: [m(`"width":7`), m(colorMeta)] },
   { name: `${advKey}.shadow`,                 prop, set: s => { deep(s, advKey, 'shadowEnabled', true); deep(s, advKey, 'shadowAngle', 123); deep(s, advKey, 'shadowOffset', 13); deep(s, advKey, 'shadowBlur', 17); deep(s, advKey, 'shadowColor', S.hex); }, checks: [m(`"angle":123`), m(`"offset":13`), m(`"radius":17`)] },
