@@ -3669,6 +3669,22 @@ details[open] .font-adv-summary::before { transform: rotate(90deg); }
 .notes-mode-btn.active { background: var(--blue); color: #fff; }
 
 .notes-doc-scroll { flex: 1; overflow: auto; position: relative; background: #eef1f7; }
+/* Google Doc tabs: a strip to jump between them + a divider heading per tab */
+.notes-tab-strip {
+  display: flex; gap: 4px; padding: 6px 10px; overflow-x: auto; flex-shrink: 0;
+  border-bottom: 1px solid var(--border); scrollbar-width: none;
+}
+.notes-tab-btn {
+  background: none; border: 1px solid transparent; border-radius: 999px; cursor: pointer;
+  font-size: 11px; font-weight: 600; color: var(--muted); padding: 3px 10px; white-space: nowrap;
+}
+.notes-tab-btn:hover { color: var(--text); background: var(--nav-select-bg); }
+.notes-tab-btn.on { color: var(--text); background: var(--nav-select-bg); border-color: var(--border); }
+.notes-tab + .notes-tab { margin-top: 18px; padding-top: 14px; border-top: 2px solid #cbd2e1; }
+.notes-tab-hd {
+  font: 700 10.5px/1.2 system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase;
+  color: #64748b; margin: 0 0 10px; user-select: none;
+}
 .notes-doc-body {
   padding: 14px 16px; color: #111827; background: #f7f8fb;
   font-size: 100%; line-height: 1.5; user-select: text;

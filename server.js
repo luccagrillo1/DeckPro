@@ -432,10 +432,26 @@ function dismissPro7QuitDialog() {
 // Pro7 by hand (dismissing its own prompts, letting it flush) can take a while,
 // and giving up too early forced a needless retry; Cancel is the escape hatch
 // for when they'd rather stop than wait.
+// Bring ProPresenter to the front while DeckPro quits it, so its own "are you
+// sure?" prompt is right there to click (on unless turned off in Preferences;
+// the renderer reports the setting via POST /api/pro7/prefs).
+let focusPro7OnQuit = true;
+app.post('/api/pro7/prefs', (req, res) => {
+  if (typeof req.body?.focusPro7OnQuit === 'boolean') focusPro7OnQuit = req.body.focusPro7OnQuit;
+  res.json({ ok: true, focusPro7OnQuit });
+});
+function activatePro7() {
+  if (!pro7IsRunning()) return;  // "activate" would launch it again
+  try { execSync(`osascript -e 'tell application "ProPresenter" to activate'`, { timeout: 3000 }); }
+  catch (_) { /* not running / no Automation permission — the quit still goes ahead */ }
+}
+
 async function quitPro7AndWait(timeoutMs = 60000, shouldCancel = null) {
   if (E2E || !pro7IsRunning()) return true;
+  if (focusPro7OnQuit) activatePro7();
   try { execSync(`osascript -e 'tell application "ProPresenter" to quit'`, { timeout: 5000 }); }
   catch (_) { /* may already be quitting */ }
+  if (focusPro7OnQuit) activatePro7();
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (shouldCancel && shouldCancel()) return 'cancelled';
@@ -894,6 +910,95 @@ app.get('/api/gdrive-pdf', async (req, res) => {
 // response can't exhaust memory.
 const GDRIVE_HTML_MAX_MB = 50;
 
+// One HTML fetch from Google (follows redirects, size-capped, sign-in pages
+// reported as errors). Shared by the whole-doc and per-tab exports.
+function fetchGoogleHtml(url) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err instanceof Error ? err : new Error(String(err)));
+    };
+    const done = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const doRequest = (targetUrl, redirectCount = 0) => {
+      try {
+        if (redirectCount > 5) return fail(new Error('Too many redirects'));
+        const absoluteUrl = new URL(targetUrl).toString();
+        const mod = isHttpsUrl(absoluteUrl) ? https : http;
+        const r2 = mod.get(absoluteUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000 }, (r) => {
+          try {
+            if (r.statusCode >= 300 && r.statusCode < 400 && r.headers.location) {
+              r.resume();
+              doRequest(resolveRedirect(absoluteUrl, r.headers.location), redirectCount + 1);
+              return;
+            }
+            if (r.statusCode !== 200) {
+              r.resume();
+              return fail(new Error(`Google returned ${r.statusCode} — make sure the doc is shared "Anyone with the link"`));
+            }
+            const ct = r.headers['content-type'] || '';
+            if (!ct.includes('html')) {
+              r.resume();
+              return fail(new Error('That link did not return a Google Doc. Share it "Anyone with the link" and use the /document/d/… URL.'));
+            }
+            let buf = '';
+            r.setEncoding('utf8');
+            r.on('data', d => {
+              buf += d;
+              if (buf.length > GDRIVE_HTML_MAX_MB * 1024 * 1024) {
+                fail(new Error(`Doc too large (over ${GDRIVE_HTML_MAX_MB} MB)`));
+                r.destroy();
+              }
+            });
+            r.on('end', () => {
+              try {
+                const exportError = googleHtmlExportError(buf, absoluteUrl);
+                if (exportError) return fail(new Error(exportError));
+                done(buf);
+              } catch (err) {
+                fail(err);
+              }
+            });
+            r.on('error', fail);
+          } catch (err) {
+            r.resume();
+            fail(err);
+          }
+        });
+        r2.on('timeout', () => { r2.destroy(); fail(new Error('Request timed out')); });
+        r2.on('error', fail);
+      } catch (err) {
+        fail(err);
+      }
+    };
+    doRequest(url);
+    });
+}
+
+// A Doc's tabs, in order, from its public /edit page: the first tab's title is
+// in the "mkch" chunk (its id is t.0) and each added tab is an "ac" chunk
+// [id, [1, title], …]. Empty when the page can't be read (single-tab fallback).
+async function listGoogleDocTabs(base) {
+  const page = await fetchGoogleHtml(`${base}/edit`);
+  const tabs = [];
+  const first = page.match(/"ty":"mkch","d":\[\[1,("(?:[^"\\]|\\.)*")\]\]/);
+  tabs.push({ id: 't.0', title: first ? JSON.parse(first[1]) : 'Tab 1' });
+  for (const m of page.matchAll(/"ty":"ac","d":\["(t\.[A-Za-z0-9_-]+)",\[1,("(?:[^"\\]|\\.)*")\]/g)) {
+    if (!tabs.some(t => t.id === m[1])) tabs.push({ id: m[1], title: JSON.parse(m[2]) });
+  }
+  return tabs;
+}
+
+// Visible text of an exported Doc, for comparing two exports.
+function googleHtmlText(html) {
+  return String(html || '').replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+}
+
 app.get('/api/gdrive-html', async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ ok: false, error: 'Missing url' });
@@ -904,74 +1009,24 @@ app.get('/api/gdrive-html', async (req, res) => {
     return res.json({ ok: false, error: 'Rich notes need a Google Doc (a /document/d/… link). Other files still load as a PDF.' });
   }
 
-  const fetchUrl = `https://docs.google.com/document/d/${parsed.id}/export?format=html`;
+  const base = `https://docs.google.com/document/d/${parsed.id}`;
   try {
-    const html = await new Promise((resolve, reject) => {
-      let settled = false;
-      const fail = (err) => {
-        if (settled) return;
-        settled = true;
-        reject(err instanceof Error ? err : new Error(String(err)));
-      };
-      const done = (value) => {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      };
-      const doRequest = (targetUrl, redirectCount = 0) => {
-        try {
-          if (redirectCount > 5) return fail(new Error('Too many redirects'));
-          const absoluteUrl = new URL(targetUrl).toString();
-          const mod = isHttpsUrl(absoluteUrl) ? https : http;
-          const r2 = mod.get(absoluteUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 15000 }, (r) => {
-            try {
-              if (r.statusCode >= 300 && r.statusCode < 400 && r.headers.location) {
-                r.resume();
-                doRequest(resolveRedirect(absoluteUrl, r.headers.location), redirectCount + 1);
-                return;
-              }
-              if (r.statusCode !== 200) {
-                r.resume();
-                return fail(new Error(`Google returned ${r.statusCode} — make sure the doc is shared "Anyone with the link"`));
-              }
-              const ct = r.headers['content-type'] || '';
-              if (!ct.includes('html')) {
-                r.resume();
-                return fail(new Error('That link did not return a Google Doc. Share it "Anyone with the link" and use the /document/d/… URL.'));
-              }
-              let buf = '';
-              r.setEncoding('utf8');
-              r.on('data', d => {
-                buf += d;
-                if (buf.length > GDRIVE_HTML_MAX_MB * 1024 * 1024) {
-                  fail(new Error(`Doc too large (over ${GDRIVE_HTML_MAX_MB} MB)`));
-                  r.destroy();
-                }
-              });
-              r.on('end', () => {
-                try {
-                  const exportError = googleHtmlExportError(buf, absoluteUrl);
-                  if (exportError) return fail(new Error(exportError));
-                  done(buf);
-                } catch (err) {
-                  fail(err);
-                }
-              });
-              r.on('error', fail);
-            } catch (err) {
-              r.resume();
-              fail(err);
-            }
-          });
-          r2.on('timeout', () => { r2.destroy(); fail(new Error('Request timed out')); });
-          r2.on('error', fail);
-        } catch (err) {
-          fail(err);
-        }
-      };
-      doRequest(fetchUrl);
-    });
-    res.json({ ok: true, html, id: parsed.id });
+    const html = await fetchGoogleHtml(`${base}/export?format=html`);
+    // Docs with tabs: the plain export runs every tab together with no break,
+    // so fetch each tab on its own (export?tab=) and send them separately.
+    let tabs = null;
+    try {
+      const list = await listGoogleDocTabs(base);
+      if (list.length > 1) {
+        const got = await Promise.all(list.map(t => fetchGoogleHtml(`${base}/export?format=html&tab=${encodeURIComponent(t.id)}`)
+          .then(h => ({ ...t, html: h })).catch(() => null)));
+        // An unknown tab id exports the first tab, so drop repeats of it.
+        const first = got[0] && googleHtmlText(got[0].html);
+        tabs = got.filter((t, i) => t && (i === 0 || googleHtmlText(t.html) !== first));
+        if (tabs.length < 2) tabs = null;
+      }
+    } catch (_) { tabs = null; }
+    res.json({ ok: true, html, id: parsed.id, ...(tabs ? { tabs } : {}) });
   } catch (err) {
     res.status(502).json({ ok: false, error: err.message });
   }

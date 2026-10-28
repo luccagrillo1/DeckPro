@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.43.6';
+const APP_VERSION = '4.43.7';
 
 const CHANGELOG = [
+  {
+    version: '4.43.7',
+    date: '2026-10-28',
+    changes: [
+      "Google Docs tabs show up in Speaker Notes. Each tab is shown under its own name with a divider between them, and a strip at the top jumps to any tab and lights up the one you're reading. Before, every tab ran together as one long doc. Docs without tabs look the same as before.",
+      "When an export quits ProPresenter, DeckPro brings ProPresenter to the front, so its \"Are you sure you want to quit?\" question is right there to click. Turn it off in Preferences → ProPresenter (\"Bring ProPresenter to the front when it's quitting\").",
+    ],
+  },
   {
     version: '4.43.6',
     date: '2026-10-28',
@@ -4497,6 +4505,13 @@ function spansToHtmlPreview(spans) {
   }).join('');
 }
 
+// Tell the server how to handle ProPresenter when it quits it (see
+// focusPro7OnQuit in server.js).
+function sendPro7Prefs() {
+  return fetch('/api/pro7/prefs', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ focusPro7OnQuit: state.config.focusPro7OnQuit !== false }) }).catch(() => {});
+}
+
 function activeStyleScheme() {
   return (state.styleSchemes || []).find(s => s.id === state.activeSchemeId) || (state.styleSchemes || [])[0] || {};
 }
@@ -7577,6 +7592,13 @@ function renderConfigPanel(panel) {
         <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
           When on, exporting will quit ProPresenter if it's open, write your deck and props, then relaunch it — so you never have to close it by hand. Turn off to be warned instead.
         </div>
+        <div class="rc-toggle-row" id="focuspro7-row" style="margin-top:10px">
+          <div class="toggle ${cfg.focusPro7OnQuit !== false ? 'on' : ''}" id="focuspro7-toggle"></div>
+          <span>Bring ProPresenter to the front when it's quitting</span>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
+          So its "Are you sure you want to quit?" question pops up where you can click it.
+        </div>
       </div>
 
       <div class="settings-section">
@@ -7930,6 +7952,13 @@ function renderConfigPanel(panel) {
   document.getElementById('cfg-pro7password').addEventListener('input', e => {
     cfg.pro7Password = e.target.value;
     saveState();
+  });
+
+  document.getElementById('focuspro7-row')?.addEventListener('click', () => {
+    cfg.focusPro7OnQuit = cfg.focusPro7OnQuit === false;
+    document.getElementById('focuspro7-toggle').classList.toggle('on', cfg.focusPro7OnQuit);
+    saveState();
+    sendPro7Prefs();
   });
 
   // Auto-manage ProPresenter on export
@@ -13778,6 +13807,7 @@ async function generate() {
   // Check Pro7 BEFORE disabling the button — so we can bail cleanly.
   // If auto-manage is on, the server will quit/relaunch Pro7 for us, so we proceed.
   const autoManage = state.config.autoManagePro7 === true;
+  await sendPro7Prefs();  // the setting may have just synced in from another Mac
   try {
     const check = await fetch('/api/pro7/process');
     const { running } = await check.json();
@@ -14866,6 +14896,7 @@ function clearNotesPanelView() {
   const frame   = document.getElementById('pdf-frame');       if (frame)   frame.src = '';
   const docBody = document.getElementById('notes-doc-body');  if (docBody) docBody.innerHTML = '';
   const docView = document.getElementById('notes-doc-view');  if (docView) docView.style.display = 'none';
+  renderNotesTabStrip(null);
   const pdfView = document.getElementById('pdf-viewer');      if (pdfView) pdfView.style.display = 'none';
   const dropZ   = document.getElementById('pdf-drop-zone');   if (dropZ)   dropZ.style.display = 'flex';
   document.getElementById('notes-panel')?.classList.remove('pdf-open');
@@ -14981,7 +15012,7 @@ function attachPdfHandlers() {
       const resp = await fetch(`/api/gdrive-html?url=${encodeURIComponent(url)}`);
       const data = await readJsonResponse(resp, 'Doc load failed');
       if (!resp.ok || !data.ok) { toast('error', 'Doc load failed', data.error || resp.statusText || 'Unknown error'); return; }
-      const processed = processNotesHtml(data.html, data.id);
+      const processed = data.tabs?.length > 1 ? processNotesTabs(data.tabs, data.id) : processNotesHtml(data.html, data.id);
       showNotesDoc(processed, 'Google Doc');
       state.config.gdriveUrl = url;
       _loadedNotesUrl = url;
@@ -15180,7 +15211,45 @@ function processNotesHtml(html, id) {
   return { id, styleText, bodyHtml };
 }
 
-function showNotesDoc({ id, styleText, bodyHtml }, title) {
+// A Doc with tabs: each tab is exported on its own (its own class names, so
+// its CSS is scoped to its own section) and shown under its tab's name, the
+// way Google Docs divides them.
+function processNotesTabs(tabs, id) {
+  let styleText = '', bodyHtml = '';
+  tabs.forEach((t, i) => {
+    const p = processNotesHtml(t.html, id);
+    styleText += scopeNotesCss(p.styleText, `.notes-tab[data-tab="${i}"]`) + '\n';
+    bodyHtml += `<section class="notes-tab" data-tab="${i}"><div class="notes-tab-hd">${esc(t.title || `Tab ${i + 1}`)}</div>${p.bodyHtml}</section>`;
+  });
+  return { id, styleText, bodyHtml, tabs: tabs.map((t, i) => t.title || `Tab ${i + 1}`) };
+}
+
+// Tab strip above the doc: click a tab to jump to it; the tab you're reading
+// stays lit while you scroll.
+function renderNotesTabStrip(tabs) {
+  const strip = document.getElementById('notes-tab-strip');
+  const scroll = document.getElementById('notes-doc-scroll');
+  if (!strip || !scroll) return;
+  if (!tabs || tabs.length < 2) { strip.style.display = 'none'; strip.innerHTML = ''; scroll.onscroll = null; return; }
+  strip.innerHTML = tabs.map((t, i) => `<button type="button" class="notes-tab-btn${i ? '' : ' on'}" data-tab="${i}">${esc(t)}</button>`).join('');
+  strip.style.display = '';
+  const sections = () => [...document.querySelectorAll('#notes-doc-body .notes-tab')];
+  strip.querySelectorAll('.notes-tab-btn').forEach(b => b.addEventListener('click', () => {
+    const sec = sections()[Number(b.dataset.tab)];
+    if (sec) scroll.scrollTo({ top: sec.offsetTop - 4, behavior: 'smooth' });
+  }));
+  scroll.onscroll = () => {
+    // At the very bottom a short last tab can't reach the top, so light the
+    // last tab that's on screen.
+    const atEnd = scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 2;
+    const y = atEnd ? scroll.scrollTop + scroll.clientHeight - 40 : scroll.scrollTop + 24;
+    let cur = 0;
+    sections().forEach((sec, i) => { if (sec.offsetTop <= y) cur = i; });
+    strip.querySelectorAll('.notes-tab-btn').forEach(b => b.classList.toggle('on', Number(b.dataset.tab) === cur));
+  };
+}
+
+function showNotesDoc({ id, styleText, bodyHtml, tabs }, title) {
   let styleEl = document.getElementById('notes-doc-style');
   if (!styleEl) { styleEl = document.createElement('style'); styleEl.id = 'notes-doc-style'; document.head.appendChild(styleEl); }
   styleEl.textContent = scopeNotesCss(styleText, '#notes-doc-body');
@@ -15195,6 +15264,7 @@ function showNotesDoc({ id, styleText, bodyHtml }, title) {
   document.getElementById('notes-doc-view').style.display = 'flex';
   document.getElementById('notes-panel')?.classList.add('pdf-open');
 
+  renderNotesTabStrip(tabs);
   _notesDoc = { id, title, blocks: [], colors: [], suggestions: [] };
   extractNotesBlocks();
   applyNotesZoom();
@@ -17165,7 +17235,7 @@ async function duplicateDeckAction(id) {
 const PERSISTENT_CONFIG_FIELDS = [
   // Pro7 / machine connection
   'pro7Port', 'pro7Password', 'pro7RootFolder', 'pro7LibraryFolder', 'styleSampleLibraryFolder',
-  'autoManagePro7', 'outputFolder', 'setupComplete', 'stageScreen',
+  'autoManagePro7', 'focusPro7OnQuit', 'outputFolder', 'setupComplete', 'stageScreen',
   'qrMacro', 'qrExportPair', 'gradientMacro', 'gradientMacroQr', 'icloudSync', 'theme',
   'externalContent', 'externalStartMacro', 'externalEndMacro', 'updateChannel',
   // Bible lookup
@@ -19250,6 +19320,7 @@ async function bootstrap() {
   // Auto-manage may already be on from before this permission prompt
   // existed — ask once at startup too, not just when the toggle is flipped.
   if (state.config.autoManagePro7 === true) fetch('/api/request-accessibility', { method: 'POST' }).catch(() => {});
+  sendPro7Prefs();
 
   // Poll Pro7 every 10s — reconnects automatically when Pro7 opens
   setInterval(() => checkPro7(true), 10000);
