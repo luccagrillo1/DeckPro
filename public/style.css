@@ -4698,6 +4698,9 @@ body.dark .g-tip-title { color: #ff8a4c; }
 }
 .sg-align-cell.tp-align::before { content: none !important; } /* beats the old grid's .on dot rule */
 .sg-align-cell.tp-align svg { display: block; }
+/* Reference rows: "Verse" sits in front of Left/Center/Right/Justify */
+.tp-align-pair { display: inline-flex; gap: 6px; }
+.sg-align-cell.tp-align-txt { font-size: 12px; font-weight: 600; padding: 0 10px; }
 .tp-sw-lbl::after { content: 'Off'; }
 .sg-tog.tp-tog.on .tp-sw-lbl::after { content: 'On'; }
 .tp-legend { display: flex; align-items: center; gap: 6px; margin: 10px 0 0; font-size: 11px; color: var(--muted); }

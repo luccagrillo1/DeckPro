@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.43.4';
+const APP_VERSION = '4.43.5';
 
 const CHANGELOG = [
+  {
+    version: '4.43.5',
+    date: '2026-10-28',
+    changes: [
+      "Scripture reference alignment is back in your hands. Title rows in Styles → Text now have a \"Verse\" button next to Left / Center / Right / Justify. Verse lines the reference up with the verse on each slide (the 4.43.4 behaviour). Picking Center or any other alignment places it there instead, with no trip to the Layout tab.",
+    ],
+  },
   {
     version: '4.43.4',
     date: '2026-10-27',
@@ -9622,10 +9629,14 @@ function renderSchemeGrid(sv, rs, dis, pv) {
   // Reference rows: "Line up with the verse" (Layout tab) sets the alignment
   // and left/right margins per slide, so these are only used with it off.
   const followF = { titleFontAdv: 'titleFollowsBody', propTitleFontAdv: 'propTitleFollowsBody' }[advK];
-  const followNote = followF && (rs[followF] ?? ensureGlobalLayout()[followF]) !== false
-    ? `<p class="lt-note">Horizontal alignment and left/right margins are set slide by slide to line up with the verse. Turn off “Line up with the verse” in Layout → Title to set them here.</p>` : '';
+  const following = !!followF && (rs[followF] ?? ensureGlobalLayout()[followF]) !== false;
+  const followNote = following
+    ? `<p class="lt-note">Lines up with the verse on each slide (left/right margins too). Pick Left, Center or Right to place it yourself.</p>` : '';
+  // "Verse" is a fifth horizontal choice on reference rows; picking any other
+  // alignment turns it off (same setting as Layout → Title).
+  const followBtn = followF ? cell('alignment', `<button type="button" class="sg-follow-btn sg-align-cell tp-align tp-align-txt${following ? ' on' : ''}" data-f="${followF}" title="Line up with the verse text on each slide" ${dis}>Verse</button>`, ' tp-seg') : '';
   const alignBtns = (cls, field, opts, icons) => cell(field, opts.map(([v, title]) =>
-    `<button type="button" class="${cls} sg-align-cell tp-align${_alignIs(adv[field], v) ? ' on' : ''}${_alignIs(_globalAdv[field], v) ? ' sg-align-global' : ''}" data-scheme="${advK}" data-val="${v}" title="${title}" ${dis}><svg viewBox="0 0 14 12" fill="none" stroke="currentColor" stroke-linecap="round" width="14" height="12">${icons[v]}</svg></button>`
+    `<button type="button" class="${cls} sg-align-cell tp-align${_alignIs(adv[field], v) && !(field === 'alignment' && following) ? ' on' : ''}${_alignIs(_globalAdv[field], v) ? ' sg-align-global' : ''}" data-scheme="${advK}" data-val="${v}" title="${title}" ${dis}><svg viewBox="0 0 14 12" fill="none" stroke="currentColor" stroke-linecap="round" width="14" height="12">${icons[v]}</svg></button>`
   ).join(''), ' tp-seg');
 
   const inheritsD1 = D2_ADV_INHERIT[advK] && rs[advK] == null;
@@ -9672,7 +9683,7 @@ function renderSchemeGrid(sv, rs, dis, pv) {
     ${isSpan ? '' : `<div class="tp-group">
       <div class="tp-group-lbl">Alignment</div>
       <div class="tp-row">
-        <div class="tp-num">Horizontal ${alignBtns('sg-halign-btn', 'alignment', HA, HA_ICONS)}</div>
+        <div class="tp-num">Horizontal <div class="tp-align-pair">${followBtn}${alignBtns('sg-halign-btn', 'alignment', HA, HA_ICONS)}</div></div>
         ${isBox ? `<div class="tp-num">Vertical ${alignBtns('sg-valign-btn', 'verticalAlignment', VA, VA_ICONS)}</div>` : ''}
       </div>
       ${followNote}
@@ -10513,9 +10524,21 @@ function renderStylePanel(panel) {
       const key = btn.dataset.scheme;
       forkAdv(s, key);
       s[key].alignment = btn.dataset.val;
+      // On a reference row, choosing an alignment stops it following the verse.
+      const followF = { titleFontAdv: 'titleFollowsBody', propTitleFontAdv: 'propTitleFollowsBody' }[key];
+      if (followF && (s[followF] ?? ensureGlobalLayout()[followF]) !== false) {
+        s[followF] = false; saveState(); renderStylePanel(panel); return;
+      }
       panel.querySelectorAll(`.sg-halign-btn[data-scheme="${key}"]`).forEach(b =>
         b.classList.toggle('on', b.dataset.val === btn.dataset.val));
       saveState();
+    });
+  });
+  panel.querySelectorAll('.sg-follow-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const s = getScheme(); if (!s) return;
+      s[btn.dataset.f] = true;
+      saveState(); renderStylePanel(panel);
     });
   });
 
