@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.43.5';
+const APP_VERSION = '4.43.6';
 
 const CHANGELOG = [
+  {
+    version: '4.43.6',
+    date: '2026-10-28',
+    changes: [
+      "Fit Width now centres the shrunk box on the screen, even when the text inside is left-aligned. Short verses used to hug the left edge. Each slide picks this up on its next export. To have a left- or right-aligned box hug its edge again, turn off \"Centre the fitted box\" in Styles → Layout → Body (one switch per display).",
+      "ALT works letter by letter. Select \"and\" in the middle of an ALT phrase and press ALT (or ⌘-click it), and only \"and\" changes. The rest of the phrase stays ALT, so there's no re-doing the whole thing by hand.",
+    ],
+  },
   {
     version: '4.43.5',
     date: '2026-10-28',
@@ -3215,7 +3223,7 @@ const DEFAULT_GLOBAL_TYPOGRAPHY = () => ({
 // All position/size fields shown in the Layout tab grid.
 const LAYOUT_FIELDS = [
   'canvasW','canvasH',
-  'bodyX','bodyY','bodyW','bodyH',
+  'bodyX','bodyY','bodyW','bodyH','fitCenter',
   'pointX','pointY','pointW','pointH',
   'titleX','titleY','titleW','titleH','autoTitleY','titleAutoGap','titleFollowsBody',
   'rcBodyX','rcBodyY','rcBodyW','rcBodyH',
@@ -3224,7 +3232,7 @@ const LAYOUT_FIELDS = [
   'liveX','liveY','liveW','liveH',
   'queueX','queueY','queueW','queueH',
   'propCanvasW','propCanvasH',
-  'propBodyX','propBodyY','propBodyW','propBodyH',
+  'propBodyX','propBodyY','propBodyW','propBodyH','propFitCenter',
   'propPointX','propPointY','propPointW','propPointH',
   'propTitleX','propTitleY','propTitleW','propTitleH','propAutoTitleY','propTitleAutoGap','propTitleFollowsBody',
 ];
@@ -3407,7 +3415,7 @@ const DEFAULT_STYLE_SCHEME = () => ({
   bodyMarginLeft: 0, bodyMarginTop: 0, bodyMarginRight: 0, bodyMarginBottom: 60,
   pointX: 0, pointY: 729.98, pointW: 1920, pointH: 350.02,
   titleX: -0.18, titleY: 880, titleW: 1920.18, titleH: 50.51,
-  autoTitleY: true, titleAutoGap: 16, titleFollowsBody: true,
+  autoTitleY: true, titleAutoGap: 16, titleFollowsBody: true, fitCenter: true,
   rcBodyX: 0, rcBodyY: 729.98, rcBodyW: 1920, rcBodyH: 350.02,
   rcTitleX: -0.18, rcTitleY: 880, rcTitleW: 1920.18, rcTitleH: 50.51,
   rcAutoTitleY: true, rcTitleAutoGap: 16,
@@ -3418,7 +3426,7 @@ const DEFAULT_STYLE_SCHEME = () => ({
   propBodyX: 0, propBodyY: 853, propBodyW: 3200, propBodyH: 427,
   propPointX: 0, propPointY: 853, propPointW: 3200, propPointH: 427,
   propTitleX: -0.30, propTitleY: 1040, propTitleW: 3200.30, propTitleH: 60,
-  propAutoTitleY: true, propTitleAutoGap: 16, propTitleFollowsBody: true,
+  propAutoTitleY: true, propTitleAutoGap: 16, propTitleFollowsBody: true, propFitCenter: true,
   // Font advanced styling. Display 2 (LED-wall prop) advanced styling defaults
   // to null = "inherit Display 1" — resolved live from the matching Display 1
   // row in applyTypographyToStyle. A concrete object here means "overridden".
@@ -4857,6 +4865,9 @@ function _fitResolveContext(rs, type, display, spans = null) {
     ? (type === 'point' ? (st.propPointX ?? st.propBodyX) : st.propBodyX)
     : (type === 'point' ? (st.pointX ?? st.bodyX) : st.bodyX);
   const align = adv.alignment || 'center';
+  // Centre the fitted box on the Styles box whatever the text alignment
+  // (on by default). Off: a left/right-aligned row's box hugs that edge.
+  const fitCenter = (isProp ? st.propFitCenter : st.fitCenter) !== false;
   // Box height and top/bottom margins exactly as the element is written
   // (builder.js makeBodyElement/makePointBodyElement, buildProp.js), so
   // `maxLines` below is how many lines Pro7 can show before it scales the
@@ -4869,7 +4880,7 @@ function _fitResolveContext(rs, type, display, spans = null) {
             : type === 'point' ? (st.pointMarginBottom ?? st.bodyMarginBottom ?? 60) : (st.bodyMarginBottom ?? 0);
   const innerH = Math.max(0, boxH - (adv.marginTop ?? fbT) - (adv.marginBottom ?? fbB));
   const lineHeight = adv.lineHeight ?? 1;
-  return { st, isProp, canvasW, size, maxW, boxW, marginL, marginR, palX: palX ?? null, align, baseDesc, boldDesc, innerH, lineHeight };
+  return { st, isProp, canvasW, size, maxW, boxW, marginL, marginR, palX: palX ?? null, align, fitCenter, baseDesc, boldDesc, innerH, lineHeight };
 }
 
 // How many lines of this row fit in its box at full size (see ctx.innerH).
@@ -4923,7 +4934,7 @@ function _fitHash(spans, ctx) {
   const spanKey = (spans || []).map(s => `${s.text || ''}|${!!s.bold}|${!!s.alt}|${!!s.italic}|${!!s.underline}|${!!s.super}`).join('');
   const descKey = d => `${d.fontFamily}|${d.fontWeight}|${d.fontStyle}|${d.letterSpacing}|${d.fontVariant}|${d.cap}`;
   return [spanKey, descKey(ctx.baseDesc), descKey(ctx.boldDesc), ctx.size, ctx.maxW,
-          ctx.marginL, ctx.marginR, ctx.palX, ctx.boxW, ctx.align, FIT_REV].join('');
+          ctx.marginL, ctx.marginR, ctx.palX, ctx.boxW, ctx.align, ctx.fitCenter, FIT_REV].join('');
 }
 
 // What _fitHash WOULD compute for this slide's current spans/scheme right
@@ -5118,7 +5129,7 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
   // cheap staleness check at export (_fitCurrentHash) so both always agree
   // on what a Fit Width result depends on. See _fitResolveContext.
   const ctx = _fitResolveContext(rs, type, display, spans);
-  const { canvasW, size, maxW, boxW, marginL, marginR, palX, align, baseDesc, boldDesc } = ctx;
+  const { canvasW, size, maxW, boxW, marginL, marginR, palX, align, fitCenter, baseDesc, boldDesc } = ctx;
   const padding = 80; // breathing room for the poetry branch
   // Slack between the longest line and the box edge. Chromium and CoreText
   // agree to within a few px, but a box fitted with 0–3px to spare (what the
@@ -5139,7 +5150,8 @@ function computeOptimalBodyWidth(spans, rs, type = 'body', display = 'main') {
   const centered = (w, brokenText = null, lines = null, brokenSpans = null) => {
     const bw = Math.min(Math.round(w + marginL + marginR), boxW);
     const left = palX ?? Math.round((canvasW - boxW) / 2);
-    let bx = align === 'left' ? left : align === 'right' ? left + boxW - bw : left + (boxW - bw) / 2;
+    let bx = fitCenter || !['left', 'right'].includes(align) ? left + (boxW - bw) / 2
+           : align === 'left' ? left : left + boxW - bw;
     bx = Math.round(Math.max(0, Math.min(bx, canvasW - bw)));
     return { bodyW: bw, bodyX: bx, brokenText, brokenSpans, lines, fitHash, maxLines, ...metrics };
   };
@@ -9004,15 +9016,15 @@ function wirePaletteTab(root, getPv, rerender, gotoText) {
 // style, and clearing a box hands the field back to Global.
 const LAYOUT_ELS = () => [
   { id: 'canvas',     disp: 'main', lbl: 'Canvas',      canvas: ['canvasW', 'canvasH'] },
-  { id: 'body',       disp: 'main', lbl: 'Body',        p: 'body',     row: 'body1', scene: 'scripture', fit: true },
-  { id: 'point',      disp: 'main', lbl: 'Point',       p: 'point',    row: 'point1', scene: 'point', fit: true },
+  { id: 'body',       disp: 'main', lbl: 'Body',        p: 'body',     row: 'body1', scene: 'scripture', fit: 'fitCenter' },
+  { id: 'point',      disp: 'main', lbl: 'Point',       p: 'point',    row: 'point1', scene: 'point', fit: 'fitCenter' },
   { id: 'title',      disp: 'main', lbl: 'Title',       p: 'title',    row: 'title1', scene: 'scripture', auto: ['autoTitleY', 'titleAutoGap'], follow: 'titleFollowsBody' },
   { id: 'startEnd',   disp: 'main', lbl: 'Start / End', p: 'startEnd', row: 'se', scene: 'utility' },
   { id: 'live',       disp: 'main', lbl: 'Live Badge',  p: 'live',     row: 'live', scene: 'scripture' },
   { id: 'queue',      disp: 'main', lbl: 'Queue',       p: 'queue',    row: 'queue', scene: 'scripture' },
   { id: 'propCanvas', disp: 'led',  lbl: 'Canvas',      canvas: ['propCanvasW', 'propCanvasH'] },
-  { id: 'propBody',   disp: 'led',  lbl: 'Body',        p: 'propBody',  row: 'body2', scene: 'scripture', fit: true },
-  { id: 'propPoint',  disp: 'led',  lbl: 'Point',       p: 'propPoint', row: 'point2', scene: 'point', fit: true, note: 'Stacked points use this box too.' },
+  { id: 'propBody',   disp: 'led',  lbl: 'Body',        p: 'propBody',  row: 'body2', scene: 'scripture', fit: 'propFitCenter' },
+  { id: 'propPoint',  disp: 'led',  lbl: 'Point',       p: 'propPoint', row: 'point2', scene: 'point', fit: 'propFitCenter', note: 'Stacked points use this box too.' },
   { id: 'propTitle',  disp: 'led',  lbl: 'Title',       p: 'propTitle', row: 'title2', scene: 'scripture', auto: ['propAutoTitleY', 'propTitleAutoGap'], follow: 'propTitleFollowsBody' },
 ];
 // Preview text → the layout box it sits in.
@@ -9095,7 +9107,9 @@ function renderLayoutTab(rs, dis, pv) {
     <div class="tp-group">
       <div class="tp-group-lbl">Size <span class="tp-group-sub">drag the corner handle, or type</span></div>
       <div class="tp-row">${num(fw, 'Width')}${num(fh, 'Height')}</div>
-      ${cur.fit ? `<p class="lt-note">With Fit Width on, each slide's box shrinks to fit its text — this width is the most it can be.${cur.note ? ' ' + esc(cur.note) : ''}</p>` : cur.note ? `<p class="lt-note">${esc(cur.note)}</p>` : ''}
+      ${cur.fit ? `<p class="lt-note">With Fit Width on, each slide's box shrinks to fit its text — this width is the most it can be.${cur.note ? ' ' + esc(cur.note) : ''}</p>
+      <div class="tp-row"><label class="lt-switch"><input type="checkbox" class="lt-auto" data-f="${cur.fit}" ${pv[cur.fit] !== false ? 'checked' : ''} ${dis}> Centre the fitted box</label></div>
+      <p class="lt-note">${pv[cur.fit] !== false ? 'Each shrunk box sits in the middle of this box, with its text still aligned inside it.' : 'Off: a left- or right-aligned box hugs that edge of this box.'} Applies to Body and Point on this display.</p>` : cur.note ? `<p class="lt-note">${esc(cur.note)}</p>` : ''}
     </div>
     ${cur.auto ? `
     <div class="tp-group">
@@ -11501,75 +11515,104 @@ function pointForm(slide) {
 
 // ─── Form event handlers ──────────────────────────────────────────────────────
 
+// ALT is per character: toggling a selection inside a longer ALT run only
+// changes the selected text (unbolding "and" mid-phrase keeps the rest ALT).
+// Two marker nodes pin the selection while spans are split around it.
+function _altMarkers(range) {
+  const mk = () => { const m = document.createElement('span'); m.className = 'alt-mark'; return m; };
+  const a = mk(), b = mk();
+  const end = range.cloneRange(); end.collapse(false); end.insertNode(b);
+  const st = range.cloneRange(); st.collapse(true); st.insertNode(a);
+  return [a, b];
+}
+function _altRegion(a, b) { const r = document.createRange(); r.setStartAfter(a); r.setEndBefore(b); return r; }
+
+// Every non-space character in the selection is already ALT.
+function _altRegionIsAlt(bodyEl, region) {
+  const tw = document.createTreeWalker(bodyEl, NodeFilter.SHOW_TEXT);
+  let any = false;
+  for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+    if (!region.intersectsNode(n)) continue;
+    let t = n.textContent;
+    if (n === region.endContainer) t = t.slice(0, region.endOffset);
+    if (n === region.startContainer) t = t.slice(region.startOffset);
+    if (!t.trim()) continue;
+    if (!n.parentElement.closest('.alt-fmt')) return false;
+    any = true;
+  }
+  return any;
+}
+
+// Remove ALT from just the text between the markers, splitting any ALT span
+// that runs past either end so the outside parts stay ALT.
+function _altClear(bodyEl, a, b) {
+  const done = new Set();
+  for (;;) {
+    const region = _altRegion(a, b);
+    const span = [...bodyEl.querySelectorAll('.alt-fmt')].find(x => !done.has(x) && region.intersectsNode(x));
+    if (!span) break;
+    done.add(span);
+    const hasA = span.contains(a), hasB = span.contains(b);
+    if (!hasA && !hasB) {            // wholly inside the selection
+      span.replaceWith(...span.childNodes);
+      continue;
+    }
+    let after = null;
+    if (hasB) {
+      const r = document.createRange(); r.setStartAfter(b); r.setEnd(span, span.childNodes.length);
+      after = r.extractContents();
+    }
+    const mid = document.createRange();
+    if (hasA) mid.setStartAfter(a); else mid.setStart(span, 0);
+    mid.setEnd(span, span.childNodes.length);
+    const plain = mid.extractContents();
+    const tail = [plain];
+    if (after && after.textContent) {
+      const s2 = document.createElement('span'); s2.className = 'alt-fmt'; s2.appendChild(after);
+      done.add(s2); tail.push(s2);
+    }
+    span.after(...tail);
+    if (!span.textContent) span.replaceWith(...span.childNodes);
+  }
+}
+
+function _altFinish(bodyEl, a, b, onSave) {
+  const sel = window.getSelection();
+  const r = _altRegion(a, b);
+  a.remove(); b.remove();
+  sel.removeAllRanges(); sel.addRange(r);
+  bodyEl.querySelectorAll('.alt-fmt').forEach(x => { if (!x.textContent) x.remove(); });
+  onSave(extractSpans(bodyEl));
+}
+
+function _altSet(bodyEl, a, b) {
+  _altClear(bodyEl, a, b);           // flatten first so ALT never nests
+  const content = _altRegion(a, b).extractContents();
+  const span = document.createElement('span');
+  span.className = 'alt-fmt';
+  span.appendChild(content);
+  a.after(span);
+}
+
 function toggleAltFmt(bodyEl, onSave) {
   const sel = window.getSelection();
   if (!sel.rangeCount) return;
   const range = sel.getRangeAt(0);
-  if (range.collapsed) return;
-
-  // Find all .alt-fmt spans that intersect the selection:
-  //  - directAlt: selection is inside a span (commonAncestor is or is inside .alt-fmt)
-  //  - descAlt: spans are inside the selection
-  // This handles trailing-whitespace snap: even if word-snap extends one char past the
-  // span boundary, intersectsNode still finds the span so we unwrap correctly.
-  const root = range.commonAncestorContainer.nodeType === 3
-    ? range.commonAncestorContainer.parentElement
-    : range.commonAncestorContainer;
-  const directAlt = root.closest?.('.alt-fmt') || (root.classList?.contains('alt-fmt') ? root : null);
-  const descAlt   = [...root.querySelectorAll('.alt-fmt')].filter(s => range.intersectsNode(s));
-  const altSpans  = directAlt ? [directAlt, ...descAlt] : descAlt;
-
-  if (altSpans.length > 0) {
-    // Unwrap all intersecting alt-fmt spans
-    for (const span of altSpans) {
-      const frag = document.createDocumentFragment();
-      while (span.firstChild) frag.appendChild(span.firstChild);
-      span.parentNode.replaceChild(frag, span);
-    }
-  } else {
-    // Wrap selection in .alt-fmt span
-    try {
-      const span = document.createElement('span');
-      span.className = 'alt-fmt';
-      range.surroundContents(span);
-    } catch (_) {
-      // Selection crosses element boundaries — extract, wrap, reinsert
-      const contents = range.extractContents();
-      const span = document.createElement('span');
-      span.className = 'alt-fmt';
-      span.appendChild(contents);
-      range.insertNode(span);
-      sel.removeAllRanges();
-      const newRange = document.createRange();
-      newRange.selectNodeContents(span);
-      sel.addRange(newRange);
-    }
-  }
-
-  onSave(extractSpans(bodyEl));
+  if (range.collapsed || !bodyEl.contains(range.commonAncestorContainer)) return;
+  const [a, b] = _altMarkers(range);
+  if (_altRegionIsAlt(bodyEl, _altRegion(a, b))) _altClear(bodyEl, a, b);
+  else _altSet(bodyEl, a, b);
+  _altFinish(bodyEl, a, b, onSave);
 }
 
 function applyAltFmt(bodyEl, onSave) {
   const sel = window.getSelection();
   if (!sel.rangeCount) return;
   const range = sel.getRangeAt(0);
-  if (range.collapsed) return;
-  try {
-    const span = document.createElement('span');
-    span.className = 'alt-fmt';
-    range.surroundContents(span);
-  } catch (_) {
-    const contents = range.extractContents();
-    const span = document.createElement('span');
-    span.className = 'alt-fmt';
-    span.appendChild(contents);
-    range.insertNode(span);
-    sel.removeAllRanges();
-    const r = document.createRange();
-    r.selectNodeContents(span);
-    sel.addRange(r);
-  }
-  onSave(extractSpans(bodyEl));
+  if (range.collapsed || !bodyEl.contains(range.commonAncestorContainer)) return;
+  const [a, b] = _altMarkers(range);
+  _altSet(bodyEl, a, b);
+  _altFinish(bodyEl, a, b, onSave);
 }
 
 let _altBrackets = null;
