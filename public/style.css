@@ -5393,3 +5393,31 @@ body.dark { --nav-select-bg: rgba(255, 255, 255, .10); }
 .ss-target select { width: 100%; padding: 7px 10px; border-radius: 6px; font-size: 13px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
 #ss-target-note:empty { display: none; }
 #ss-target-note + .warn-actions { margin-top: 16px; }
+
+/* Wide screens, every page — not just Styles. Slide editors put the preview in
+   a sticky column beside the fields (Main Screen above LED Wall, so both read
+   bigger); pages made of settings sections (Preferences, Start/End, Response
+   Card) flow those sections into two columns. Below 1100px everything stacks
+   at the 1040px reading width as before. */
+@container mainpanel (min-width: 1100px) {
+  .slide-form:has(> .slp-preview) {
+    max-width: 1760px; display: grid; align-items: start;
+    grid-template-columns: minmax(520px, 1fr) minmax(0, 1.1fr); column-gap: 28px;
+  }
+  .slide-form:has(> .slp-preview) > * { grid-column: 1; min-width: 0; }
+  .slide-form:has(> .slp-preview) > h2 { grid-column: 1 / -1; }
+  .slide-form:has(> .slp-preview) > .slp-preview {
+    grid-column: 2; grid-row: 2 / span 40; position: sticky; top: 0; margin: 4px 0 0;
+    max-height: calc(100vh - 140px); overflow-y: auto;
+  }
+  .slide-form > .slp-preview .tp-wrap { grid-template-columns: minmax(0, 1fr); }
+
+  .slide-form:has(> .settings-section):not(:has(> .slp-preview)) { max-width: 1760px; columns: 2; column-gap: 28px; }
+  .slide-form:has(> .settings-section):not(:has(> .slp-preview)) > * { break-inside: avoid; }
+  .slide-form:has(> .settings-section):not(:has(> .slp-preview)) > :not(.settings-section) { column-span: all; }
+
+  /* Preferences: each tab's sections in two columns */
+  .slide-form:has(> .prefs-nav) { max-width: 1760px; }
+  .slide-form:has(> .prefs-nav) .prefs-group { columns: 2; column-gap: 28px; }
+  .slide-form:has(> .prefs-nav) .prefs-group > * { break-inside: avoid; }
+}

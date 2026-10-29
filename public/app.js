@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.43.7';
+const APP_VERSION = '4.43.8';
 
 const CHANGELOG = [
+  {
+    version: '4.43.8',
+    date: '2026-10-28',
+    changes: [
+      "Big screens get used everywhere now, not just in Styles. Slide editors put the preview in a column beside the fields (main screen above LED wall, pinned while you scroll), and Preferences and the Start/End pages lay their sections out in two columns. On a 1920 screen with Speaker Notes open this kicks in already. Smaller windows stack as before.",
+      "Help is up to date with this week's changes: the Verse / Center title alignment, \"Line up with the verse\" and \"Centre the fitted box\" in Layout, where Fit Width puts the box, letter-by-letter ALT (plus ⌘-click in the shortcuts list), Google Docs tabs in Speaker Notes, and bringing ProPresenter to the front when it's quitting.",
+    ],
+  },
   {
     version: '4.43.7',
     date: '2026-10-28',
@@ -18047,6 +18055,7 @@ function helpSections() {
 
       <h4>Single</h4>
       <p>One static point shown throughout — one prop on the ${D2}. Type the point text; use <span class="help-kbd">⌘B</span> to bold an emphasis phrase.</p>
+      <p><strong>ALT (emphasis)</strong> — select words and click <strong>ALT</strong>, or <span class="help-kbd">⌘</span>-click a word (hold and drag for several). It works letter by letter: select <em>and</em> inside an ALT phrase and press ALT again, and only <em>and</em> changes. The rest stays ALT.</p>
 
       <h4>Revealing</h4>
       <p>A building list: one prop per bullet, each revealing the next line progressively while previously-revealed lines stack above (dimmer). Add bullets in the list; bold within any bullet with <span class="help-kbd">⌘B</span>. Set an optional <strong>title</strong> (a dimmed header above the bullets) and a <strong>prop base name</strong> that names the generated prop series.</p>
@@ -18098,6 +18107,9 @@ function helpSections() {
 
       <h4>It's per-deck</h4>
       <p>Each deck remembers its own notes doc. Open a different deck and the panel switches to <em>that</em> deck's own doc (or shows the empty drop zone if it doesn't have one) — it's never one shared doc bleeding across every deck you work on.</p>
+
+      <h4>Google Docs tabs</h4>
+      <p>A Doc with tabs keeps them: each tab is shown under its own name with a divider between them, and a strip across the top of the panel jumps to any tab. The tab you're reading stays lit as you scroll. Everything in every tab can still be dragged into slides.</p>
 
       <h4>Refresh</h4>
       <p>Editing the Google Doc after loading it? Click the <strong>⟳</strong> button next to Remove in the doc header to pull in those edits without removing and re-adding the link.</p>
@@ -18192,6 +18204,7 @@ function helpSections() {
         <li><strong>${D3}:</strong> Slide Notes, Notes Alt.</li>
         <li><strong>Utility:</strong> Start/End banner, Live badge, Queue sidebar.</li>
       </ul>
+      <p><strong>Title alignment:</strong> the Title rows have a fifth Horizontal choice, <strong>Verse</strong>, which lines the reference up with the verse on each slide. Pick <strong>Left</strong>, <strong>Center</strong> or <strong>Right</strong> instead to put it exactly there. Picking one turns Verse off.</p>
       <p class="help-muted">Right-click any control for Use Global / Make Global. An amber dot in the list (or amber ring on a control) means this style overrides Global there; LED-wall rows marked “follows D1” track their main-screen row until you change them.</p>
 
       <h3>Layout tab</h3>
@@ -18201,6 +18214,8 @@ function helpSections() {
         <li><strong>Type</strong> X / Y / Width / Height in pixels. Empty a box to follow Global again; grey numbers are coming from Global.</li>
         <li><strong>Snap to canvas</strong> — left / centre / right and top / middle / bottom; the one that matches lights up.</li>
         <li><strong>Auto Title Y</strong> — on both Titles, each slide moves the title to sit just above its own verse (with the gap you set), so the fixed Y is ignored. Turn it off for a fixed Y.</li>
+        <li><strong>Line up with the verse</strong> — on both Titles. The reference text starts where the verse starts, slide by slide (ends where it ends for a right-aligned verse, centres over a centred one). The title bar keeps its own box. It's the same setting as the <strong>Verse</strong> alignment button in the Text tab.</li>
+        <li><strong>Centre the fitted box</strong> — on Body and Point (one switch per display). With Fit Width, each slide's shrunk box sits in the middle of the Body box, with the text still aligned inside it. Turn it off and a left- or right-aligned box hugs that edge instead.</li>
         <li><strong>↺ Use Global / ↑ Make Global</strong> — for the whole box at once; right-click a single number for just that one.</li>
       </ul>
       <div class="help-callout">
@@ -18290,6 +18305,7 @@ function helpSections() {
       <div class="help-callout">
         <strong>The width cap.</strong> Fit Width can only ever <em>shrink</em> the box — never grow it past the Body width set in the style's Layout tab. Widen the ceiling there if you need more room.
       </div>
+      <p><strong>Where the box sits.</strong> The shrunk box is centred in the Body box (so on screen, for a full-width Body), even when the verse text is left-aligned inside it. To have a left- or right-aligned box hug its edge instead, turn off <strong>Centre the fitted box</strong> in Styles → Layout → Body.</p>
 
       <h4>Display 2 (LED wall)</h4>
       <p><strong>+ Display 2</strong> (next to Fit Width, only shown while Fit Width itself is on) fits that slide's LED-wall box to its content too — on by default for new slides, alongside Fit Width. It runs its own independent search using Display 2's own font size, canvas, and body width — it does not copy whatever Display 1 computed.</p>
@@ -18360,7 +18376,7 @@ function helpSections() {
       <div class="help-callout help-callout-warn">
         <strong>ProPresenter must not overwrite the export.</strong> Pro7 rewrites its props config when it quits, which would undo DeckPro's write. Two ways to stay safe:
         <ul>
-          <li><strong>Auto-manage</strong> (recommended) — in Preferences, turn on “Auto-manage ProPresenter on export.” DeckPro quits Pro7 (clicking through its "Are you sure you want to quit?" dialog if it appears), writes everything, and relaunches it for you. Turning this on asks macOS for the Accessibility permission it needs, the first time — approve it in the system prompt so the auto-quit can actually click that dialog.</li>
+          <li><strong>Auto-manage</strong> (recommended) — in Preferences, turn on “Auto-manage ProPresenter on export.” DeckPro quits Pro7 (clicking through its "Are you sure you want to quit?" dialog if it appears), writes everything, and relaunches it for you. Turning this on asks macOS for the Accessibility permission it needs, the first time — approve it in the system prompt so the auto-quit can actually click that dialog. While it quits, DeckPro also brings ProPresenter to the front so that question is right there for you to click (turn this off in Preferences → ProPresenter → “Bring ProPresenter to the front when it's quitting”).</li>
           <li><strong>Manual</strong> — close ProPresenter yourself first; DeckPro warns you if it's still open, then reopen it after.</li>
         </ul>
       </div>
@@ -18495,6 +18511,7 @@ function helpSections() {
           <tr><td><span class="help-kbd">⌘B</span></td><td>Bold (in rich-text body fields)</td></tr>
           <tr><td><span class="help-kbd">⌘I</span></td><td>Italic</td></tr>
           <tr><td><span class="help-kbd">⌘U</span></td><td>Underline</td></tr>
+          <tr><td><span class="help-kbd">⌘</span>-click</td><td>ALT (emphasis) on a word — hold and drag for several; again to remove</td></tr>
           <tr><td><span class="help-kbd">Enter</span></td><td>Bible Lookup — fetch verse</td></tr>
         </tbody>
       </table>
