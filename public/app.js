@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.44.0';
+const APP_VERSION = '4.44.1';
 
 const CHANGELOG = [
+  {
+    version: '4.44.1',
+    date: '2026-11-03',
+    changes: [
+      "Fixed: the × on Speaker Notes / Checklist didn't close the panel on bigger screens (or after you'd dragged it wider) — it just showed the Notes and Checklist buttons on top of it.",
+    ],
+  },
   {
     version: '4.44.0',
     date: '2026-11-03',

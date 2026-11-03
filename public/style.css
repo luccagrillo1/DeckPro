@@ -5357,6 +5357,8 @@ body.cloud-locked .sidebar-actions, body.cloud-locked #main-panel[inert] { opaci
    preview beside the controls (preview sticks while the controls scroll). */
 .notes-panel { width: clamp(240px, 15vw, 340px); }
 .notes-panel.pdf-open { width: clamp(380px, 22vw, 520px); }
+/* × must still close it — beats the widths above and a dragged (inline) width */
+.notes-panel.hidden { width: 0 !important; min-width: 0 !important; border-left: none; overflow: hidden; }
 @container mainpanel (min-width: 1180px) {
   .slide-form { max-width: 1040px; }
   .slide-form:has(.style-tabs) { max-width: 1760px; }
