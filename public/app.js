@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.43.8';
+const APP_VERSION = '4.43.9';
 
 const CHANGELOG = [
+  {
+    version: '4.43.9',
+    date: '2026-10-31',
+    changes: [
+      "Divine-pronoun caps no longer capitalize he/him/his about people. Each pronoun now checks who was named last before it: God, Jesus, Lord, Father and the like cap it; Paul, Peter, Moses, \"the man\" and other people leave it lowercase. It's still a best guess (\"Jesus said to him\" means the man), so look over the result.",
+    ],
+  },
   {
     version: '4.43.8',
     date: '2026-10-28',
@@ -7686,7 +7693,7 @@ function renderConfigPanel(panel) {
           <span>Capitalize He, Him, His, Himself in looked-up verses</span>
         </div>
         <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
-          The caps show in the editor so you can lowercase any that don't refer to God (e.g. Mark 1:40). No rule can tell a divine "he" from a human one, so review them.
+          Skips pronouns right after a person is named (Paul, Peter, "the man"). It's a best guess, and the caps show in the editor so you can fix any it gets wrong.
         </div>
         <button class="btn-sm" id="btn-divine-caps-deck" style="margin-top:10px">Apply to this deck now</button>
         <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
@@ -13111,35 +13118,9 @@ function initNotesSidebarDrop() {
   });
 }
 
-// Whole-word capitalization of divine pronouns (He/Him/His/Himself).
-//
-// No English translation on a typical API.Bible key capitalizes these — the ones
-// that do (NASB, Amplified, LSB, MEV) aren't in the catalog — and no rule can
-// perfectly tell a divine "he" from a human one: Mark 1:40-41 has both, worded
-// identically ("...he said" is the man with leprosy in v40, then Jesus in v41).
-// So instead of silently guessing at export — where a wrong cap like the leper's
-// "he said" was invisible and unfixable — DeckPro writes the caps INTO the
-// visible body text (on Scripture lookup when the pref is on, or on demand across
-// the deck). The user sees the result and can lowercase any wrong one, and that
-// edit sticks because nothing re-applies behind their back. Word-boundary matched
-// so "this"/"history" are never touched.
-function divineCapsText(text) {
-  if (!text) return text;
-  return String(text).replace(/\b(he|him|his|himself)\b/gi, m => m[0].toUpperCase() + m.slice(1));
-}
-
-// Count the lowercase divine pronouns in a string — i.e. how many words a
-// divineCapsText() pass would actually change (the case-sensitive pattern only
-// matches the lowercase forms). Used to report/skip no-op runs.
-function countLowercaseDivine(text) {
-  return (String(text || '').match(/\b(he|him|his|himself)\b/g) || []).length;
-}
-
-// Apply divine caps to a span array ([{text, bold}, ...]) in place-safe fashion,
-// returning fresh spans (preserves bold and any other per-span fields).
-function divineCapsSpans(spans) {
-  return (spans || []).map(s => ({ ...s, text: divineCapsText(s.text || '') }));
-}
+// divineCapsText / divineCapsSpans / countDivineCaps live in divineCaps.js:
+// caps He/Him/His/Himself unless the last person named before it is human
+// (Paul, Peter, "the man"). Written into the visible text so it can be fixed.
 
 function normalizeBodyText(value) {
   // Divine-pronoun caps are NOT applied here anymore — they live in the visible
@@ -13152,8 +13133,8 @@ function normalizeBodyText(value) {
 // that didn't come through Scripture lookup). Visible + reviewable, never silent.
 function applyDivineCapsToDeck() {
   let total = 0;
-  const doStr    = v => { total += countLowercaseDivine(v); return divineCapsText(v || ''); };
-  const doSpans  = arr => (arr || []).map(s => ({ ...s, text: doStr(s.text || '') }));
+  const doStr    = v => { total += countDivineCaps(v); return divineCapsText(v || ''); };
+  const doSpans  = arr => { total += countDivineCaps((arr || []).map(s => s.text || '').join('')); return divineCapsSpans(arr); };
   const doBullet = b => Array.isArray(b) ? doSpans(b) : doStr(b);
 
   (state.slides || []).forEach(slide => {
@@ -18456,6 +18437,7 @@ function helpSections() {
       <p>No Bible translation available through a normal api.bible key capitalizes He/Him/His/Himself for God (the ones that do — NASB, Amplified, LSB, MEV — aren't in the catalog), and no automatic rule can tell a divine "he" from an ordinary one: Mark 1:40–41 has both back to back, worded identically. So DeckPro doesn't guess silently — it capitalizes visibly, where you can check it:</p>
       <ul>
         <li>Turn the toggle on, and looking up a verse capitalizes He/Him/His/Himself right in the body text as it's fetched.</li>
+        <li>Each pronoun checks who was named last before it. After God, Jesus, Lord, Father or Spirit it's capitalized; after a person — Paul, Peter, Moses, "the man", "a woman" — it stays lowercase. If nobody's named yet, it's capitalized.</li>
         <li><strong>Apply to this deck now</strong> — a button below the toggle that applies the same capitalization across every body field already in the deck, for text you typed or pasted rather than looked up.</li>
       </ul>
       <p>Either way, look over the result and lowercase any pronoun that doesn't actually refer to God — that edit sticks, since nothing re-applies behind your back.</p>
