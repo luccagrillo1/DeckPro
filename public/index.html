@@ -180,10 +180,12 @@
               <path d="M14 2v6h6M12 18v-6M9 15l3-3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </div>
-          <div class="pdf-drop-label">Drop a PDF here</div>
-          <div class="pdf-drop-sub">Speaker notes, script, or outline</div>
-          <input type="file" id="pdf-file-input" accept=".pdf" style="display:none">
-          <button class="btn-pdf-browse" id="btn-pdf-browse">Browse…</button>
+          <div class="pdf-drop-label">Drop speaker notes here</div>
+          <div class="pdf-drop-sub">Google Doc, PDF, Word, RTF, text or Markdown</div>
+          <div class="pdf-browse-row">
+            <button class="btn-pdf-browse" id="btn-notes-gdrive-browse">Google Drive…</button>
+            <button class="btn-pdf-browse" id="btn-pdf-browse">Browse…</button>
+          </div>
           <div class="pdf-gdrive-row">
             <input class="pdf-gdrive-input" id="pdf-gdrive-input" type="text" placeholder="Paste Google Drive or Docs link…" autocomplete="off">
             <button class="btn-pdf-gdrive-load" id="btn-pdf-gdrive-load">Load</button>
@@ -207,10 +209,6 @@
           <div class="notes-doc-hdr">
             <span class="notes-doc-name" id="notes-doc-name">Google Doc</span>
             <div class="notes-doc-controls">
-              <div class="notes-mode-toggle" id="notes-mode-toggle">
-                <button class="notes-mode-btn active" data-mode="manual" title="You pick what to pull">Manual</button>
-                <button class="notes-mode-btn" data-mode="auto" title="Scan and suggest slides">Intelligent</button>
-              </div>
               <button class="btn-pdf-zoom" id="btn-notes-stylemap" title="Style Map — map headings & highlight colors to slide types">⚙</button>
               <button class="btn-pdf-zoom" id="btn-notes-zoom-out" title="Smaller text">−</button>
               <button class="btn-pdf-zoom" id="btn-notes-zoom-in" title="Larger text">+</button>
@@ -222,14 +220,11 @@
           <div class="notes-tab-strip" id="notes-tab-strip" style="display:none"></div>
           <div class="notes-doc-scroll" id="notes-doc-scroll">
             <div class="notes-doc-body" id="notes-doc-body"></div>
-            <div class="notes-sel-menu" id="notes-sel-menu" style="display:none">
-              <span class="nsm-label">Add as</span>
-              <button class="nsm-opt" data-role="scripture">Scripture</button>
-              <button class="nsm-opt" data-role="point">Point</button>
-              <button class="nsm-opt" data-role="confidence">Confidence</button>
-              <button class="nsm-opt" data-role="response">Response</button>
-            </div>
           </div>
+          <button class="notes-tray-fab" id="notes-tray-fab" type="button" title="Show or hide Suggested Slides">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.6L18.5 9.4l-4.7 1.8L12 16l-1.8-4.8L5.5 9.4l4.7-1.8z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>
+            <span class="notes-tray-fab-count" id="notes-tray-fab-count"></span>
+          </button>
           <div class="notes-tray" id="notes-tray">
             <div class="notes-tray-resize-handle" id="notes-tray-resize-handle"></div>
             <button class="notes-tray-hdr" id="notes-tray-hdr" type="button">

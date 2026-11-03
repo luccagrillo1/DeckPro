@@ -3588,6 +3588,7 @@ details[open] .font-adv-summary::before { transform: rotate(90deg); }
   cursor: pointer; transition: background .12s;
 }
 .btn-pdf-browse:hover { background: #e8f0fe; border-color: var(--blue); }
+.pdf-browse-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
 
 .pdf-gdrive-row {
   display: flex;
@@ -3647,7 +3648,24 @@ details[open] .font-adv-summary::before { transform: rotate(90deg); }
 }
 
 /* ── Smart Notes: rich Google Doc view ─────────────────────────────────── */
-.notes-doc-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.notes-doc-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+.notes-tray.closed { display: none; }
+.notes-tray-fab {
+  position: absolute; right: 14px; bottom: 12px; z-index: 30;
+  width: 32px; height: 32px; border-radius: 50%; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface); color: var(--muted); border: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0,0,0,.18); cursor: pointer;
+  transition: color .12s, border-color .12s, transform .12s;
+}
+.notes-tray-fab:hover { color: var(--text); border-color: var(--muted); }
+.notes-tray-fab:active { transform: scale(.94); }
+.notes-tray-fab.on { display: none; } /* tray open: its header closes it */
+.notes-tray-fab-count:empty { display: none; }
+.notes-tray-fab-count {
+  position: absolute; top: -5px; right: -5px; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 8px; background: var(--blue); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center;
+}
 .notes-doc-hdr {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   padding: 7px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0;
@@ -3657,16 +3675,6 @@ details[open] .font-adv-summary::before { transform: rotate(90deg); }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .notes-doc-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.notes-mode-toggle {
-  display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
-}
-.notes-mode-btn {
-  background: none; border: none; cursor: pointer;
-  font-size: 10.5px; font-weight: 600; color: var(--muted);
-  padding: 3px 9px;
-}
-.notes-mode-btn + .notes-mode-btn { border-left: 1px solid var(--border); }
-.notes-mode-btn.active { background: var(--blue); color: #fff; }
 
 .notes-doc-scroll { flex: 1; overflow: auto; position: relative; background: #eef1f7; }
 /* Google Doc tabs: a strip to jump between them + a divider heading per tab */
@@ -3696,31 +3704,14 @@ details[open] .font-adv-summary::before { transform: rotate(90deg); }
 .notes-doc-body h1, .notes-doc-body h2, .notes-doc-body h3 { color: #0f172a; }
 .notes-doc-body img { max-width: 100%; height: auto; }
 
-/* Manual select-to-assign menu */
-.notes-sel-menu {
-  position: absolute; z-index: 50;
-  display: flex; align-items: center; gap: 4px;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 8px; padding: 4px 6px; box-shadow: 0 6px 20px rgba(0,0,0,.25);
-}
-.nsm-label { font-size: 10px; color: var(--muted); font-weight: 600; padding: 0 2px; }
-.nsm-opt {
-  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
-  font-size: 11px; font-weight: 600; color: var(--text); cursor: pointer; padding: 3px 8px;
-}
-.nsm-opt:hover { border-color: var(--blue); color: var(--blue); }
-.nsm-opt.preferred { background: var(--blue); border-color: var(--blue); color: #fff; }
-
 /* Suggested Slides tray */
 .notes-tray { flex-shrink: 0; border-top: 1px solid var(--border); display: flex; flex-direction: column; max-height: 45%; position: relative; }
-.notes-tray.collapsed .notes-tray-body { display: none; }
 .notes-tray-resize-handle {
   position: absolute; top: 0; left: 0; right: 0;
   height: 5px; cursor: row-resize; z-index: 20;
 }
 .notes-tray-resize-handle:hover,
 .notes-tray-resize-handle.dragging { background: var(--blue); opacity: .5; }
-.notes-tray.collapsed .notes-tray-resize-handle { display: none; }
 .notes-tray-hdr {
   display: flex; align-items: center; gap: 6px; width: 100%;
   background: var(--bg); border: none; cursor: pointer;
@@ -3732,7 +3723,6 @@ details[open] .font-adv-summary::before { transform: rotate(90deg); }
   border-radius: 10px; padding: 0 6px; min-width: 16px; text-align: center;
 }
 .notes-tray-caret { font-size: 10px; color: var(--muted); transition: transform .15s; }
-.notes-tray.collapsed .notes-tray-caret { transform: rotate(-90deg); }
 .notes-tray-body { overflow: auto; padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; }
 .notes-tray-empty { font-size: 11.5px; color: var(--muted); line-height: 1.5; margin: 4px 0; }
 
@@ -4348,7 +4338,6 @@ details.slide-overrides[open] .slide-overrides-summary::before { content: '▾ '
   text-transform: uppercase; color: var(--muted); opacity: .6;
   flex-shrink: 0;
 }
-.rc-lock-btn { flex-shrink: 0; }
 
 /* ─── Bible formatting popover (verse numbers) ──────────────────────────── */
 .verse-fmt-wrap { position: relative; display: inline-block; }
@@ -4996,7 +4985,6 @@ details.slide-overrides[open] .slide-overrides-body { padding: 2px 0 14px; borde
 #sg-ctx-menu button:hover { background: rgba(224, 96, 16, .12); color: var(--blue); }
 
 /* Speaker Notes Manual / Intelligent switch: tinted active state */
-.notes-mode-btn.active { background: rgba(224, 96, 16, .16); color: var(--blue); font-weight: 600; }
 
 /* Sidebar deck toggles: tinted active state like every other switch now */
 .deck-slot-seg button.active { background: rgba(224, 96, 16, .18); color: var(--blue); font-weight: 700; }
@@ -5162,7 +5150,6 @@ body.dark .sug-point { color: #4cc48f; }
 .btn-fmt-alt:hover, body.dark .btn-fmt-alt:hover { background: var(--hover-bg); border-color: var(--border); color: var(--text); }
 .btn-fmt-alt.active { background: var(--select-bg); color: var(--blue); border-color: var(--blue); }
 .btn-fmt-alt-lbl { font-variant: normal; font-size: 11px; font-weight: 600; }
-.notes-mode-btn.active, body.dark .notes-mode-btn.active { background: var(--hover-bg); color: var(--text); font-weight: 600; }
 
 /* Add Item: labelled buttons in a 3-column grid instead of colour-coded letter tiles. */
 .sidebar-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 8px; }
@@ -5236,11 +5223,18 @@ details.settings-disclosure { border-top: 1px solid var(--border); background: t
 .settings-section .pro7-connect-status, .settings-section .bible-list-note { margin-left: 190px; }
 
 /* Response Card lock */
-.rc-lock-row { display: flex; gap: 6px; align-items: center; }
-.rc-lock-row input { flex: 1; min-width: 0; }
+.rc-lock-row { position: relative; }
+.rc-lock-row input { width: 100%; padding-right: 32px; }
 .rc-lock-row.is-locked input { color: var(--muted); background: var(--hover-bg); cursor: default; }
-.rc-lock-btn { flex-shrink: 0; gap: 5px; color: var(--muted); }
-.rc-lock-row.is-locked .rc-lock-btn { color: var(--blue); border-color: color-mix(in srgb, var(--blue) 45%, var(--border)); }
+.rc-lock-btn {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 24px; height: 24px; padding: 0; display: flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 5px; cursor: pointer;
+  color: var(--muted); opacity: .35; transition: opacity .12s, color .12s;
+}
+.rc-lock-row:hover .rc-lock-btn, .rc-lock-btn:focus-visible { opacity: .75; }
+.rc-lock-btn:hover { opacity: 1; color: var(--text); }
+.rc-lock-row.is-locked .rc-lock-btn { color: var(--blue); opacity: 1; }
 .rc-lock-note { font-size: 11.5px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
 
 /* DeckPro Account */

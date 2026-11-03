@@ -2,9 +2,23 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.43.10';
+const APP_VERSION = '4.43.11';
 
 const CHANGELOG = [
+  {
+    version: '4.43.11',
+    date: '2026-11-03',
+    changes: [
+      "Speaker Notes: removed the Manual / Intelligent switch. The doc always scans and fills the Suggested Slides tray now; dragging text straight off the doc still works as before.",
+      "New Deck: \"Add as a permanent speaker?\" now answers Yes or No instead of OK or Cancel.",
+      "Speaker Notes: a line that says \"Response\" or \"Response Card\" (highlighted or not) with a list under it now shows up as one Response suggestion — Add fills the whole Response Card. List item 1 goes to Response 1, 2 to Response 2, and so on; a locked response keeps its exact wording and skips the doc's version.",
+      "Fixed: adding a Response suggestion errored after filling the card, so it stayed in the tray.",
+      "Response Card: the lock is now a small icon at the right end of each response's text box — faint when unlocked, solid orange when locked (the box greys out). Every response can be locked.",
+      "Preferences → Your Setup → Speaker Notes: pick which Google Drive account the Google Drive… button opens, and a folder for it to start in (say, your team's sermon notes folder). With no folder set, both buttons open wherever you last picked a file from. Set per Mac.",
+      "Speaker Notes: the Suggested Slides tray's header closes it all the way, and a small ✦ button in the doc's bottom-right corner brings it back (with how many suggestions are waiting).",
+      "Speaker Notes takes more than Google Doc links: Google Drive… opens a file picker in your Google Drive for desktop folder (pick a Doc and it loads the live Doc), and Browse… picks any notes file on the Mac. PDF, Word (.docx/.doc), RTF, OpenDocument, HTML, plain text and Markdown all work, and drag-and-drop takes them too. Picked files are remembered with the deck and ⟳ reloads them.",
+    ],
+  },
   {
     version: '4.43.10',
     date: '2026-11-03',
@@ -3553,11 +3567,14 @@ const DEFAULT_STATE = () => ({
     verseSuper:          true,  // render verse numbers as superscript
     queueMode:           'ref', // queue strip: 'list' | 'ref' | 'refPhrase' | 'fullNext'
     gdriveUrl:           '',  // last-loaded Google Drive notes doc (persists across redeploys)
-    notesMode:           'manual', // Smart Notes: 'manual' (you pick) | 'auto' (scan & suggest)
     notesIgnored:        [],   // suggestion keys the user dismissed (don't re-suggest)
     notesTrayOpen:       true,  // Suggested Slides tray expanded/collapsed
     notesStyleMap:       {},   // signal (heading tag / highlight color) → role mapping
     notesUseNearbyRefs:  true, // pair highlighted Content with a nearby unhighlighted scripture ref above it
+    notesDriveAccount:   '',   // Google Drive… opens this Drive for desktop account ('' = first)
+    notesDriveStartFolder: '', // …and starts in this folder ('' = the last one picked from)
+    notesLastFolder:     '',   // last folder Browse… picked from
+    notesLastDriveFolder: '',  // last folder Google Drive… picked from
     bookNames:           {},  // e.g. { acts: 'Acts of the Apostles', songOfSolomon: 'Song of Songs' }
     capitalizeDivinePronouns: false, // capitalize He/Him/His/Himself in body text at export
     speakers:            [],  // permanent/recurring speakers offered in the New Deck dropdown
@@ -4307,7 +4324,7 @@ function esc(s) {
 
 // ─── Confirm modal helper ─────────────────────────────────────
 
-function showConfirmModal(title, body, confirmLabel, onConfirm) {
+function showConfirmModal(title, body, confirmLabel, onConfirm, opts = {}) {
   document.getElementById('g-confirm-overlay')?.remove();
   const ov = document.createElement('div');
   ov.id = 'g-confirm-overlay';
@@ -4316,13 +4333,19 @@ function showConfirmModal(title, body, confirmLabel, onConfirm) {
     '<p class="g-confirm-title">' + esc(title) + '</p>' +
     '<p class="g-confirm-body">' + esc(body) + '</p>' +
     '<div class="g-confirm-btns">' +
-    '<button class="btn g-confirm-cancel">Cancel</button>' +
+    '<button class="btn g-confirm-cancel">' + esc(opts.cancelLabel || 'Cancel') + '</button>' +
     '<button class="btn g-confirm-ok">' + esc(confirmLabel) + '</button>' +
     '</div></div>';
   document.body.appendChild(ov);
-  ov.querySelector('.g-confirm-cancel').addEventListener('click', () => ov.remove());
+  const cancel = () => { ov.remove(); opts.onCancel?.(); };
+  ov.querySelector('.g-confirm-cancel').addEventListener('click', cancel);
   ov.querySelector('.g-confirm-ok').addEventListener('click', () => { ov.remove(); onConfirm(); });
-  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+  ov.addEventListener('click', e => { if (e.target === ov) cancel(); });
+}
+
+// Yes / No question in the app's own modal → resolves true or false.
+function askYesNo(title, body) {
+  return new Promise(resolve => showConfirmModal(title, body, 'Yes', () => resolve(true), { cancelLabel: 'No', onCancel: () => resolve(false) }));
 }
 
 // ─── Tooltip system ───────────────────────────────────────────
@@ -7763,6 +7786,25 @@ function renderConfigPanel(panel) {
           </select>
         </div>
       </div>
+
+      <div class="settings-section">
+        <h3>Speaker Notes</h3>
+        <div class="settings-row" style="align-items:center">
+          <label style="min-width:100px;font-size:13px;color:var(--muted)">Drive account</label>
+          <select id="cfg-notes-drive-account" class="fav-select" style="flex:1;min-width:0;max-width:100%">
+            <option value="">First one on this Mac</option>
+          </select>
+        </div>
+        <div class="settings-row" style="align-items:center;margin-top:8px">
+          <label style="min-width:100px;font-size:13px;color:var(--muted)">Start in</label>
+          <span id="cfg-notes-start-label" style="flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(cfg.notesDriveStartFolder || '')}">${cfg.notesDriveStartFolder ? esc(cfg.notesDriveStartFolder.split('/').slice(-2).join(' / ')) : '<span style="color:var(--muted)">Last folder used</span>'}</span>
+          <button class="btn-browse" id="btn-notes-start-choose" type="button">Choose…</button>
+          ${cfg.notesDriveStartFolder ? `<button class="btn-browse" id="btn-notes-start-clear" type="button">Clear</button>` : ''}
+        </div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
+          Where the Google Drive… button in Speaker Notes opens. Pick your team's sermon notes folder to land right on this week's doc. Browse… always opens where you last picked from. Set per Mac.
+        </div>
+      </div>
       </section>
 
       <section class="prefs-group" id="prefs-advanced">
@@ -7974,6 +8016,37 @@ function renderConfigPanel(panel) {
   document.getElementById('cfg-pro7password').addEventListener('input', e => {
     cfg.pro7Password = e.target.value;
     saveState();
+  });
+
+  // Speaker Notes → Google Drive account + start folder
+  const driveSel = document.getElementById('cfg-notes-drive-account');
+  if (driveSel) {
+    fetch('/api/notes/drive-accounts').then(r => r.json()).then(d => {
+      const accts = d.accounts || [];
+      if (!accts.length) { driveSel.innerHTML = '<option value="">Google Drive for desktop isn\'t set up</option>'; driveSel.disabled = true; return; }
+      driveSel.innerHTML = '<option value="">First one on this Mac</option>' + accts.map(a =>
+        `<option value="${esc(a.id)}"${a.id === cfg.notesDriveAccount ? ' selected' : ''}>${esc(a.email)}</option>`).join('');
+    }).catch(() => {});
+    driveSel.addEventListener('change', () => {
+      cfg.notesDriveAccount = driveSel.value;
+      cfg.notesDriveStartFolder = ''; // a folder in the old account would win otherwise
+      cfg.notesLastDriveFolder = '';
+      saveState();
+      renderMain();
+    });
+  }
+  document.getElementById('btn-notes-start-choose')?.addEventListener('click', async () => {
+    const qs = new URLSearchParams({ drive: '1', folder: '1', account: cfg.notesDriveAccount || '', start: cfg.notesDriveStartFolder || '' });
+    const d = await fetch(`/api/notes/browse?${qs}`).then(r => r.json()).catch(() => ({}));
+    if (!d.ok) { if (d.error && d.error !== 'cancelled') toast('error', 'Google Drive', d.error); return; }
+    cfg.notesDriveStartFolder = d.path;
+    saveState();
+    renderMain();
+  });
+  document.getElementById('btn-notes-start-clear')?.addEventListener('click', () => {
+    cfg.notesDriveStartFolder = '';
+    saveState();
+    renderMain();
   });
 
   document.getElementById('focuspro7-row')?.addEventListener('click', () => {
@@ -10925,8 +10998,8 @@ function applyRcLocks(cfg) {
 }
 
 const LOCK_SVG = (locked) => locked
-  ? '<svg viewBox="0 0 12 12" width="12" height="12" fill="none"><rect x="2.5" y="5.5" width="7" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M4 5.5V4a2 2 0 0 1 4 0v1.5" stroke="currentColor" stroke-width="1.2"/></svg>'
-  : '<svg viewBox="0 0 12 12" width="12" height="12" fill="none"><rect x="2.5" y="5.5" width="7" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M4 5.5V4a2 2 0 0 1 3.9-.6" stroke="currentColor" stroke-width="1.2"/></svg>';
+  ? '<svg viewBox="0 0 12 12" width="13" height="13" fill="none"><rect x="2.5" y="5.5" width="7" height="5" rx="1" fill="currentColor" stroke="currentColor" stroke-width="1.2"/><path d="M4 5.5V4a2 2 0 0 1 4 0v1.5" stroke="currentColor" stroke-width="1.3"/></svg>'
+  : '<svg viewBox="0 0 12 12" width="13" height="13" fill="none"><rect x="2.5" y="5.5" width="7" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M4 5.5V4a2 2 0 0 1 3.9-.6" stroke="currentColor" stroke-width="1.2"/></svg>';
 
 function renderResponseCardPanel(panel) {
   const cfg = state.config;
@@ -10956,11 +11029,11 @@ function renderResponseCardPanel(panel) {
           <label>Response ${i + 1}</label>
           <div class="rc-lock-row${locked ? ' is-locked' : ''}">
             <input type="text" id="rc-${key}" spellcheck="true" value="${esc(rc[key])}" placeholder="Response option"${locked ? ' readonly' : ''}>
-            <button type="button" class="btn-sm rc-lock-btn" data-key="${key}" title="${locked ? 'Locked — every new deck starts with this text. Click to unlock.' : 'Lock this text so every new deck starts with it'}">${LOCK_SVG(locked)}${locked ? 'Locked' : 'Lock'}</button>
+            <button type="button" class="rc-lock-btn" data-key="${key}" aria-label="${locked ? 'Unlock' : 'Lock'} Response ${i + 1}" title="${locked ? 'Locked — every new deck starts with this text, and Speaker Notes won\'t overwrite it. Click to unlock.' : 'Lock this text: every new deck starts with it, and Speaker Notes won\'t overwrite it'}">${LOCK_SVG(locked)}</button>
           </div>
         </div>`;
         }).join('')}
-        <div class="rc-lock-note">Locked responses can't be edited by accident, and every new deck starts with their text.</div>
+        <div class="rc-lock-note">Locked responses can't be edited by accident, every new deck starts with their text, and filling from Speaker Notes skips them — your exact wording stays.</div>
       </div>
 
       <div class="settings-section">
@@ -14939,7 +15012,6 @@ let _paletteScene = 'scripture'; // Style tab preview scene
 
 function attachPdfHandlers() {
   const zone      = document.getElementById('pdf-drop-zone');
-  const fileIn    = document.getElementById('pdf-file-input');
   const browseBtn = document.getElementById('btn-pdf-browse');
   const clearBtn  = document.getElementById('btn-pdf-clear');
   if (!zone) return;
@@ -14957,31 +15029,79 @@ function attachPdfHandlers() {
     document.getElementById('pdf-zoom-val').textContent = `${_pdfZoom}%`;
   }
 
-  function loadPdf(file) {
-    if (!file || file.type !== 'application/pdf') {
-      toast('error', 'Not a PDF', 'Drop a .pdf file'); return;
-    }
+  function showPdfBlob(blob, name) {
     if (_pdfObjectUrl) URL.revokeObjectURL(_pdfObjectUrl);
-    _pdfObjectUrl = URL.createObjectURL(file);
+    _pdfObjectUrl = URL.createObjectURL(blob);
     _pdfZoom = 100;
     document.getElementById('pdf-frame').src = _pdfObjectUrl;
-    document.getElementById('pdf-viewer-name').textContent = file.name;
+    document.getElementById('pdf-viewer-name').textContent = name;
     document.getElementById('pdf-drop-zone').style.display = 'none';
     document.getElementById('pdf-viewer').style.display    = 'flex';
     document.getElementById('notes-panel')?.classList.add('pdf-open');
     applyZoom();
-    _loadedNotesUrl = ' local';  // dropped file — not persisted; clears on deck switch
+  }
+
+  // A dropped file has no path here, so it isn't remembered with the deck
+  // (Browse… is). PDFs open in the viewer; the rest convert to notes.
+  async function loadDroppedFile(file) {
+    if (!file) return;
+    if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+      showPdfBlob(file, file.name);
+      _loadedNotesUrl = '\0local';  // dropped file — not persisted; clears on deck switch
+      return;
+    }
+    try {
+      const resp = await fetch(`/api/notes/convert?name=${encodeURIComponent(file.name)}`, { method: 'POST', body: file });
+      const data = await readJsonResponse(resp, 'Notes load failed');
+      if (!data.ok) { toast('error', 'Notes load failed', data.error); return; }
+      showNotesDoc(processNotesHtml(data.html, 'drop:' + file.name), file.name);
+      _loadedNotesUrl = '\0local';
+    } catch (e) { toast('error', 'Notes load failed', e.message); }
+  }
+
+  // A notes file on this Mac (or in Google Drive for desktop). Saved with the
+  // deck as "local:<path>" so it reloads and ⟳ refreshes like a Doc link.
+  async function loadLocalNotes(filePath) {
+    const name = filePath.split('/').pop();
+    try {
+      const resp = await fetch(`/api/notes/local?path=${encodeURIComponent(filePath)}`);
+      if ((resp.headers.get('content-type') || '').includes('pdf')) {
+        showPdfBlob(await resp.blob(), name);
+      } else {
+        const data = await readJsonResponse(resp, 'Notes load failed');
+        if (!data.ok) { toast('error', 'Notes load failed', data.error); return; }
+        if (data.gdocUrl) return loadGdriveNotes(data.gdocUrl); // a Drive shortcut → the live Google Doc
+        showNotesDoc(processNotesHtml(data.html, 'local:' + filePath), name);
+      }
+      state.config.gdriveUrl = 'local:' + filePath;
+      _loadedNotesUrl = state.config.gdriveUrl;
+      saveState();
+    } catch (e) { toast('error', 'Notes load failed', e.message); }
+  }
+
+  // Opens in Preferences → Speaker Notes' start folder, else the last folder
+  // picked from (each button remembers its own), else Drive's My Drive.
+  async function browseNotes(drive) {
+    const cfg = state.config;
+    const lastKey = drive ? 'notesLastDriveFolder' : 'notesLastFolder';
+    const start = (drive && cfg.notesDriveStartFolder) || cfg[lastKey] || '';
+    const qs = new URLSearchParams({ ...(drive ? { drive: '1', account: cfg.notesDriveAccount || '' } : {}), start });
+    const data = await fetch(`/api/notes/browse?${qs}`).then(r => r.json()).catch(() => ({ ok: false, error: 'cancelled' }));
+    if (!data.ok) { if (data.error !== 'cancelled') toast('error', drive ? 'Google Drive' : 'Browse', data.error); return; }
+    cfg[lastKey] = data.path.replace(/\/[^/]*$/, '');
+    saveState();
+    loadLocalNotes(data.path);
   }
 
   zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
   zone.addEventListener('drop', e => {
     e.preventDefault(); zone.classList.remove('drag-over');
-    loadPdf(e.dataTransfer.files[0]);
+    loadDroppedFile(e.dataTransfer.files[0]);
   });
 
-  browseBtn?.addEventListener('click', () => fileIn?.click());
-  fileIn?.addEventListener('change', e => loadPdf(e.target.files[0]));
+  browseBtn?.addEventListener('click', () => browseNotes(false));
+  document.getElementById('btn-notes-gdrive-browse')?.addEventListener('click', () => browseNotes(true));
 
   async function loadGdrivePdf(url) {
     if (!url) return;
@@ -15022,6 +15142,7 @@ function attachPdfHandlers() {
   // Google Docs → rich HTML (Smart Notes); other Drive files → PDF viewer.
   async function loadGdriveNotes(url) {
     if (!url) return;
+    if (url.startsWith('local:')) return loadLocalNotes(url.slice(6));
     const isDoc = /\/document\/d\//.test(url);
     if (!isDoc) return loadGdrivePdf(url);
 
@@ -15462,6 +15583,26 @@ function collectBullets(blocks, i) {
   return { bullets, consumed };
 }
 
+// A "Response" / "Response Card" line (highlighted or not) followed by a list:
+// the list items are the responses. Takes the list right under it; with no
+// list, the short paragraphs under it (same highlight or none), up to 4.
+const RESPONSE_TRIGGER = /^(the\s+)?response(\s+card)?s?\s*[:\-–—]?\s*$/i;
+function collectResponses(blocks, i) {
+  const trigger = blocks[i];
+  const items = [];
+  let j = i + 1;
+  const asList = blocks[j]?.tag === 'li';
+  while (j < blocks.length && items.length < 4) {
+    const blk = blocks[j];
+    if (resolveBlockRole(blk) === 'ignore' || /^h\d$/.test(blk.tag)) break;
+    if (asList ? blk.tag !== 'li' : (blk.tag !== 'p' || (blk.bg && blk.bg !== trigger.bg))) break;
+    const t = blk.text.replace(/^\s*(?:r?\d+[.):]|[-•*])\s*/i, '').trim();
+    if (t) items.push(t);
+    j++;
+  }
+  return { bullets: items, consumed: j - i - 1 };
+}
+
 function buildNotesSuggestions() {
   if (!_notesDoc) return [];
   const rx = scriptureRegex();
@@ -15534,7 +15675,7 @@ function buildNotesSuggestions() {
   };
 
   const makeResponse = (b, conf) => {
-    const grp = collectBullets(blocks, b._i);
+    const grp = RESPONSE_TRIGGER.test(b.text.trim()) ? collectResponses(blocks, b._i) : collectBullets(blocks, b._i);
     const raw = grp.bullets.length ? grp.bullets : [b.text];
     const bullets = raw.slice(0, 4);
     push({ type: 'response', bullets, preview: bullets.join(' • '), blockIdx: b.idx,
@@ -15588,6 +15729,9 @@ function buildNotesSuggestions() {
     const b = blocks[i]; b._i = i;
     const role = resolveBlockRole(b);
     if (role === 'ignore') { scriptureContinuation = null; finalizeScriptureChain(); continue; }
+    if (RESPONSE_TRIGGER.test(b.text.trim()) && collectResponses(blocks, i).bullets.length) {
+      scriptureContinuation = null; finalizeScriptureChain(); i += makeResponse(b, 'High'); continue;
+    }
 
     if (role === 'scripture') {
       const m = b.text.match(rx);
@@ -15681,16 +15825,12 @@ function buildNotesSuggestions() {
 }
 
 function rescanNotes() {
-  if ((state.config.notesMode || 'manual') === 'auto' && _notesDoc) buildNotesSuggestions();
+  if (_notesDoc) buildNotesSuggestions();
   renderNotesTray();
 }
 
-// ── Mode (auto / manual) ──────────────────────────────────────────────────
 function refreshNotesMode() {
-  const mode = state.config.notesMode || 'manual';
-  document.querySelectorAll('.notes-mode-btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.mode === mode));
-  if (mode === 'auto' && _notesDoc) buildNotesSuggestions();
+  if (_notesDoc) buildNotesSuggestions();
   renderNotesTray();
 }
 
@@ -15700,16 +15840,14 @@ function renderNotesTray() {
   const tray  = document.getElementById('notes-tray');
   if (!body || !tray) return;
 
-  tray.classList.toggle('collapsed', state.config.notesTrayOpen === false);
-
-  const mode = state.config.notesMode || 'manual';
-  if (mode === 'manual') {
-    if (count) count.textContent = '';
-    body.innerHTML = `<p class="notes-tray-empty">Manual mode — select text in the notes above, then choose what to add.</p>`;
-    return;
-  }
+  const open = state.config.notesTrayOpen !== false;
+  tray.classList.toggle('closed', !open);
+  const fab = document.getElementById('notes-tray-fab');
+  fab?.classList.toggle('on', open); // only shown while the tray is closed
 
   const sugs = (_notesDoc && _notesDoc.suggestions) || [];
+  const fabCount = document.getElementById('notes-tray-fab-count');
+  if (fabCount) fabCount.textContent = sugs.length && !open ? String(sugs.length) : '';
   if (count) count.textContent = sugs.length ? String(sugs.length) : '';
   if (!sugs.length) {
     body.innerHTML = `<p class="notes-tray-empty">No suggestions found in this doc.</p>`;
@@ -15816,13 +15954,22 @@ function notesAddConfidence(text) {
 function notesAddResponseCard(s) {
   const cfg = state.config;
   if (!cfg.responses) cfg.responses = { r1: '', r2: '', r3: '', r4: '' };
-  // Locked responses keep their text; the suggestion fills the open ones in order.
-  const open = ['r1', 'r2', 'r3', 'r4'].filter(k => !rcLockedText(cfg, k));
-  (s.bullets || []).filter(Boolean).slice(0, open.length).forEach((b, i) => { cfg.responses[open[i]] = b; });
+  // Item 1 → Response 1, item 2 → Response 2… A locked response keeps its own
+  // wording and skips the doc's version (communicators often paraphrase it).
+  const keys = ['r1', 'r2', 'r3', 'r4'];
+  const skipped = [];
+  (s.bullets || []).slice(0, 4).forEach((b, i) => {
+    if (!b) return;
+    if (rcLockedText(cfg, keys[i])) skipped.push(i + 1);
+    else cfg.responses[keys[i]] = b;
+  });
+  applyRcLocks(cfg);
   cfg.includeResponseCard = true; // filling it implies this week uses it
   saveState();
   render();
-  toast('success', 'Response Card filled', [r1, r2, r3, r4].filter(Boolean).join(' · '));
+  toast('success', 'Response Card filled',
+    keys.map(k => cfg.responses[k]).filter(Boolean).join(' · ') +
+    (skipped.length ? ` (kept locked Response ${skipped.join(', ')})` : ''));
 }
 
 // Shared by the tray's Add button and dragging a notes block straight onto
@@ -15914,46 +16061,15 @@ function toggleStyleMap(force) {
   else el.style.display = 'none';
 }
 
-// ── Manual select-to-assign ───────────────────────────────────────────────
-function showNotesSelectionMenu() {
-  const menu = document.getElementById('notes-sel-menu');
-  if (!menu) return;
-  const sel = window.getSelection();
-  const text = sel ? sel.toString().trim() : '';
-  const bodyEl = document.getElementById('notes-doc-body');
-  // only react to selections inside the notes doc
-  if (!text || !bodyEl || !sel.anchorNode || !bodyEl.contains(sel.anchorNode)) {
-    menu.style.display = 'none';
-    return;
-  }
-  const rect = sel.getRangeAt(0).getBoundingClientRect();
-  const panelRect = document.getElementById('notes-panel').getBoundingClientRect();
-  menu.dataset.text = text;
-  menu.style.display = 'flex';
-  menu.style.top  = `${rect.bottom - panelRect.top + 6}px`;
-  menu.style.left = `${Math.max(8, rect.left - panelRect.left)}px`;
-  // default route hint: looks like a reference?
-  const looksRef = scriptureRegex().test(text);
-  menu.querySelector('[data-role="scripture"]').classList.toggle('preferred', looksRef);
-  menu.querySelector('[data-role="point"]').classList.toggle('preferred', !looksRef && text.split('\n').length > 1);
-}
-
 function attachNotesDocHandlers() {
-  // Mode toggle
-  document.getElementById('notes-mode-toggle')?.addEventListener('click', e => {
-    const btn = e.target.closest('.notes-mode-btn');
-    if (!btn) return;
-    state.config.notesMode = btn.dataset.mode;
-    saveState();
-    refreshNotesMode();
-  });
-
-  // Tray collapse
-  document.getElementById('notes-tray-hdr')?.addEventListener('click', () => {
+  // Tray open/close — the ✦ button in the corner, or the tray's own header
+  const toggleTray = () => {
     state.config.notesTrayOpen = !(state.config.notesTrayOpen !== false);
     saveState();
     renderNotesTray();
-  });
+  };
+  document.getElementById('notes-tray-hdr')?.addEventListener('click', toggleTray);
+  document.getElementById('notes-tray-fab')?.addEventListener('click', toggleTray);
 
   // Tray drag-to-resize (vertical, same pattern as the sidebar/notes-panel's
   // horizontal resize — handle sits on the tray's top edge)
@@ -16079,45 +16195,6 @@ function attachNotesDocHandlers() {
     clearNotesPanelView();
     state.config.gdriveUrl = '';
     saveState();
-  });
-
-  // Manual selection menu
-  const docBody = document.getElementById('notes-doc-body');
-  docBody?.addEventListener('mouseup', () => {
-    if ((state.config.notesMode || 'manual') === 'manual') setTimeout(showNotesSelectionMenu, 0);
-  });
-  // Dismiss the selection menu when clicking away from it
-  document.addEventListener('mousedown', e => {
-    const menu = document.getElementById('notes-sel-menu');
-    if (menu && menu.style.display !== 'none' && !menu.contains(e.target)) menu.style.display = 'none';
-  });
-  document.getElementById('notes-sel-menu')?.addEventListener('click', e => {
-    const opt = e.target.closest('[data-role]');
-    if (!opt) return;
-    const menu = document.getElementById('notes-sel-menu');
-    const text = menu.dataset.text || '';
-    menu.style.display = 'none';
-    if (!text) return;
-    if (opt.dataset.role === 'scripture') {
-      const m = text.match(scriptureRegex());
-      notesAddScripture(m ? m[0] : text);
-    } else if (opt.dataset.role === 'point') {
-      notesAddPoint(text, text.split('\n').length > 1 ? 'revealing' : 'single');
-    } else if (opt.dataset.role === 'confidence') {
-      const slide = state.slides.find(s => s.id === state.activeId);
-      if (slide && 'blankSpans' in slide) {
-        slide.blankBefore = true;
-        slide.blankSpans  = [{ text: text.replace(/\n+/g, ' ').trim(), bold: false }];
-        saveState(); renderMain();
-        toast('success', 'Set as Confidence Monitor', slide.label || '');
-      } else {
-        toast('error', 'Select a slide first', 'Confidence text attaches to the current scripture/point slide');
-      }
-    } else if (opt.dataset.role === 'response') {
-      const bullets = text.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 3);
-      notesAddResponseCard({ bullets });
-    }
-    window.getSelection()?.removeAllRanges();
   });
 }
 
@@ -17263,7 +17340,9 @@ const PERSISTENT_CONFIG_FIELDS = [
   // App-wide preferences (mirrors SYNC_SECTIONS()'s portable-vs-deck split)
   'features', 'recentSeries', 'displayNames', 'bookNames', 'queueMode',
   'speakers', 'notesStyleMap', 'capitalizeDivinePronouns',
-  'notesMode', 'notesUseNearbyRefs', 'rcLocks', 'deckNameBlocks', 'sampleNameBlocks', 'checklistItems',
+  'notesUseNearbyRefs', 'rcLocks', 'deckNameBlocks', 'sampleNameBlocks', 'checklistItems',
+  // Speaker Notes file pickers (this Mac only — paths differ per Mac)
+  'notesDriveAccount', 'notesDriveStartFolder', 'notesLastFolder', 'notesLastDriveFolder',
 ];
 const PERSISTENT_STATE_FIELDS = [
   'styleSchemes', 'globalTypography', 'globalLayout', 'globalFontAdv',
@@ -17682,7 +17761,7 @@ function initDecks() {
     if (speaker) {
       const known = state.config.speakers || (state.config.speakers = []);
       if (!known.some(s => s.toLowerCase() === speaker.toLowerCase())) {
-        if (confirm(`Add “${speaker}” as a permanent speaker? They'll appear in the dropdown next time.`)) {
+        if (await askYesNo(`Add “${speaker}” as a permanent speaker?`, `They'll appear in the Speaker dropdown next time.`)) {
           known.push(speaker);
           known.sort((a, b) => a.localeCompare(b));
           saveState();
@@ -18120,6 +18199,9 @@ function helpSections() {
       <h4>It's per-deck</h4>
       <p>Each deck remembers its own notes doc. Open a different deck and the panel switches to <em>that</em> deck's own doc (or shows the empty drop zone if it doesn't have one) — it's never one shared doc bleeding across every deck you work on.</p>
 
+      <h4>Other files and Google Drive</h4>
+      <p><strong>Google Drive…</strong> opens a file picker in your Google Drive for desktop folder — pick a Doc and DeckPro loads the live Doc, the same as pasting its link. <strong>Browse…</strong> picks any notes file on the Mac. PDF, Word (.docx/.doc), RTF, OpenDocument, HTML, plain text and Markdown all work, and you can drag any of them onto the panel. Picked files are remembered with the deck and ⟳ reloads them; dropped files aren't remembered. PDFs open in the PDF viewer, so they don't get Suggested Slides.</p>
+
       <h4>Google Docs tabs</h4>
       <p>A Doc with tabs keeps them: each tab is shown under its own name with a divider between them, and a strip across the top of the panel jumps to any tab. The tab you're reading stays lit as you scroll. Everything in every tab can still be dragged into slides.</p>
 
@@ -18132,13 +18214,10 @@ function helpSections() {
         <li><strong>Select a phrase and drag it</strong> — the classic way, still works exactly as before, anywhere in the doc.</li>
       </ul>
 
-      <h4>Manual vs. Intelligent mode</h4>
-      <p>The toggle at the top of the doc view switches how suggestions work:</p>
-      <ul>
-        <li><strong>Manual</strong> — select any text and a small menu offers to add it as Scripture, Point, Confidence, or Response.</li>
-        <li><strong>Intelligent</strong> — DeckPro scans the whole doc and surfaces a <strong>Suggested Slides</strong> tray at the bottom: detected verse references become Scripture suggestions (Bible Lookup runs automatically), headings become Point suggestions, and a heading followed by a bulleted list offers a Revealing option. Each suggestion shows a confidence chip and warns if something matching is already in the deck. Click <strong>Add</strong> or <strong>Ignore</strong> per suggestion — nothing touches the deck until you do.</li>
-      </ul>
-      <p class="help-muted">Map specific headings or highlight colors to slide types in <strong>⚙ Style Map</strong> next to the mode toggle, if the doc's formatting doesn't match DeckPro's defaults.</p>
+      <h4>Suggested Slides</h4>
+      <p>DeckPro scans the whole doc and surfaces a <strong>Suggested Slides</strong> tray at the bottom: detected verse references become Scripture suggestions (Bible Lookup runs automatically), headings become Point suggestions, and a heading followed by a bulleted list offers a Revealing option. Each suggestion shows a confidence chip and warns if something matching is already in the deck. Click <strong>Add</strong> or <strong>Ignore</strong> per suggestion — nothing touches the deck until you do.</p>
+      <p><strong>Response Card:</strong> a line that just says "Response" or "Response Card" (highlighted or not) with a list under it becomes one Response suggestion. Add fills the whole card: item 1 → Response 1, item 2 → Response 2, and so on. A locked response (🔒 on the Response Card page) keeps its exact wording and skips the doc's version — handy when the communicator paraphrases Response 1.</p>
+      <p class="help-muted">Map specific headings or highlight colors to slide types in <strong>⚙ Style Map</strong> at the top of the doc view, if the doc's formatting doesn't match DeckPro's defaults.</p>
     `,
   },
   {

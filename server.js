@@ -340,6 +340,127 @@ app.get('/api/browse-folder', (req, res) => {
   }
 });
 
+// ── Speaker notes from files (not just Google Doc links) ───────────────────
+// Browse… picks any notes file; "Google Drive…" opens the same picker in the
+// Drive for desktop folder, where Google Docs sit as .gdoc shortcuts holding
+// the doc's id. PDFs go to the PDF viewer; everything else becomes HTML for
+// the notes view (Word/RTF/ODT/HTML through macOS textutil).
+const NOTES_EXT = ['pdf', 'gdoc', 'docx', 'doc', 'rtf', 'rtfd', 'odt', 'html', 'htm', 'webarchive', 'txt', 'text', 'md', 'markdown'];
+const notesExt = p => (String(p).match(/\.([a-z0-9]+)\/?$/i) || [])[1]?.toLowerCase() || '';
+
+// Drive for desktop accounts on this Mac, e.g. "GoogleDrive-me@church.com".
+// Copies Google leaves behind after a reinstall ("… (3-22-23 2:17 PM)") are skipped.
+const CLOUD_ROOT = path.join(os.homedir(), 'Library', 'CloudStorage');
+function googleDriveAccounts() {
+  try { return fs.readdirSync(CLOUD_ROOT).filter(d => /^GoogleDrive-/.test(d) && !/\(/.test(d)).sort(); }
+  catch { return []; }
+}
+// Where Google Drive… opens: the account's My Drive (the one picked in
+// Preferences, else the first).
+function googleDriveFolder(account) {
+  const accts = googleDriveAccounts();
+  const acct = accts.includes(account) ? account : accts[0];
+  if (!acct) return null;
+  const mine = path.join(CLOUD_ROOT, acct, 'My Drive');
+  return fs.existsSync(mine) ? mine : path.join(CLOUD_ROOT, acct);
+}
+const isDir = p => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
+
+app.get('/api/notes/drive-accounts', (req, res) => {
+  res.json({ ok: true, accounts: googleDriveAccounts().map(id => ({ id, email: id.replace(/^GoogleDrive-/, '') })) });
+});
+
+// ?drive=1 → Google Drive… ; ?start=<folder> opens there instead when it still
+// exists (the folder set in Preferences, or the last one picked from).
+// ?folder=1 picks a folder rather than a file (Preferences → Start in).
+app.get('/api/notes/browse', (req, res) => {
+  const drive = req.query.drive === '1';
+  const pickFolder = req.query.folder === '1';
+  const driveHome = drive ? googleDriveFolder(String(req.query.account || '')) : null;
+  if (drive && !driveHome) return res.json({ ok: false, error: 'Google Drive for desktop isn\'t set up on this Mac. Install it from google.com/drive/download, or paste the doc\'s link instead.' });
+  const wanted = String(req.query.start || '');
+  const start = wanted && path.isAbsolute(wanted) && isDir(wanted) ? wanted : driveHome;
+  const prompt = pickFolder ? 'Pick the folder to start in' : drive ? 'Pick speaker notes from Google Drive' : 'Pick speaker notes';
+  const loc = start ? ` default location (POSIX file ${JSON.stringify(start)})` : '';
+  require('child_process').execFile('osascript', ['-e', `POSIX path of (choose ${pickFolder ? 'folder' : 'file'} with prompt ${JSON.stringify(prompt)}${loc})`],
+    { timeout: 300000 }, (err, out) => {
+      if (err) return res.json({ ok: false, error: 'cancelled' });
+      const p = String(out).trim().replace(/\/$/, '');
+      if (pickFolder) return res.json({ ok: true, path: p });
+      if (!NOTES_EXT.includes(notesExt(p))) return res.json({ ok: false, error: `DeckPro can't read .${notesExt(p) || '?'} files. Use a Google Doc, PDF, Word, RTF, text or Markdown file.` });
+      res.json({ ok: true, path: p });
+    });
+});
+
+function escHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function textToHtml(t) {
+  return String(t).replace(/\r\n?/g, '\n').split(/\n{2,}/).map(p => p.trim()).filter(Boolean)
+    .map(p => `<p>${escHtml(p).replace(/\n/g, '<br>')}</p>`).join('\n');
+}
+// Markdown basics: headings, bullet/numbered lists, **bold**, *italic*.
+function markdownToHtml(md) {
+  const inline = s => escHtml(s).replace(/\*\*(.+?)\*\*|__(.+?)__/g, (_, a, b) => `<b>${a || b}</b>`).replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, '$1<i>$2</i>');
+  const out = [];
+  let list = null;
+  const close = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  let para = [];
+  const flush = () => { if (para.length) { out.push(`<p>${para.map(inline).join('<br>')}</p>`); para = []; } };
+  for (const line of String(md).replace(/\r\n?/g, '\n').split('\n')) {
+    let m;
+    if ((m = line.match(/^(#{1,6})\s+(.*)$/))) { flush(); close(); out.push(`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`); }
+    else if ((m = line.match(/^\s*([-*+]|\d+[.)])\s+(.*)$/))) {
+      flush();
+      const kind = /\d/.test(m[1]) ? 'ol' : 'ul';
+      if (list !== kind) { close(); out.push(`<${kind}>`); list = kind; }
+      out.push(`<li>${inline(m[2])}</li>`);
+    } else if (!line.trim()) { flush(); close(); }
+    else { close(); para.push(line.trim()); }
+  }
+  flush(); close();
+  return out.join('\n');
+}
+function notesFileToHtml(file, ext) {
+  if (['txt', 'text'].includes(ext)) return Promise.resolve(textToHtml(fs.readFileSync(file, 'utf8')));
+  if (['md', 'markdown'].includes(ext)) return Promise.resolve(markdownToHtml(fs.readFileSync(file, 'utf8')));
+  return new Promise((resolve, reject) => {
+    require('child_process').execFile('textutil', ['-convert', 'html', '-stdout', file], { maxBuffer: 60 * 1024 * 1024, timeout: 60000 },
+      (err, out) => err ? reject(new Error(`Couldn't read that file (${err.message.split('\n')[0]})`)) : resolve(String(out)));
+  });
+}
+
+app.get('/api/notes/local', async (req, res) => {
+  const file = String(req.query.path || '');
+  const ext = notesExt(file);
+  if (!path.isAbsolute(file) || !NOTES_EXT.includes(ext)) return res.json({ ok: false, error: 'Not a notes file DeckPro can read' });
+  if (!fs.existsSync(file)) return res.json({ ok: false, error: `Couldn't find ${path.basename(file)} — it may have been moved or renamed.` });
+  try {
+    if (ext === 'gdoc') {
+      const j = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const id = j.doc_id || (String(j.url || '').match(/[?&]id=([\w-]+)|\/d\/([\w-]+)/) || []).slice(1).find(Boolean);
+      if (!id) return res.json({ ok: false, error: 'That Google Doc shortcut has no doc id in it.' });
+      return res.json({ ok: true, gdocUrl: `https://docs.google.com/document/d/${id}/edit` });
+    }
+    if (ext === 'pdf') { res.setHeader('Content-Type', 'application/pdf'); return fs.createReadStream(file).pipe(res); }
+    res.json({ ok: true, html: await notesFileToHtml(file, ext), name: path.basename(file) });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  }
+});
+
+// A file dropped on the panel (no path in the browser) — uploaded and converted.
+app.post('/api/notes/convert', express.raw({ type: '*/*', limit: '60mb' }), async (req, res) => {
+  const name = path.basename(String(req.query.name || 'notes.txt'));
+  const ext = notesExt(name);
+  if (!NOTES_EXT.includes(ext) || ['pdf', 'gdoc', 'rtfd'].includes(ext)) return res.json({ ok: false, error: `DeckPro can't read .${ext || '?'} files here.` });
+  const tmp = path.join(os.tmpdir(), `deckpro-notes-${Date.now()}.${ext}`);
+  try {
+    fs.writeFileSync(tmp, req.body || Buffer.alloc(0));
+    res.json({ ok: true, html: await notesFileToHtml(tmp, ext), name });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  } finally { fs.rm(tmp, { force: true }, () => {}); }
+});
+
 // ── Auto-scheme: derive a style scheme from a Pro7 presentation ─────────────
 // Workflow: DeckPro exports a presentation, the user restyles it in Pro7, then
 // imports it here so the edits become a scheme. See extractScheme.js.

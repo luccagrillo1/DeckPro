@@ -79,9 +79,15 @@ async function deckproE2E(opts) {
     await click('#btn-new-deck');
     await type('#nd-series', 'E2E Series');
     await type('#nd-title', 'Testing Everything');
-    await type('#nd-speaker', 'Test Speaker');
+    const speaker = `Test Speaker ${Date.now() % 100000}`; // new every run, so the question always comes up
+    await type('#nd-speaker', speaker);
     await click('#btn-nd-create');
+    const ask = await waitFor(() => $('#g-confirm-overlay'), 2000);
+    expect(ask && /permanent speaker/.test(ask.textContent), 'no "Add as a permanent speaker?" question');
+    expect([...ask.querySelectorAll('button')].map(x => x.textContent).join('/') === 'No/Yes', 'speaker question should answer No / Yes');
+    await click(ask.querySelector('.g-confirm-ok'));
     expect(await waitFor(() => state.config.seriesName === 'E2E Series', 5000), `series is "${state.config.seriesName}"`);
+    expect((state.config.speakers || []).includes(speaker), 'Yes did not save the speaker');
     expect(state.slides.some(s => s.type === 'start') && state.slides.some(s => s.type === 'end'), 'new deck missing Start/End');
     return `${state.slides.length} slides`;
   });
@@ -532,19 +538,19 @@ async function deckproE2E(opts) {
     expect(state.slides.find(x => x.id === s0.id).label === 'Keyboard test', '⇧⌘Z did not redo');
   });
 
-  await step('speaker notes: select text → Add as Point, and drag a paragraph', async () => {
+  await step('speaker notes: Suggested Slides → Add, and drag a paragraph', async () => {
     showNotesDoc({ id: 'e2e', styleText: '', bodyHtml: '<h2>Point one</h2><p>Love is patient and love is kind</p><p>John 13:35 says they will know</p>' }, 'E2E Notes');
-    state.config.notesMode = 'manual'; saveState();
     const body = $('#notes-doc-body');
     const p = await waitFor(() => [...body.querySelectorAll('[data-notes-block]')].find(e => /patient/.test(e.textContent)), 3000);
     expect(p, 'notes doc blocks not indexed');
     expect(getComputedStyle(p).userSelect !== 'none', 'notes text is not selectable');
-    const r = document.createRange(); r.selectNodeContents(p); getSelection().removeAllRanges(); getSelection().addRange(r);
-    showNotesSelectionMenu(); await sleep(50);
-    expect($('#notes-sel-menu').style.display === 'flex', 'selection menu did not appear');
+    expect(!$('#notes-mode-toggle'), 'Manual/Intelligent switch is back');
+    const add = await waitFor(() => [...document.querySelectorAll('#notes-tray-body .sug-card')]
+      .find(c => /Point one/.test(c.textContent))?.querySelector('.sug-add'), 3000);
+    expect(add, 'no Point suggestion in the tray');
     const n = state.slides.length;
-    await click($('#notes-sel-menu [data-role="point"]')); await sleep(200);
-    expect(state.slides.length === n + 1 && /patient/.test(active().bodyText || ''), 'Add as Point did not create the slide');
+    await click(add); await sleep(200);
+    expect(state.slides.length === n + 1, 'Add from Suggested Slides did not create the slide');
     p.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); await sleep(50);
     const grip = $('.notes-block-grip.show');
     expect(grip, 'no drag grip on hover');
