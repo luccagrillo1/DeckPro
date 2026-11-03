@@ -760,6 +760,46 @@ app.get('/api/bible/search', async (req, res) => {
   }
 });
 
+// The same verses in NKJV, which capitalizes He/Him/His for God, as a guide for
+// divine-pronoun caps (public/divineCaps.js lines the user's pronouns up with
+// these). Only compared against, never shown or exported. bolls.life is free
+// and needs no key; chapters are cached for the session.
+const BOOK_ORDER = [...new Set(Object.values(BOOK_MAP))];
+const _refChapters = new Map();
+function fetchJson(url) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { timeout: 6000, headers: { 'User-Agent': 'DeckPro' } }, r => {
+      let data = '';
+      r.on('data', c => { data += c; if (data.length > 2e6) req.destroy(new Error('too large')); });
+      r.on('end', () => { try { resolve(JSON.parse(data)); } catch (e) { reject(e); } });
+    });
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+  });
+}
+app.get('/api/bible/divine-ref', async (req, res) => {
+  const m = String(req.query.ref || '').trim().match(/^(.+?)\s+(\d+)(?::(\d+)(?:[-–](\d+))?)?$/);
+  const osis = m && BOOK_MAP[m[1].toLowerCase().trim()];
+  if (!osis) return res.json({ ok: false, error: 'Unknown reference' });
+  const book = BOOK_ORDER.indexOf(osis) + 1, chap = +m[2];
+  const from = m[3] ? +m[3] : 1, to = m[4] ? +m[4] : m[3] ? +m[3] : Infinity;
+  const key = `NKJV/${book}/${chap}`;
+  try {
+    if (!_refChapters.has(key)) {
+      const verses = await fetchJson(`https://bolls.life/get-text/${key}/`);
+      if (!Array.isArray(verses) || !verses.length) return res.json({ ok: false, error: 'No reference text' });
+      _refChapters.set(key, verses);
+    }
+    const text = _refChapters.get(key)
+      .filter(v => v.verse >= from && v.verse <= to)
+      .map(v => String(v.text || '').replace(/<S>\d+<\/S>/g, '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim())
+      .join('\n');
+    res.json(text ? { ok: true, text } : { ok: false, error: 'No reference text' });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  }
+});
+
 /**
  * Convert an API.Bible passage HTML fragment to plain text, preserving hard line
  * breaks. Each block (<p>, including poetry lines <p class="q1/q2">) and each <br>

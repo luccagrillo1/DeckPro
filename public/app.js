@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.43.9';
+const APP_VERSION = '4.43.10';
 
 const CHANGELOG = [
+  {
+    version: '4.43.10',
+    date: '2026-11-03',
+    changes: [
+      "Divine-pronoun caps now check against the NKJV, which capitalizes He/Him/His for God. When you look up a verse (or use Apply to this deck now on a slide with a reference), DeckPro reads the same verses in NKJV and lines the pronouns up: same count matches one to one, otherwise each pairs with the closest one in the verse. Capitals NKJV only has for starting a sentence or quote are ignored. Anything it can't place falls back to the name check. The NKJV text is only compared against, never shown or exported. Needs internet; offline it uses the name check as before.",
+    ],
+  },
   {
     version: '4.43.9',
     date: '2026-10-31',
@@ -7693,7 +7700,7 @@ function renderConfigPanel(panel) {
           <span>Capitalize He, Him, His, Himself in looked-up verses</span>
         </div>
         <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
-          Skips pronouns right after a person is named (Paul, Peter, "the man"). It's a best guess, and the caps show in the editor so you can fix any it gets wrong.
+          Checks each verse against the NKJV (which capitalizes for God), then falls back to who was named last. Still worth a look: the caps show in the editor so you can fix any it gets wrong.
         </div>
         <button class="btn-sm" id="btn-divine-caps-deck" style="margin-top:10px">Apply to this deck now</button>
         <div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">
@@ -8116,7 +8123,11 @@ function renderConfigPanel(panel) {
     document.getElementById('capitalize-pronouns-toggle').classList.toggle('on', cfg.capitalizeDivinePronouns);
     saveState();
   });
-  document.getElementById('btn-divine-caps-deck')?.addEventListener('click', () => applyDivineCapsToDeck());
+  document.getElementById('btn-divine-caps-deck')?.addEventListener('click', async e => {
+    const btn = e.currentTarget, label = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Checking verses…';
+    try { await applyDivineCapsToDeck(); } finally { btn.disabled = false; btn.textContent = label; }
+  });
 }
 
 // ─── Machine Setup / Onboarding ──────────────────────────────────────────────
@@ -13128,11 +13139,29 @@ function normalizeBodyText(value) {
   return normalizeDeckQuotes(value);
 }
 
+// The same verses in NKJV (capitalized for God) for divineCaps.js to line the
+// pronouns up with. null when there's no reference or the fetch fails — the
+// name check covers it then.
+async function divineRefText(ref) {
+  if (!ref) return null;
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 7000);
+    const data = await (await fetch(`/api/bible/divine-ref?ref=${encodeURIComponent(ref)}`, { signal: ctl.signal })).json();
+    clearTimeout(t);
+    return data.ok ? data.text : null;
+  } catch { return null; }
+}
+
 // On-demand: capitalize divine pronouns across every body field already in the
 // deck, so the pref can be applied retroactively (or after pasting/typing text
 // that didn't come through Scripture lookup). Visible + reviewable, never silent.
-function applyDivineCapsToDeck() {
+async function applyDivineCapsToDeck() {
   let total = 0;
+  // Each scripture slide's reference text, fetched together up front.
+  const refs = new Map(await Promise.all((state.slides || [])
+    .filter(s => s.type === 'scripture' && s.reference)
+    .map(async s => [s, await divineRefText(s.reference)])));
   const doStr    = v => { total += countDivineCaps(v); return divineCapsText(v || ''); };
   const doSpans  = arr => { total += countDivineCaps((arr || []).map(s => s.text || '').join('')); return divineCapsSpans(arr); };
   const doBullet = b => Array.isArray(b) ? doSpans(b) : doStr(b);
@@ -13140,8 +13169,10 @@ function applyDivineCapsToDeck() {
   (state.slides || []).forEach(slide => {
     switch (slide.type) {
       case 'scripture':
-        if (Array.isArray(slide.bodies)) slide.bodies = slide.bodies.map(doSpans);
-        else if (slide.body)             slide.body   = doSpans(slide.body);
+        if (Array.isArray(slide.bodies)) {
+          total += countDivineCaps(slide.bodies.map(b => (b || []).map(s => s.text || '').join('')).join('\n'), refs.get(slide));
+          slide.bodies = divineCapsBodies(slide.bodies, refs.get(slide));
+        } else if (slide.body)           slide.body   = doSpans(slide.body);
         if (slide.blankSpans)            slide.blankSpans = doSpans(slide.blankSpans);
         break;
       case 'point':
@@ -16484,7 +16515,7 @@ async function lookupBibleVerse(slide, ref, overrideBibleId = '', boldPhrases = 
     if (boldPhrases && boldPhrases.size) spans = applyNotesBoldToSpans(spans, boldPhrases);
     // Capitalize divine pronouns right in the fetched text (visible + editable),
     // so the user can lowercase any that refer to someone other than God.
-    if (state.config.capitalizeDivinePronouns) spans = divineCapsSpans(spans);
+    if (state.config.capitalizeDivinePronouns) spans = divineCapsSpans(spans, await divineRefText(data.reference || ref));
     if (!slide.bodies) slide.bodies = [[]];
     slide.bodies[0] = spans;
 
@@ -18437,7 +18468,8 @@ function helpSections() {
       <p>No Bible translation available through a normal api.bible key capitalizes He/Him/His/Himself for God (the ones that do — NASB, Amplified, LSB, MEV — aren't in the catalog), and no automatic rule can tell a divine "he" from an ordinary one: Mark 1:40–41 has both back to back, worded identically. So DeckPro doesn't guess silently — it capitalizes visibly, where you can check it:</p>
       <ul>
         <li>Turn the toggle on, and looking up a verse capitalizes He/Him/His/Himself right in the body text as it's fetched.</li>
-        <li>Each pronoun checks who was named last before it. After God, Jesus, Lord, Father or Spirit it's capitalized; after a person — Paul, Peter, Moses, "the man", "a woman" — it stays lowercase. If nobody's named yet, it's capitalized.</li>
+        <li>When the slide has a reference, DeckPro reads the same verses in the NKJV (which capitalizes for God) and copies its capitals onto your translation's pronouns, matching them in order or by where they sit in the verse. Capitals the NKJV only has because a sentence or quote starts there don't count. The NKJV text is never shown or exported.</li>
+        <li>Anything that can't be matched falls back to a name check: who was named last before it. After God, Jesus, Lord, Father or Spirit it's capitalized; after a person — Paul, Peter, Moses, "the man", "a woman" — it stays lowercase. If nobody's named yet, it's capitalized.</li>
         <li><strong>Apply to this deck now</strong> — a button below the toggle that applies the same capitalization across every body field already in the deck, for text you typed or pasted rather than looked up.</li>
       </ul>
       <p>Either way, look over the result and lowercase any pronoun that doesn't actually refer to God — that edit sticks, since nothing re-applies behind your back.</p>
