@@ -5338,6 +5338,17 @@ details.settings-disclosure { border-top: 1px solid var(--border); background: t
 .cloud-main .cloud-blurb { flex: 1; }
 .cloud-main button { flex-shrink: 0; }
 .cloud-push-bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 9000; display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); padding: 10px 12px 10px 16px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 6px 24px rgba(0,0,0,.25); font-size: 13px; color: var(--text); }
+/* One at a time, another Mac editing: the whole top bar goes yellow */
+body.cloud-locked header { position: relative; background: #f5c542 !important; border-bottom-color: #d9a91c !important; }
+body.cloud-locked header .dhm-series, body.cloud-locked header .dhm-title, body.cloud-locked header .dhm-date,
+body.cloud-locked header .dhm-sep, body.cloud-locked header .saved-indicator, body.cloud-locked header .pro7-status-text { color: #3a2c00 !important; }
+.cloud-lock-bar {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 5;
+  display: flex; align-items: center; gap: 10px; white-space: nowrap;
+  font-size: 13px; color: #2a2000; -webkit-app-region: no-drag;
+}
+.cloud-lock-bar .cloud-push-go { background: #2a2000; border-color: #2a2000; color: #f5c542; font-weight: 600; }
+body.cloud-locked .sidebar-actions, body.cloud-locked #main-panel[inert] { opacity: .55; }
 .cloud-push-bar .cloud-push-go { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; }
 
 /* ── Big screens: use the width ───────────────────────────────────────────
@@ -5415,3 +5426,4 @@ body.dark { --nav-select-bg: rgba(255, 255, 255, .10); }
   .slide-form:has(> .prefs-nav) .prefs-group { columns: 2; column-gap: 28px; }
   .slide-form:has(> .prefs-nav) .prefs-group > * { break-inside: avoid; }
 }
+.cloud-main-wrap .segmented-control button { white-space: nowrap; }

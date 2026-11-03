@@ -22,7 +22,10 @@ CREATE TABLE IF NOT EXISTS spaces (
   -- offline they push only after the user says so. See migrate-main-mac.sql.
   main_device_id   TEXT,
   main_device_name TEXT DEFAULT '',
-  main_seen_at     TEXT
+  main_seen_at     TEXT,
+  -- '' = main Mac mode (above); 'lock' = one at a time: main_* is whoever is
+  -- editing right now. See migrate-sync-mode.sql.
+  sync_mode        TEXT DEFAULT ''
 );
 
 -- One row per signed-in device. Only a hash of the token is stored.

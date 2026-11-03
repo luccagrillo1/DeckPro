@@ -16,6 +16,10 @@
 // user clicks "Push changes" (approvePush), which lasts until the main is back.
 // The server enforces the same rules; see cloud/src/index.js.
 //
+// One at a time (mode 'lock'): the same roles, but the main is whoever is
+// editing. The first push while it's free takes it, takeOver() grabs it, and
+// quitting lets go. There's no "push anyway" — a follower takes over instead.
+//
 // The session token lives in <data dir>/cloud.json (mode 600). Nothing that
 // belongs to this computer alone — Pro7 password, API keys, folders — is ever
 // uploaded: MACHINE_CONFIG_KEYS are stripped from each deck before pushing.
@@ -40,6 +44,8 @@ const MACHINE_CONFIG_KEYS = [
   'outputFolder', 'setupComplete', 'icloudSync', 'theme', 'updateChannel', 'bibleApiKey',
   // Stage screen UUIDs are made by each Mac's own Pro7 install.
   'stageScreen',
+  // Speaker Notes file pickers: Drive accounts and folders differ per Mac.
+  'notesDriveAccount', 'notesDriveStartFolder', 'notesLastFolder', 'notesLastDriveFolder',
 ];
 const SYNC_EVERY_MS  = 10 * 1000;
 const NUDGE_DELAY_MS = 3 * 1000;
@@ -60,19 +66,20 @@ function deviceId() {
   return _deviceId;
 }
 
-// Main Mac state, refreshed by every pull: { set, name, online, isMe }.
-let main = { set: false, name: '', online: false, isMe: false };
+// Main Mac state, refreshed by every pull: { mode, set, name, online, isMe }.
+let main = { mode: 'main', set: false, name: '', online: false, isMe: false };
 let pushApproved = false;   // follower: user said "push" while the main is offline
 let decksHeld = false;      // follower: decks waiting to push
 let settingsHeld = false;   // follower: styles/preferences waiting to push
 const role = () => !main.set ? 'equal' : main.isMe ? 'main' : 'follower';
 function setMainInfo(m) {
   if (!m) return;
-  main = { set: !!m.set, name: m.name || '', online: !!m.online, isMe: !!m.isMe };
+  main = { mode: m.mode === 'lock' ? 'lock' : 'main', set: !!m.set, name: m.name || '', online: !!m.online, isMe: !!m.isMe };
   if (role() !== 'follower' || main.online) pushApproved = false;
 }
 // A follower may push only while the main is offline and the user approved it.
-const mayPush = () => role() !== 'follower' || (!main.online && pushApproved);
+// One at a time has no "push anyway": a follower takes over instead.
+const mayPush = () => role() !== 'follower' || (main.mode !== 'lock' && !main.online && pushApproved);
 
 let account = null;         // { token, user, cursorOwner }
 let status  = { state: 'off', lastSync: null, error: null };
@@ -349,6 +356,26 @@ async function setMain(on) {
   } catch (err) { return { ok: false, error: err.message }; }
 }
 
+// Main Mac ('main') or one at a time ('lock'). Switching clears who holds it.
+async function setMode(mode) {
+  if (!account) return { ok: false, error: 'Not signed in' };
+  try {
+    const r = await api('POST', '/main', { mode: mode === 'lock' ? 'lock' : 'main' });
+    if (r.ok) { setMainInfo(r.main); syncNow(); }
+    return r;
+  } catch (err) { return { ok: false, error: err.message }; }
+}
+
+// One at a time: take editing over from whoever has it.
+async function takeOver() {
+  if (!account) return { ok: false, error: 'Not signed in' };
+  try {
+    const r = await api('POST', '/main', { take: true });
+    if (r.ok) { setMainInfo(r.main); decksHeld = settingsHeld = false; syncNow(); }
+    return r;
+  } catch (err) { return { ok: false, error: err.message }; }
+}
+
 // Follower, main offline: the user clicked "Push changes". Lasts until the main is back.
 async function approvePush() {
   if (role() !== 'follower') return { ok: true };
@@ -366,7 +393,7 @@ async function goodbye() {
 const isMain = () => !!account && role() === 'main';
 
 module.exports = {
-  setMain, approvePush, goodbye, isMain,
+  setMain, setMode, takeOver, approvePush, goodbye, isMain,
   init, startSignIn, cancelSignIn, signOut, syncNow, nudge,
   getStatus, getAccount, settingsPull, settingsPush, MACHINE_CONFIG_KEYS,
 };

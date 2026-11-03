@@ -21,6 +21,11 @@
 //              offline they're accepted only with approved:true (the user said
 //              so). In a deck conflict the main's version wins and the other is
 //              discarded. With no main set, every Mac is equal (as before).
+//   one at a time — POST /main {mode:'lock'}. The same machinery, but the
+//              "main" is whoever is editing: the first Mac to push while
+//              nobody holds it gets it, anyone can take it over
+//              (POST /main {take:true}), and it frees up when the holder quits
+//              (/main/bye) or stops checking in for MAIN_ONLINE_MS.
 
 const LOGIN_TTL_MS = 15 * 60 * 1000;
 const PULL_LIMIT = 50;
@@ -261,8 +266,9 @@ async function authenticate(req, env) {
 // who.main = { set, name, online, isMe } and who.role = 'main' | 'follower' | 'equal'.
 // Every request from the main Mac doubles as its heartbeat.
 async function loadMain(env, who) {
-  const sp = await env.DB.prepare('SELECT main_device_id, main_device_name, main_seen_at FROM spaces WHERE id = ?')
+  const sp = await env.DB.prepare('SELECT main_device_id, main_device_name, main_seen_at, sync_mode FROM spaces WHERE id = ?')
     .bind(who.user.space_id).first();
+  const mode = sp?.sync_mode === 'lock' ? 'lock' : 'main';
   const id = sp?.main_device_id || '';
   const isMe = !!id && id === who.deviceId;
   let seen = sp?.main_seen_at ? Date.parse(sp.main_seen_at) : 0;
@@ -270,13 +276,38 @@ async function loadMain(env, who) {
     seen = Date.now();
     await env.DB.prepare('UPDATE spaces SET main_seen_at = ? WHERE id = ?').bind(new Date(seen).toISOString(), who.user.space_id).run();
   }
-  who.main = { set: !!id, name: sp?.main_device_name || '', online: !!id && Date.now() - seen < MAIN_ONLINE_MS, isMe };
-  who.role = !id ? 'equal' : isMe ? 'main' : 'follower';
+  const online = !!id && Date.now() - seen < MAIN_ONLINE_MS;
+  // One at a time: a holder that went quiet has let go, so nobody holds it.
+  const set = mode === 'lock' ? online || isMe : !!id;
+  who.main = { mode, set, name: set ? sp?.main_device_name || '' : '', online: set && online, isMe: set && isMe };
+  who.role = !set ? 'equal' : isMe ? 'main' : 'follower';
+}
+
+// One at a time: the first Mac to push while it's free takes the lock. Only
+// takes it if it's still free (or ours) at write time, so two Macs can't both win.
+async function takeLock(env, who, force = false) {
+  const cutoff = new Date(Date.now() - MAIN_ONLINE_MS).toISOString();
+  await env.DB.prepare(`UPDATE spaces SET main_device_id = ?, main_device_name = ?, main_seen_at = ? WHERE id = ?${force ? '' :
+    ' AND (main_device_id IS NULL OR main_device_id = ? OR main_seen_at IS NULL OR main_seen_at < ?)'}`)
+    .bind(...[who.deviceId, who.device || 'Another Mac', nowIso(), who.user.space_id, ...(force ? [] : [who.deviceId, cutoff])]).run();
+  await loadMain(env, who);
 }
 
 // Make this Mac the main ({ main: true }) or clear the main ({ main: false }).
 async function setMain(req, who, env) {
   const body = await readJson(req);
+  if (body?.mode === 'lock' || body?.mode === 'main') {
+    // Switching modes starts clean: nobody is the main / holds the lock.
+    await env.DB.prepare('UPDATE spaces SET sync_mode = ?, main_device_id = NULL, main_device_name = \'\', main_seen_at = NULL WHERE id = ?')
+      .bind(body.mode === 'lock' ? 'lock' : '', who.user.space_id).run();
+    await loadMain(env, who);
+    return json({ ok: true, main: who.main });
+  }
+  if (body?.take) {
+    if (!who.deviceId) return json({ ok: false, error: 'Update DeckPro on this Mac first.' }, 400);
+    await takeLock(env, who, true);
+    return json({ ok: true, main: who.main });
+  }
   if (body?.main) {
     if (!who.deviceId) return json({ ok: false, error: 'This version of DeckPro can’t be the main Mac — update it first.' }, 400);
     await env.DB.prepare('UPDATE spaces SET main_device_id = ?, main_device_name = ?, main_seen_at = ? WHERE id = ?')
@@ -292,13 +323,22 @@ async function setMain(req, who, env) {
 // The main Mac is quitting: count it offline right away instead of in a minute.
 async function mainBye(who, env) {
   if (who.role === 'main') {
-    await env.DB.prepare('UPDATE spaces SET main_seen_at = NULL WHERE id = ?').bind(who.user.space_id).run();
+    // One at a time: quitting lets go of the lock outright.
+    await env.DB.prepare(who.main.mode === 'lock'
+      ? 'UPDATE spaces SET main_device_id = NULL, main_device_name = \'\', main_seen_at = NULL WHERE id = ?'
+      : 'UPDATE spaces SET main_seen_at = NULL WHERE id = ?').bind(who.user.space_id).run();
   }
   return json({ ok: true });
 }
 
 // A follower's push goes through only while the main is offline and the user approved it.
-function heldPush(who, body) {
+// One at a time: a push takes the lock if it's free, and is held if another Mac has it.
+async function heldPush(who, body, env) {
+  if (who.main.mode === 'lock') {
+    if (who.role === 'equal' && who.deviceId) await takeLock(env, who);
+    if (who.role !== 'follower') return null;
+    return json({ ok: false, held: true, main: who.main, error: `${who.main.name || 'Another Mac'} is editing — this Mac only receives changes.` }, 409);
+  }
   if (who.role !== 'follower') return null;
   if (who.main.online) return json({ ok: false, held: true, main: who.main, error: `${who.main.name || 'Your main Mac'} is open — this Mac only receives changes.` }, 409);
   if (!body?.approved) return json({ ok: false, held: true, main: who.main, error: 'Waiting for you to push this Mac’s changes.' }, 409);
@@ -356,7 +396,7 @@ function mergeSettings(stored, incoming) {
 async function pushSettings(req, who, env) {
   const body = await readJson(req);
   if (!body?.doc || typeof body.doc !== 'object') return json({ ok: false, error: 'Missing doc' }, 400);
-  const held = heldPush(who, body);
+  const held = await heldPush(who, body, env);
   if (held) return held;
   const row = await env.DB.prepare('SELECT doc FROM settings WHERE space_id = ?').bind(who.user.space_id).first();
   const merged = mergeSettings(row ? JSON.parse(row.doc) : null, body.doc);
@@ -469,7 +509,7 @@ async function pushDecks(req, who, env) {
   const body = await readJson(req);
   const decks = Array.isArray(body?.decks) ? body.decks : null;
   if (!decks) return json({ ok: false, error: 'Missing decks' }, 400);
-  const held = heldPush(who, body);
+  const held = await heldPush(who, body, env);
   if (held) return held;
   const results = [];
   for (const d of decks.slice(0, 25)) {

@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.43.11';
+const APP_VERSION = '4.44.0';
 
 const CHANGELOG = [
+  {
+    version: '4.44.0',
+    date: '2026-11-03',
+    changes: [
+      "New sync mode: One at a time (Preferences → General → DeckPro Account → Sync mode). Only one Mac edits at a time: the first Mac to change something takes over, every other Mac is view-only (its top bar turns yellow and says who's editing), and it frees up when that Mac quits DeckPro (or goes offline). Take over grabs it from whoever has it. Main Mac mode works exactly as before. The mode applies to every Mac on the account.",
+      "Speaker Notes Drive account and folder settings no longer ride along when a deck syncs to another Mac.",
+    ],
+  },
   {
     version: '4.43.11',
     date: '2026-11-03',
@@ -6232,6 +6240,7 @@ function mountSlidePreview(panel, slide) {
 
 function renderMain() {
   const panel = document.getElementById('main-panel');
+  queueMicrotask(renderCloudLockBar); // view-only depends on which page is open
 
 
   if (state.activeId === 'settings') { renderConfigPanel(panel);      return; }
@@ -19163,7 +19172,28 @@ function cloudAccountHTML() {
 // they push only when you say so. The main's version always wins.
 function cloudMainHTML() {
   const m = _cloud.main || {};
+  const lock = m.mode === 'lock';
+  const modeCtl = `<div class="settings-row" style="align-items:center;margin:0 0 8px">
+      <label style="min-width:100px;font-size:13px;color:var(--muted)">Sync mode</label>
+      <div class="segmented-control" id="cfg-cloud-mode">
+        <button type="button" data-val="main" class="${lock ? '' : 'active'}">Main Mac</button>
+        <button type="button" data-val="lock" class="${lock ? 'active' : ''}">One at a time</button>
+      </div>
+    </div>`;
   let line, btn;
+  if (lock) {
+    if (!m.set) {
+      line = 'Nobody is editing right now. The first Mac to change something takes over; the others only receive until it quits DeckPro.';
+      btn = '';
+    } else if (m.isMe) {
+      line = '<b>This Mac is editing.</b> Your other Macs only receive changes until you quit DeckPro, or someone takes over.';
+      btn = '';
+    } else {
+      line = `<b>${esc(m.name || 'Another Mac')}</b> is editing, so this Mac only receives. Take over to edit here.`;
+      btn = '<button type="button" class="btn-browse" id="btn-cloud-take">Take over</button>';
+    }
+    return `<div class="cloud-main-wrap">${modeCtl}<div class="cloud-main"><p class="cloud-blurb" style="margin:0">${line}</p>${btn}</div></div>`;
+  }
   if (!m.set) {
     line = 'No main Mac — every Mac syncs equally and the newest edit wins.';
     btn = '<button type="button" class="btn-browse" id="btn-cloud-main-set">Make this Mac the main</button>';
@@ -19176,7 +19206,57 @@ function cloudMainHTML() {
       : 'closed. Edits here wait until you choose to push them.'}`;
     btn = '<button type="button" class="btn-browse" id="btn-cloud-main-set">Make this Mac the main</button>';
   }
-  return `<div class="cloud-main"><p class="cloud-blurb" style="margin:0">${line}</p>${btn}</div>`;
+  return `<div class="cloud-main-wrap">${modeCtl}<div class="cloud-main"><p class="cloud-blurb" style="margin:0">${line}</p>${btn}</div></div>`;
+}
+
+async function cloudSetMode(mode) {
+  const r = await libApi('/api/cloud/mode', { method: 'POST', body: { mode } });
+  if (!r.ok) { toast('error', 'Couldn’t change the sync mode', r.error || ''); return; }
+  toast('success', mode === 'lock' ? 'One at a time' : 'Main Mac',
+    mode === 'lock' ? 'The first Mac to edit takes over; the others follow until it quits.' : 'Pick a main Mac, or leave it and every Mac syncs equally.');
+  await pollCloud();
+}
+
+// One at a time: take editing over from the Mac that has it.
+function cloudTakeOver() {
+  const m = _cloud.main || {};
+  showConfirmModal(`Take over from ${m.name || 'the other Mac'}?`,
+    `This Mac starts editing and ${m.name || 'the other Mac'} only receives. Anything it hasn’t synced yet stays on that Mac.`,
+    'Take over', async () => {
+      const r = await libApi('/api/cloud/take', { method: 'POST' });
+      if (!r.ok) { toast('error', 'Couldn’t take over', r.error || ''); return; }
+      toast('success', 'This Mac is editing', 'Your other Macs follow until you quit DeckPro.');
+      syncCycle('take');
+      await pollCloud();
+    });
+}
+
+// One at a time, another Mac editing: a bar with Take over, and nothing can be
+// added or edited here. Slides can still be clicked through to read them, and
+// Preferences stays usable.
+function renderCloudLockBar() {
+  const m = _cloud.main || {};
+  const locked = !!(_cloud.signedIn && m.mode === 'lock' && _cloud.role === 'follower');
+  document.body.classList.toggle('cloud-locked', locked);
+  for (const el of [document.querySelector('.sidebar-actions'), document.getElementById('main-panel')]) {
+    if (!el) continue;
+    const off = locked && !(el.id === 'main-panel' && state.activeId === 'settings');
+    if (off) el.setAttribute('inert', ''); else el.removeAttribute('inert');
+  }
+  let bar = document.getElementById('cloud-lock-bar');
+  if (!locked) { bar?.remove(); return; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'cloud-lock-bar';
+    bar.className = 'cloud-lock-bar';
+    (document.querySelector('header') || document.body).appendChild(bar); // the whole top bar turns yellow
+  }
+  const html = `<span><b>${esc(m.name || 'Another Mac')}</b> is editing — this Mac is view-only.</span>
+    <button type="button" class="btn-browse cloud-push-go" id="btn-cloud-lock-take">Take over</button>`;
+  if (bar.innerHTML !== html) {
+    bar.innerHTML = html;
+    bar.querySelector('#btn-cloud-lock-take').addEventListener('click', cloudTakeOver);
+  }
 }
 
 async function cloudSetMain(on) {
@@ -19226,6 +19306,16 @@ function renderCloudAccount() {
     } else cloudSetMain(true);
   });
   document.getElementById('btn-cloud-main-clear')?.addEventListener('click', () => cloudSetMain(false));
+  document.getElementById('btn-cloud-take')?.addEventListener('click', cloudTakeOver);
+  document.getElementById('cfg-cloud-mode')?.addEventListener('click', e => {
+    const b = e.target.closest('button[data-val]');
+    if (!b || b.classList.contains('active')) return;
+    const toLock = b.dataset.val === 'lock';
+    showConfirmModal(toLock ? 'Switch to one at a time?' : 'Switch to Main Mac?',
+      toLock ? 'Only one Mac edits at a time. The first to change something takes over, the others are view-only, and it frees up when that Mac quits DeckPro. Applies to every Mac on this account.'
+             : 'Back to a main Mac (or every Mac equal if you don’t pick one). Applies to every Mac on this account.',
+      'Switch', () => cloudSetMode(toLock ? 'lock' : 'main'));
+  });
   document.getElementById('btn-cloud-cancel')?.addEventListener('click', async () => {
     await libApi('/api/cloud/signin/cancel', { method: 'POST' });
     await pollCloud();
@@ -19282,6 +19372,7 @@ async function pollCloud() {
   }
   renderCloudAccount();
   renderCloudPushBar();
+  renderCloudLockBar();
   scheduleCloudPoll(st.signingIn ? 1500 : (st.signedIn ? 8000 : 0));
 }
 

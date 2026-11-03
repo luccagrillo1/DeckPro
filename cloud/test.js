@@ -127,5 +127,23 @@ async function signIn(email, device) {
   ok(fs1.results[0].winner === 'server' && fs1.results[0].server.state.v === 'M' && !fs1.results[0].conflictCopyId, 'follower’s stale edit loses to the main’s, discarded');
   ok((await mc('POST', '/main', { main: false })).main.set === false, 'the main can be cleared');
 
+  // One at a time: whoever pushes first while it's free holds the lock.
+  ok((await mc('POST', '/main', { mode: 'lock' })).main.mode === 'lock', 'switch to one at a time');
+  ok((await fc('GET', '/main')).main.set === false, 'nobody holds it at first');
+  const fTake = await fc('POST', '/decks/push', { decks: [mdeck('lk', 'F1', 0)] });
+  ok(fTake.results && fTake.results[0].winner === 'client', 'first Mac to edit gets through');
+  const fMe = (await fc('GET', '/main')).main;
+  ok(fMe.set && fMe.isMe && fMe.mode === 'lock', 'and now holds the lock');
+  const mHeld = await mc('POST', '/decks/push', { decks: [mdeck('lk2', 'M1', 0)] });
+  ok(mHeld.status === 409 && mHeld.held && /editing/.test(mHeld.error), 'the other Mac is held while it’s taken');
+  const mSet = await mc('POST', '/settings', { doc: { sections: {} } });
+  ok(mSet.status === 409 && mSet.held, 'settings are held too');
+  ok((await mc('POST', '/main', { take: true })).main.isMe, 'Take over hands the lock to the other Mac');
+  ok((await fc('POST', '/decks/push', { decks: [mdeck('lk3', 'F2', 0)] })).held, 'the old holder now only receives');
+  await mc('POST', '/main/bye', {});
+  ok((await fc('GET', '/main')).main.set === false, 'quitting frees the lock');
+  ok((await fc('POST', '/decks/push', { decks: [mdeck('lk3', 'F2', 0)] })).results[0].winner === 'client', 'so the next edit anywhere takes it');
+  ok((await mc('POST', '/main', { mode: 'main' })).main.mode === 'main', 'back to main Mac mode');
+
   console.log(`\n${passed} passed`);
 })().catch(e => { console.error('✗', e.message); process.exit(1); });
