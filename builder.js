@@ -1577,9 +1577,10 @@ function buildPresentation(spec, propUuidMap = {}) {
     }
     if (slide.type === 'image') {
       if (slide.blankBefore) {
+        // Notes for blank-before = the image slide's name so the confidence monitor shows what's next
         const blankCue = buildBlankCue({
           label: '',
-          spans: slide.blankSpans || [],
+          spans: slide.label ? [{ text: slide.label }] : (slide.blankSpans || []),
         }, rs);
         blankCue._isBlankBefore  = true;
         blankCue._isContentBlank = true;
@@ -1717,6 +1718,11 @@ function buildPresentation(spec, propUuidMap = {}) {
     if (isGradientCue) injectGradientMacro(cue, gradientMacro, gradientMacroQr, qrCode && isContent && cue._qrZone);
   }
 
+  // The cue right after an image (the next slide's blank-before when it has
+  // one) — the 'afterImage' trigger, e.g. Message - Content to bring the
+  // content look back after Message - Blank on the image.
+  rawCues.forEach((cue, i) => { if (cue._type === 'image' && rawCues[i + 1]) rawCues[i + 1]._afterImage = true; });
+
   // ── Step 4: Inject macros from Schemes into matching cues ──
   const customMacros = (spec.customMacros || []).filter(m => m.name && m.uuid && (m.triggers || []).length);
   if (customMacros.length) {
@@ -1733,11 +1739,14 @@ function buildPresentation(spec, propUuidMap = {}) {
           (tr.includes('blank')       && t === 'blank' && !isBB) ||
           (tr.includes('blankBefore') && isBB) ||
           (tr.includes('image')       && t === 'image') ||
+          (tr.includes('afterImage')  && cue._afterImage) ||
           (tr.includes('rcBlank')     && t === 'rc' && cue._isRcBlank) ||
           (tr.includes('rcContent')   && t === 'rc' && cue._isRcContent) ||
           (tr.includes('rcHold')      && t === 'rc' && cue._isRcHold) ||
           (cue._slidePos && tr.includes(`pos:${cue._slidePos}`));
-        if (hits) cue.actions.push(macroAction(m.name, m.uuid));
+        // An After Image macro (Message - Content) never fires on the image itself,
+        // even when another trigger (pos:2 on a deck that opens with an image) lands there.
+        if (hits && !(t === 'image' && tr.includes('afterImage'))) cue.actions.push(macroAction(m.name, m.uuid));
       }
     }
   }
@@ -1765,6 +1774,7 @@ function buildPresentation(spec, propUuidMap = {}) {
           (tr.includes('blank')       && t === 'blank' && !isBB) ||
           (tr.includes('blankBefore') && isBB) ||
           (tr.includes('image')       && t === 'image') ||
+          (tr.includes('afterImage')  && cue._afterImage) ||
           (tr.includes('rcBlank')     && t === 'rc' && cue._isRcBlank) ||
           (tr.includes('rcContent')   && t === 'rc' && cue._isRcContent) ||
           (tr.includes('rcHold')      && t === 'rc' && cue._isRcHold) ||

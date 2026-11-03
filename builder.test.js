@@ -398,5 +398,31 @@ const bodyRtf = c => {
   ok('ext: unassigned macros add nothing', e5.map(labelOf).includes('Questions') && !e5.flatMap(macros).some(m => m === 'extStart' || m === 'extEnd'));
 })();
 
+// Image slides: Message - Blank on the image, Message - Content on the next cue
+(() => {
+  const M = (name, uuid, triggers) => ({ name, uuid, triggers });
+  const spec = {
+    customMacros: [M('Message - Blank', 'B', ['end', 'image']), M('Message - Content', 'C', ['pos:2', 'afterImage'])],
+    slides: [
+      { type: 'start' },
+      { type: 'image', label: 'Pic' },
+      { type: 'scripture', label: 'John 3:16', reference: 'John 3:16', bodies: [[{ text: 'For God' }]], propName: 'John 3:16', blankBefore: true },
+      { type: 'image', label: 'Pic2' },
+      { type: 'point', mode: 'single', label: 'P', bodyText: 'P', propName: 'P' },
+      { type: 'end' },
+    ],
+  };
+  const cues = buildPresentation(spec, {}).cues;
+  const ms = c => c.actions.filter(a => a.type === 'ACTION_TYPE_MACRO').map(a => a.macro.identification.parameterName);
+  ok('image: Blank on the image, not Content (even at pos:2)', ms(cues[1]).join() === 'Message - Blank');
+  ok('after image: Content on the next blank-before', ms(cues[2]).join() === 'Message - Content');
+  ok('after image: not on the slide after that blank', !ms(cues[3]).includes('Message - Content'));
+  ok('second image: Blank only', ms(cues[4]).join() === 'Message - Blank');
+  ok('after image: Content on a slide with no blank-before', ms(cues[5]).includes('Message - Content'));
+  const notesOf = c => Buffer.from(c.actions.find(a => a.slide)?.slide?.presentation?.notes?.rtfData || '', 'base64').toString();
+  const imgSpec = { slides: [{ type: 'start' }, { type: 'image', label: 'Baptism Photo', blankBefore: true }, { type: 'end' }] };
+  ok('image blank-before: notes show the image slide name', /Baptism Photo/.test(notesOf(cuesOf(imgSpec)[1])));
+})();
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

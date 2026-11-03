@@ -2,9 +2,17 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.44.1';
+const APP_VERSION = '4.44.2';
 
 const CHANGELOG = [
+  {
+    version: '4.44.2',
+    date: '2026-11-03',
+    changes: [
+      "Image slides now fire Message - Blank, and whatever comes right after the image (its blank-before, if it has one) fires Message - Content. Your styles' Message - Blank and Message - Content macros were updated once to do this; there's a new \"After Image\" trigger in Styles → Macros if you want to change it. A macro set to After Image never fires on the image itself, so a deck that opens with an image still gets just Blank on it.",
+      "An image's blank-before slide now puts the image slide's name in the slide notes, so the confidence monitor shows what's coming.",
+    ],
+  },
   {
     version: '4.44.1',
     date: '2026-11-03',
@@ -4217,6 +4225,19 @@ function applySavedState(saved) {
       }
     };
     for (const scheme of state.styleSchemes) { _foldRcHold(scheme.macros); _foldRcHold(scheme.stageDisplays); }
+
+    // Image slides (v4.44.2+): Message - Blank fires on the image and Message -
+    // Content on whatever comes next. Added once per style; untick either in
+    // Styles → Macros and it stays off.
+    for (const scheme of state.styleSchemes) {
+      if (scheme._imageMacrosV1) continue;
+      scheme._imageMacrosV1 = true;
+      for (const m of scheme.macros || []) {
+        const t = m.triggers || (m.triggers = []);
+        if (/^message\s*-\s*blank$/i.test((m.name || '').trim()) && !t.includes('image')) t.push('image');
+        if (/^message\s*-\s*content$/i.test((m.name || '').trim()) && !t.includes('afterImage')) t.push('afterImage');
+      }
+    }
     _foldRcHold(state.globalMacros);
     _foldRcHold(state.globalStageDisplays);
 
@@ -5789,6 +5810,7 @@ function macroChipsHTML(...triggerKeys) {
   const macros = activeStyleScheme().macros || [];
   return macros
     .filter(m => triggerKeys.some(k => (m.triggers || []).includes(k)))
+    .filter(m => !(triggerKeys[0] === 'image' && (m.triggers || []).includes('afterImage'))) // never on the image itself (builder.js)
     .map(m => `<span class="slide-macro-chip" style="${m.color ? `--mc:${m.color}` : ''}" title="${esc(m.name)}">${esc(m.name)}</span>`)
     .join('');
 }
@@ -5947,8 +5969,12 @@ function renderSidebar() {
     const ic             = ICON[effType] || { cls: '', text: '?' };
     const posKey         = `pos:${_si + 1}`;
     const hasBB          = slide.blankBefore && ['scripture', 'point', 'image', 'alias'].includes(slide.type);
+    // 'afterImage' fires on the first cue after an image: this slide's blank-before row when it has one
+    const prev           = state.slides[_si - 1];
+    const prevType       = prev?.type === 'alias' ? aliasSource(prev)?.type : prev?.type;
+    const afterImageKey  = prevType === 'image' ? ['afterImage'] : [];
     // pos:N badge goes on the blank-before row (it is the Nth output cue); exclude it from the content slide
-    const macroBadges    = getSlideMacroBadges(effType, ...(hasBB ? [] : [posKey]));
+    const macroBadges    = getSlideMacroBadges(effType, ...(hasBB ? [] : [posKey, ...afterImageKey]));
     if (slide.macroOverride) {
       macroBadges.push({ cls: 'macro-override', icon: 'ring', color: macroDisplayColor(slide.macroOverride), title: `Override: ${slide.macroOverride.name}` });
     }
@@ -5959,7 +5985,7 @@ function renderSidebar() {
     if (hasBB) {
       const indicator = document.createElement('div');
       indicator.className = 'si-blank-indicator' + (!state.showBlanks ? ' hidden' : '');
-      const bbBadges = getSlideMacroBadges('blankBefore', posKey);
+      const bbBadges = getSlideMacroBadges('blankBefore', posKey, ...afterImageKey);
       const bbStageBadges = stageDisplayBadgesHTML('blankBefore', posKey);
       const bbQrBadge = qrBadgeHTML(effectiveQR(slide));
       indicator.innerHTML = `<span class="si-blank-icon"><span class="badge-circle"></span></span><span class="si-blank-label">blank</span><div class="slide-badges" style="margin-left:auto">${macroBadgesHTML(bbBadges)}${bbStageBadges}${bbQrBadge}</div>`;
@@ -6757,6 +6783,7 @@ const CUSTOM_MACRO_TRIGGERS = [
   ['blank',       'Blank'],
   ['blankBefore', 'Blank Before'],
   ['image',       'Image'],
+  ['afterImage',  'After Image'],
   ['rcBlank',     'RC Blank'],
   ['rcContent',   'Response Card'],
 ];
