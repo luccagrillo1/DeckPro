@@ -463,6 +463,21 @@ function estimatePropTitleY(spans, bw, prs, knownLines, metrics) {
   return Math.round(Math.max(0, titleY));
 }
 
+// How far to move the scripture block (title box top → last body line's
+// bottom) so it sits in the vertical middle of the LED wall. If the block is
+// taller than the wall it pins to the top edge instead.
+function propCenterShift(titleY, prs, knownLines, ascent, descent) {
+  const by = prs.propBodyY ?? 729.98;
+  const bh = prs.propBodyH ?? 350.02;
+  const ch = prs.propCanvasH ?? 1080;
+  const textH = knownLines * (ascent + descent) * (prs.propBodyFontAdv?.lineHeight ?? 1);
+  const blockTop = bodyBlockTop(by + (prs.propBodyFontAdv?.yOffset ?? 0), bh, prs.propBodyFontAdv, { bottom: 60 }, textH);
+  const groupTop = titleY, groupH = blockTop + textH - titleY;
+  if (!Number.isFinite(groupH) || groupH <= 0) return 0;
+  const want = Math.max(0, (ch - groupH) / 2);
+  return Math.round((want - groupTop) * 100) / 100;
+}
+
 // ─── Prop cue builders ────────────────────────────────────────────────────
 
 /**
@@ -544,6 +559,13 @@ function buildScripturePropCue(spec, rs = {}) {
   } else {
     titleY = prs.propTitleY ?? (by + (prs.propTitleGapShort ?? 0));
   }
+
+  // Center on wall: reference + gap + verse move together as one block,
+  // centred on the whole LED wall height. Rides on Auto Title Y (same gap).
+  const centerShift = prs.propAutoTitleY && prs.propCenterY && hasBodyText
+    ? propCenterShift(titleY, prs, spec.propBodyLines, spec.propAscent, spec.propDescent) : 0;
+  titleY += centerShift;
+  bodyEl.bounds.origin.y += centerShift;
 
   const titleEl = makeTextElement({
     name: 'reference',

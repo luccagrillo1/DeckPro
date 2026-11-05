@@ -2,9 +2,16 @@
 
 // ─── Version & Changelog ──────────────────────────────────────────────────────
 
-const APP_VERSION = '4.44.2';
+const APP_VERSION = '4.45.0';
 
 const CHANGELOG = [
+  {
+    version: '4.45.0',
+    date: '2026-11-04',
+    changes: [
+      "New: Center on wall for the LED wall. In Styles → Layout → LED Wall Title, under Auto Title Y, turn on Center on wall and the scripture reference + verse move together as one block, centred on the wall's height however many lines the verse is. The gap between them is still the Auto Title Y gap. Off by default, so existing styles don't move.",
+    ],
+  },
   {
     version: '4.44.2',
     date: '2026-11-03',
@@ -3301,7 +3308,7 @@ const LAYOUT_FIELDS = [
   'propCanvasW','propCanvasH',
   'propBodyX','propBodyY','propBodyW','propBodyH','propFitCenter',
   'propPointX','propPointY','propPointW','propPointH',
-  'propTitleX','propTitleY','propTitleW','propTitleH','propAutoTitleY','propTitleAutoGap','propTitleFollowsBody',
+  'propTitleX','propTitleY','propTitleW','propTitleH','propAutoTitleY','propTitleAutoGap','propTitleFollowsBody','propCenterY',
 ];
 const DEFAULT_GLOBAL_LAYOUT = () => {
   const d = DEFAULT_STYLE_SCHEME();
@@ -3493,7 +3500,7 @@ const DEFAULT_STYLE_SCHEME = () => ({
   propBodyX: 0, propBodyY: 853, propBodyW: 3200, propBodyH: 427,
   propPointX: 0, propPointY: 853, propPointW: 3200, propPointH: 427,
   propTitleX: -0.30, propTitleY: 1040, propTitleW: 3200.30, propTitleH: 60,
-  propAutoTitleY: true, propTitleAutoGap: 16, propTitleFollowsBody: true, propFitCenter: true,
+  propAutoTitleY: true, propTitleAutoGap: 16, propTitleFollowsBody: true, propFitCenter: true, propCenterY: false,
   // Font advanced styling. Display 2 (LED-wall prop) advanced styling defaults
   // to null = "inherit Display 1" — resolved live from the matching Display 1
   // row in applyTypographyToStyle. A concrete object here means "overridden".
@@ -9196,7 +9203,7 @@ const LAYOUT_ELS = () => [
   { id: 'propCanvas', disp: 'led',  lbl: 'Canvas',      canvas: ['propCanvasW', 'propCanvasH'] },
   { id: 'propBody',   disp: 'led',  lbl: 'Body',        p: 'propBody',  row: 'body2', scene: 'scripture', fit: 'propFitCenter' },
   { id: 'propPoint',  disp: 'led',  lbl: 'Point',       p: 'propPoint', row: 'point2', scene: 'point', fit: 'propFitCenter', note: 'Stacked points use this box too.' },
-  { id: 'propTitle',  disp: 'led',  lbl: 'Title',       p: 'propTitle', row: 'title2', scene: 'scripture', auto: ['propAutoTitleY', 'propTitleAutoGap'], follow: 'propTitleFollowsBody' },
+  { id: 'propTitle',  disp: 'led',  lbl: 'Title',       p: 'propTitle', row: 'title2', scene: 'scripture', auto: ['propAutoTitleY', 'propTitleAutoGap'], follow: 'propTitleFollowsBody', centerY: 'propCenterY' },
 ];
 // Preview text → the layout box it sits in.
 const LAYOUT_ROW_TO_EL = {
@@ -9211,7 +9218,7 @@ function renderLayoutTab(rs, dis, pv) {
   _layoutEl = cur.id;
   const glb = ensureGlobalLayout();
   const own = f => rs[f] != null && !(typeof glb[f] === 'number' && Math.abs(Number(rs[f]) - glb[f]) <= 0.01);
-  const elOwn = el => _lyFields(el).concat(el.auto || []).some(own);
+  const elOwn = el => _lyFields(el).concat(el.auto || [], el.centerY ? [el.centerY] : []).some(own);
   const scene = _layoutScene || cur.scene || 'scripture';
 
   const list = [['main', dn('mainScreen')], ['led', dn('ledWall')]].map(([d, lbl]) => `
@@ -9290,6 +9297,11 @@ function renderLayoutTab(rs, dis, pv) {
         ${autoOn ? num(cur.auto[1], 'Gap above body') : ''}
       </div>
       <p class="lt-note">${autoOn ? 'Each slide moves the title to the top of its own verse, so the Y above is ignored.' : 'Off: the title always sits at the Y above.'}</p>
+      ${cur.centerY && autoOn ? `
+      <div class="tp-row">
+        <label class="lt-switch"><input type="checkbox" class="lt-auto" data-f="${cur.centerY}" ${pv[cur.centerY] ? 'checked' : ''} ${dis}> Center on wall</label>
+      </div>
+      <p class="lt-note">${pv[cur.centerY] ? 'Reference and verse move together as one block and sit in the middle of the wall, however tall the verse is. A block taller than the wall stays on it, starting near the top.' : 'Off: the verse stays at the bottom of its box.'}</p>` : ''}
     </div>` : ''}
     ${cur.follow ? `
     <div class="tp-group">
@@ -9706,7 +9718,7 @@ function renderTextPreview(pv, scene, selRow, hint, showStrip = true, showScenes
       </div>
       <div class="tp-canvas-block">
         <div class="lp-canvas-lbl">${esc(dn('ledWall'))} · ${Math.round(propW)}×${Math.round(propH)}</div>
-        <div class="tp-canvas tp-led" data-cw="${propW}" style="aspect-ratio:${propW} / ${propH}">
+        <div class="tp-canvas tp-led" data-cw="${propW}"${pv.propAutoTitleY && pv.propCenterY && (scene === 'scripture' || scene === 'notes') ? ' data-centery="1"' : ''} style="aspect-ratio:${propW} / ${propH}">
           ${led || `<div class="tp-empty">Nothing on the ${esc(dn('ledWall'))} for this slide</div>`}
         </div>
       </div>
@@ -9956,6 +9968,15 @@ function _tpLayout(root) {
     const textTop = body.getBoundingClientRect().top - cr.top;
     const top = textTop - Number(title.dataset.autogap) * scale - title.offsetHeight;
     title.style.top = `${(top / cr.height * 100).toFixed(3)}%`;
+    // Center on wall: shift title + body together so the block is centred
+    // (pinned to the top if taller than the wall) — same as buildProp.js.
+    if (cv.dataset.centery) {
+      const bodyEl = body.closest('.tp-el');
+      const groupH = body.getBoundingClientRect().bottom - cr.top - top;
+      const shift = Math.max(0, (cr.height - groupH) / 2) - top;
+      title.style.top = `${((top + shift) / cr.height * 100).toFixed(3)}%`;
+      bodyEl.style.top = `${((bodyEl.offsetTop + shift) / cr.height * 100).toFixed(3)}%`;
+    }
   });
 }
 
@@ -11009,14 +11030,14 @@ function renderStylePanel(panel) {
   });
   panel.querySelector('#style-tab-layout .lt-use-global')?.addEventListener('click', () => {
     const s = getScheme(); const el = layoutEl(); if (!s || !el) return;
-    for (const f of _lyFields(el).concat(el.auto || [])) s[f] = null;
+    for (const f of _lyFields(el).concat(el.auto || [], el.centerY ? [el.centerY] : [])) s[f] = null;
     saveState(); renderStylePanel(panel);
   });
   panel.querySelector('#style-tab-layout .lt-make-global')?.addEventListener('click', () => {
     const s = getScheme(); const el = layoutEl(); if (!s || !el) return;
     if (!confirm(`Make this ${el.lbl} position and size the Global default?\n\nStyles that follow Global will move it too.`)) return;
     const pv = styleForExport(s); const glb = ensureGlobalLayout();
-    for (const f of _lyFields(el).concat(el.auto || [])) { glb[f] = pv[f]; s[f] = null; }
+    for (const f of _lyFields(el).concat(el.auto || [], el.centerY ? [el.centerY] : [])) { glb[f] = pv[f]; s[f] = null; }
     saveState(); renderStylePanel(panel);
   });
 
@@ -18348,6 +18369,7 @@ function helpSections() {
         <li><strong>Type</strong> X / Y / Width / Height in pixels. Empty a box to follow Global again; grey numbers are coming from Global.</li>
         <li><strong>Snap to canvas</strong> — left / centre / right and top / middle / bottom; the one that matches lights up.</li>
         <li><strong>Auto Title Y</strong> — on both Titles, each slide moves the title to sit just above its own verse (with the gap you set), so the fixed Y is ignored. Turn it off for a fixed Y.</li>
+        <li><strong>Center on wall</strong> — under Auto Title Y on the ${D2} Title. The reference and verse move together as one block and sit in the middle of the wall's height, so a short verse isn't stuck at the bottom. A block taller than the wall stays on it, pinned near the top.</li>
         <li><strong>Line up with the verse</strong> — on both Titles. The reference text starts where the verse starts, slide by slide (ends where it ends for a right-aligned verse, centres over a centred one). The title bar keeps its own box. It's the same setting as the <strong>Verse</strong> alignment button in the Text tab.</li>
         <li><strong>Centre the fitted box</strong> — on Body and Point (one switch per display). With Fit Width, each slide's shrunk box sits in the middle of the Body box, with the text still aligned inside it. Turn it off and a left- or right-aligned box hugs that edge instead.</li>
         <li><strong>↺ Use Global / ↑ Make Global</strong> — for the whole box at once; right-click a single number for just that one.</li>
